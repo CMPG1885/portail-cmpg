@@ -700,6 +700,7 @@ let categories = [];
 let sousCategories = [];
 let produitsCache = [];
 let editingProduitId = null;
+let editingPosteId = null;
 
 // ============================================================
 // AUTH
@@ -1064,7 +1065,11 @@ async function chargerPostes() {
             <span class="poste-ref">${poste.reference}</span>
             <span class="poste-piece">${poste.piece || ''}</span>
           </div>
-          <span style="font-size:11px;color:var(--texte-2)">${options.length} option(s)</span>
+          <div style="display:flex;align-items:center;gap:8px">
+            <span style="font-size:11px;color:var(--texte-2)">${options.length} option(s)</span>
+            <button class="btn btn-outline btn-sm" onclick="event.stopPropagation();ouvrirModalEditerPoste('${poste.id}','${poste.reference.replace(/'/g,"\\'")}','${(poste.piece||'').replace(/'/g,"\\'")}','${poste.categorie_id}','${poste.type_selection}')" title="Modifier">✏️</button>
+            <button class="btn btn-outline btn-sm" style="color:var(--danger);border-color:var(--danger)" onclick="event.stopPropagation();supprimerPoste('${poste.id}','${poste.reference.replace(/'/g,"\\'")}')" title="Supprimer">🗑</button>
+          </div>
         </div>
         <div class="poste-options">${optionsHTML}</div>
       `;
@@ -1076,6 +1081,22 @@ async function chargerPostes() {
 }
 
 function openModalPoste() {
+  // Réinitialiser en mode AJOUT
+  editingPosteId = null;
+  document.getElementById('poste-ref').value = '';
+  document.getElementById('poste-piece').value = '';
+  document.getElementById('poste-type').value = 'unique';
+
+  // Restaurer titre et bouton
+  const titreEl = document.querySelector('#modal-ajout-poste h3');
+  if (titreEl) titreEl.textContent = 'Ajouter un poste';
+  const btnEl = document.querySelector('#modal-ajout-poste .modal-footer .btn-dark');
+  if (btnEl) btnEl.textContent = 'Ajouter le poste';
+
+  // Réafficher la section produit
+  const sectProduit = document.getElementById('poste-options-section');
+  if (sectProduit) sectProduit.style.display = '';
+
   // Remplir catégories dans le select du modal poste
   const sel = document.getElementById('poste-categorie');
   const first = sel.options[0];
@@ -1110,30 +1131,73 @@ async function sauvegarderPoste() {
   const catId = document.getElementById('poste-categorie').value;
   if (!ref || !catId) { toast('Référence et catégorie sont requis.', 'error'); return; }
 
-  const { data: newPoste, error } = await db.from('postes').insert({
-    projet_id: currentProjetId,
+  const payload = {
     reference: ref,
     piece: document.getElementById('poste-piece').value.trim() || null,
     categorie_id: catId,
-    type_selection: document.getElementById('poste-type').value,
-    ordre: 0
-  }).select().single();
+    type_selection: document.getElementById('poste-type').value
+  };
 
-  if (error) { toast('Erreur : ' + error.message, 'error'); return; }
+  if (editingPosteId) {
+    // MODE MODIFICATION — on met à jour le poste uniquement
+    const { error } = await db.from('postes').update(payload).eq('id', editingPosteId);
+    if (error) { toast('Erreur : ' + error.message, 'error'); return; }
+    closeModal('modal-ajout-poste');
+    toast('Poste modifié avec succès.', 'success');
+    editingPosteId = null;
+    chargerPostes();
+  } else {
+    // MODE AJOUT — on crée le poste + l'option initiale
+    const { data: newPoste, error } = await db.from('postes').insert({
+      ...payload,
+      projet_id: currentProjetId,
+      ordre: 0
+    }).select().single();
 
-  const produitId = document.getElementById('poste-produit-a').value;
-  if (produitId) {
-    await db.from('options_produits').insert({
-      poste_id: newPoste.id,
-      banque_produit_id: produitId,
-      lettre_option: 'A',
-      quantite: parseInt(document.getElementById('poste-qty-a').value) || 1,
-      note_client: document.getElementById('poste-note-a').value.trim() || null
-    });
+    if (error) { toast('Erreur : ' + error.message, 'error'); return; }
+
+    const produitId = document.getElementById('poste-produit-a').value;
+    if (produitId) {
+      await db.from('options_produits').insert({
+        poste_id: newPoste.id,
+        banque_produit_id: produitId,
+        lettre_option: 'A',
+        quantite: parseInt(document.getElementById('poste-qty-a').value) || 1,
+        note_client: document.getElementById('poste-note-a').value.trim() || null
+      });
+    }
+
+    closeModal('modal-ajout-poste');
+    toast('Poste ajouté avec succès.', 'success');
+    chargerPostes();
   }
+}
 
-  closeModal('modal-ajout-poste');
-  toast('Poste ajouté avec succès.', 'success');
+function ouvrirModalEditerPoste(id, reference, piece, categorieId, typeSelection) {
+  editingPosteId = id;
+  document.getElementById('poste-ref').value = reference;
+  document.getElementById('poste-piece').value = piece;
+  document.getElementById('poste-categorie').value = categorieId;
+  document.getElementById('poste-type').value = typeSelection;
+
+  // Masquer la section produit (non pertinente en mode édition)
+  const sectProduit = document.getElementById('poste-options-section');
+  if (sectProduit) sectProduit.style.display = 'none';
+
+  // Changer le titre et le bouton
+  const titreEl = document.querySelector('#modal-ajout-poste h3');
+  if (titreEl) titreEl.textContent = 'Modifier le poste';
+  const btnEl = document.querySelector('#modal-ajout-poste .modal-footer .btn-dark');
+  if (btnEl) btnEl.textContent = 'Enregistrer';
+
+  openModal('modal-ajout-poste');
+}
+
+async function supprimerPoste(id, reference) {
+  if (!confirm(`Supprimer le poste "${reference}" ?\n\nToutes les sélections de produits associées seront aussi supprimées.`)) return;
+  const { error } = await db.from('postes').delete().eq('id', id);
+  if (error) { toast('Erreur : ' + error.message, 'error'); return; }
+  toast(`Poste "${reference}" supprimé.`, 'success');
   chargerPostes();
 }
 

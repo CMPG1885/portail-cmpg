@@ -1019,6 +1019,17 @@ async function importerParURL() {
   const statusEl = document.getElementById('url-import-status');
   statusEl.innerHTML = '<span class="spinner"></span> Analyse en cours…';
 
+  // Helpers
+  const estSlug = s => s && (s.match(/-/g)||[]).length > 3 && (s.match(/ /g)||[]).length < 2;
+  const nettoyerTitre = t => {
+    if (!t) return '';
+    // Enlever le nom du site après " | ", " – ", " — "
+    t = t.split(/\s*[\|–—]\s*/)[0].trim();
+    // Si c'est toujours un slug, convertir en texte lisible
+    if (estSlug(t)) t = t.replace(/\.[A-Za-z]{2,4}$/, '').replace(/-/g,' ').replace(/\s+/g,' ').trim();
+    return (t.startsWith('http') || t.length < 3) ? '' : t;
+  };
+
   function remplirFormulaire(champs) {
     if (champs.nom)        document.getElementById('ap-nom').value        = champs.nom;
     if (champs.fabricant)  document.getElementById('ap-fabricant').value  = champs.fabricant;
@@ -1056,84 +1067,118 @@ async function importerParURL() {
     }
   } catch(e) {}
 
-  // ── Méthode 2 : Microlink (métadonnées enrichies) ─────────
-  try {
-    const resp = await fetch(`https://api.microlink.io?url=${encodeURIComponent(url)}`);
-    if (resp.ok) {
-      const result = await resp.json();
-      if (result.status === 'success') {
-        const m = result.data;
-        // Nettoyer le titre : enlever le nom du site après " | " ou " – " ou " - "
-        let titre = m.title || '';
-        titre = titre.split(/\s*[\|–\-]\s+/)[0].trim();
-        // Si le titre ressemble à une URL, l'ignorer
-        if (titre.startsWith('http') || titre.length < 3) titre = '';
-        const photoUrl = m.image ? m.image.url : '';
-        remplirFormulaire({
-          nom:   titre,
-          photo: photoUrl,
-          carac: m.description ? m.description.substring(0,300) : ''
-        });
-        openModal('modal-ajout-produit');
-        const photoPart = photoUrl ? ' + photo' : '';
-        statusEl.innerHTML = `✅ Nom${photoPart} importé — vérifiez et complétez les autres champs.`;
-        document.getElementById('url-import-input').value = '';
-        return;
-      }
-    }
-  } catch(e) {}
-
-  // ── Méthode 3 : Proxy CORS + balises Open Graph / JSON-LD ─
+  // ── Méthode 2 : Proxy CORS + Open Graph / JSON-LD ─────────
+  // (priorité sur Microlink car on obtient plus de données structurées)
+  let donneesProxy = null;
   try {
     const proxyResp = await fetch(`https://api.allorigins.win/get?url=${encodeURIComponent(url)}`);
     if (proxyResp.ok) {
       const result = await proxyResp.json();
       const html = result.contents || '';
 
-      const getOG = (prop) => {
-        const m = html.match(new RegExp(`<meta[^>]*property=["']og:${prop}["'][^>]*content=["']([^"']{1,500})["']`,'i'))
-                || html.match(new RegExp(`<meta[^>]*content=["']([^"']{1,500})["'][^>]*property=["']og:${prop}["']`,'i'));
+      const getOG = prop => {
+        const m = html.match(new RegExp(`<meta[^>]*property=["']og:${prop}["'][^>]*content=["']([^"']{1,600})["']`,'i'))
+                || html.match(new RegExp(`<meta[^>]*content=["']([^"']{1,600})["'][^>]*property=["']og:${prop}["']`,'i'));
         return m ? m[1].trim() : '';
       };
-      const getMeta = (name) => {
-        const m = html.match(new RegExp(`<meta[^>]*name=["']${name}["'][^>]*content=["']([^"']{1,500})["']`,'i'))
-                || html.match(new RegExp(`<meta[^>]*content=["']([^"']{1,500})["'][^>]*name=["']${name}["']`,'i'));
+      const getMeta = name => {
+        const m = html.match(new RegExp(`<meta[^>]*name=["']${name}["'][^>]*content=["']([^"']{1,600})["']`,'i'))
+                || html.match(new RegExp(`<meta[^>]*content=["']([^"']{1,600})["'][^>]*name=["']${name}["']`,'i'));
+        return m ? m[1].trim() : '';
+      };
+      const getTitle = () => {
+        const m = html.match(/<title[^>]*>([^<]{3,200})<\/title>/i);
         return m ? m[1].trim() : '';
       };
 
-      // JSON-LD (données structurées produit)
+      // JSON-LD
       let jld = null;
-      const jldMatches = html.matchAll(/<script[^>]*type=["']application\/ld\+json["'][^>]*>([\s\S]*?)<\/script>/gi);
-      for (const m of jldMatches) {
+      for (const m of html.matchAll(/<script[^>]*type=["']application\/ld\+json["'][^>]*>([\s\S]*?)<\/script>/gi)) {
         try {
           const parsed = JSON.parse(m[1]);
-          const candidates = Array.isArray(parsed) ? parsed : [parsed];
-          jld = candidates.find(x => x['@type'] === 'Product') || jld;
+          const list = Array.isArray(parsed) ? parsed : [parsed];
+          jld = list.find(x => x['@type'] === 'Product') || jld;
         } catch(e) {}
       }
 
-      const img = jld => {
-        if (!jld || !jld.image) return '';
+      const extractImg = jld => {
+        if (!jld?.image) return '';
         if (typeof jld.image === 'string') return jld.image;
         if (Array.isArray(jld.image)) return jld.image[0]?.url || jld.image[0] || '';
         return jld.image.url || '';
       };
-      const offre = jld && jld.offers ? (Array.isArray(jld.offers) ? jld.offers[0] : jld.offers) : null;
 
-      const nom   = getOG('title') || getMeta('og:title') || getMeta('title') || (jld && jld.name) || '';
-      const photo = getOG('image') || img(jld) || '';
-      const carac = getOG('description') || getMeta('description') || (jld && jld.description) || '';
-      const fab   = (jld && jld.brand && jld.brand.name) || '';
-      const sku   = (jld && jld.sku) || getMeta('product:retailer_item_id') || '';
-      const prix  = offre ? (offre.price || '') : getMeta('product:price:amount') || '';
-
-      if (nom) {
-        remplirFormulaire({ nom, photo, carac: carac.substring(0,300), fabricant: fab, sku, prix });
-        openModal('modal-ajout-produit');
-        statusEl.innerHTML = '✅ Données extraites — vérifiez et complétez si nécessaire.';
-        document.getElementById('url-import-input').value = '';
-        return;
+      // Photo : OG > JSON-LD > première grande image dans la page
+      let photo = getOG('image') || extractImg(jld);
+      if (!photo) {
+        const imgMatch = html.match(/<img[^>]+(src|data-src)=["'](https?:\/\/[^"']{20,500}\.(jpg|jpeg|png|webp)[^"']*)["'][^>]*(width=["']([2-9]\d{2,}|\d{4,})["']|class=["'][^"']*(product|main|primary|hero|principal)[^"']*["'])/i);
+        if (imgMatch) photo = imgMatch[2];
       }
+
+      const offre = jld?.offers ? (Array.isArray(jld.offers) ? jld.offers[0] : jld.offers) : null;
+      const nom   = nettoyerTitre(getOG('title') || getTitle() || (jld && jld.name) || '');
+      const carac = getOG('description') || getMeta('description') || (jld?.description) || '';
+      const fab   = jld?.brand?.name || '';
+      const sku   = jld?.sku || getMeta('product:retailer_item_id') || '';
+      const prix  = offre?.price || getMeta('product:price:amount') || '';
+
+      if (nom || photo) {
+        donneesProxy = { nom, photo, carac: carac.substring(0,300), fabricant: fab, sku, prix };
+      }
+    }
+  } catch(e) {}
+
+  // ── Méthode 3 : Microlink ─────────────────────────────────
+  try {
+    const resp = await fetch(`https://api.microlink.io?url=${encodeURIComponent(url)}`);
+    if (resp.ok) {
+      const result = await resp.json();
+      if (result.status === 'success') {
+        const m = result.data;
+        const titreMl  = nettoyerTitre(m.title || '');
+        const photoMl  = m.image?.url || '';
+        // Fusionner avec données proxy : proxy a priorité sur le nom, Microlink sur la photo si proxy n'en a pas
+        const nomFinal   = (donneesProxy?.nom && !estSlug(donneesProxy.nom)) ? donneesProxy.nom : (titreMl || donneesProxy?.nom || '');
+        const photoFinal = donneesProxy?.photo || photoMl;
+        if (nomFinal || photoFinal) {
+          remplirFormulaire({
+            nom:       nomFinal,
+            photo:     photoFinal,
+            carac:     donneesProxy?.carac || (m.description?.substring(0,300) || ''),
+            fabricant: donneesProxy?.fabricant || '',
+            sku:       donneesProxy?.sku || '',
+            prix:      donneesProxy?.prix || '',
+          });
+          openModal('modal-ajout-produit');
+          const champs = [nomFinal && 'nom', photoFinal && 'photo', donneesProxy?.prix && 'prix'].filter(Boolean);
+          statusEl.innerHTML = `✅ Importé (${champs.join(', ')}) — vérifiez et complétez.`;
+          document.getElementById('url-import-input').value = '';
+          return;
+        }
+      }
+    }
+  } catch(e) {}
+
+  // ── Méthode 4 : Données proxy seules ─────────────────────
+  if (donneesProxy) {
+    remplirFormulaire(donneesProxy);
+    openModal('modal-ajout-produit');
+    statusEl.innerHTML = '✅ Données extraites — vérifiez et complétez si nécessaire.';
+    document.getElementById('url-import-input').value = '';
+    return;
+  }
+
+  // ── Méthode 5 : Nom extrait du slug URL ──────────────────
+  try {
+    const slug = url.split('/').pop().replace(/[?#].*$/, '');
+    const nomSlug = nettoyerTitre(slug);
+    if (nomSlug && nomSlug.length > 4) {
+      document.getElementById('ap-nom').value = nomSlug;
+      document.getElementById('ap-url').value = url;
+      openModal('modal-ajout-produit');
+      statusEl.innerHTML = '⚠️ Nom extrait de l\'URL — vérifiez et complétez les autres champs.';
+      document.getElementById('url-import-input').value = '';
+      return;
     }
   } catch(e) {}
 

@@ -1017,36 +1017,119 @@ async function importerParURL() {
   const statusEl = document.getElementById('url-import-status');
   statusEl.innerHTML = '<span class="spinner"></span> Analyse en cours…';
 
-  // Essai Shopify JSON
+  function remplirFormulaire(champs) {
+    if (champs.nom)        document.getElementById('ap-nom').value        = champs.nom;
+    if (champs.fabricant)  document.getElementById('ap-fabricant').value  = champs.fabricant;
+    if (champs.modele)     document.getElementById('ap-modele').value     = champs.modele;
+    if (champs.sku)        document.getElementById('ap-sku').value        = champs.sku;
+    if (champs.prix)       document.getElementById('ap-prix').value       = champs.prix;
+    if (champs.photo)      document.getElementById('ap-photo').value      = champs.photo;
+    if (champs.carac)      document.getElementById('ap-carac').value      = champs.carac;
+    document.getElementById('ap-url').value = url;
+  }
+
+  // ── Méthode 1 : Shopify JSON ──────────────────────────────
   try {
-    const jsonUrl = url.replace(/\?.*$/, '') + '.json';
+    const jsonUrl = url.replace(/[?#].*$/, '') + '.json';
     const resp = await fetch(jsonUrl);
     if (resp.ok) {
       const data = await resp.json();
-      const p = data.product;
-      const v = p.variants && p.variants[0];
-
-      document.getElementById('ap-nom').value = p.title || '';
-      document.getElementById('ap-fabricant').value = p.vendor || '';
-      document.getElementById('ap-modele').value = v ? v.title : '';
-      document.getElementById('ap-sku').value = v ? v.sku : '';
-      document.getElementById('ap-prix').value = v ? v.price : '';
-      document.getElementById('ap-url').value = url;
-
-      // Photo
-      if (p.images && p.images[0]) {
-        document.getElementById('ap-photo').value = p.images[0].src;
+      if (data.product) {
+        const p = data.product;
+        const v = p.variants && p.variants[0];
+        remplirFormulaire({
+          nom:       p.title,
+          fabricant: p.vendor,
+          modele:    v ? v.title : '',
+          sku:       v ? v.sku   : '',
+          prix:      v ? v.price : '',
+          photo:     p.images && p.images[0] ? p.images[0].src : '',
+          carac:     p.body_html ? p.body_html.replace(/<[^>]+>/g,'').substring(0,300) : ''
+        });
+        openModal('modal-ajout-produit');
+        statusEl.innerHTML = '✅ Données Shopify importées.';
+        document.getElementById('url-import-input').value = '';
+        return;
       }
-
-      // Ouvrir le modal
-      openModal('modal-ajout-produit');
-      statusEl.innerHTML = '✅ Données importées depuis le site.';
-      document.getElementById('url-import-input').value = '';
-      return;
     }
   } catch(e) {}
 
-  statusEl.innerHTML = '⚠️ Impossible d\'importer automatiquement. Remplissez le formulaire manuellement.';
+  // ── Méthode 2 : Microlink (métadonnées enrichies) ─────────
+  try {
+    const resp = await fetch(`https://api.microlink.io?url=${encodeURIComponent(url)}`);
+    if (resp.ok) {
+      const result = await resp.json();
+      if (result.status === 'success') {
+        const m = result.data;
+        remplirFormulaire({
+          nom:   m.title  || '',
+          photo: m.image  ? m.image.url : '',
+          carac: m.description ? m.description.substring(0,300) : ''
+        });
+        openModal('modal-ajout-produit');
+        statusEl.innerHTML = '✅ Nom et photo importés — vérifiez les autres champs.';
+        document.getElementById('url-import-input').value = '';
+        return;
+      }
+    }
+  } catch(e) {}
+
+  // ── Méthode 3 : Proxy CORS + balises Open Graph / JSON-LD ─
+  try {
+    const proxyResp = await fetch(`https://api.allorigins.win/get?url=${encodeURIComponent(url)}`);
+    if (proxyResp.ok) {
+      const result = await proxyResp.json();
+      const html = result.contents || '';
+
+      const getOG = (prop) => {
+        const m = html.match(new RegExp(`<meta[^>]*property=["']og:${prop}["'][^>]*content=["']([^"']{1,500})["']`,'i'))
+                || html.match(new RegExp(`<meta[^>]*content=["']([^"']{1,500})["'][^>]*property=["']og:${prop}["']`,'i'));
+        return m ? m[1].trim() : '';
+      };
+      const getMeta = (name) => {
+        const m = html.match(new RegExp(`<meta[^>]*name=["']${name}["'][^>]*content=["']([^"']{1,500})["']`,'i'))
+                || html.match(new RegExp(`<meta[^>]*content=["']([^"']{1,500})["'][^>]*name=["']${name}["']`,'i'));
+        return m ? m[1].trim() : '';
+      };
+
+      // JSON-LD (données structurées produit)
+      let jld = null;
+      const jldMatches = html.matchAll(/<script[^>]*type=["']application\/ld\+json["'][^>]*>([\s\S]*?)<\/script>/gi);
+      for (const m of jldMatches) {
+        try {
+          const parsed = JSON.parse(m[1]);
+          const candidates = Array.isArray(parsed) ? parsed : [parsed];
+          jld = candidates.find(x => x['@type'] === 'Product') || jld;
+        } catch(e) {}
+      }
+
+      const img = jld => {
+        if (!jld || !jld.image) return '';
+        if (typeof jld.image === 'string') return jld.image;
+        if (Array.isArray(jld.image)) return jld.image[0]?.url || jld.image[0] || '';
+        return jld.image.url || '';
+      };
+      const offre = jld && jld.offers ? (Array.isArray(jld.offers) ? jld.offers[0] : jld.offers) : null;
+
+      const nom   = getOG('title') || getMeta('og:title') || getMeta('title') || (jld && jld.name) || '';
+      const photo = getOG('image') || img(jld) || '';
+      const carac = getOG('description') || getMeta('description') || (jld && jld.description) || '';
+      const fab   = (jld && jld.brand && jld.brand.name) || '';
+      const sku   = (jld && jld.sku) || getMeta('product:retailer_item_id') || '';
+      const prix  = offre ? (offre.price || '') : getMeta('product:price:amount') || '';
+
+      if (nom) {
+        remplirFormulaire({ nom, photo, carac: carac.substring(0,300), fabricant: fab, sku, prix });
+        openModal('modal-ajout-produit');
+        statusEl.innerHTML = '✅ Données extraites — vérifiez et complétez si nécessaire.';
+        document.getElementById('url-import-input').value = '';
+        return;
+      }
+    }
+  } catch(e) {}
+
+  // ── Fallback : formulaire vide ────────────────────────────
+  statusEl.innerHTML = '⚠️ Import impossible pour ce site. Remplissez le formulaire manuellement.';
   document.getElementById('ap-url').value = url;
   openModal('modal-ajout-produit');
 }

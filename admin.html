@@ -180,6 +180,29 @@ body { font-family: 'Roboto', sans-serif; background: var(--fond); color: var(--
 .projet-tabs { display: flex; border-bottom: 2px solid var(--bord); margin-bottom: 24px; }
 .projet-tab { padding: 12px 24px; font-size: 12px; letter-spacing: 1.5px; text-transform: uppercase; cursor: pointer; color: var(--texte-2); border-bottom: 2px solid transparent; margin-bottom: -2px; }
 .projet-tab.active { color: var(--charcoal); border-bottom-color: var(--caramel); font-weight: 500; }
+/* ===== VOLETS ===== */
+.volets-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+.volet-card { border: 1px solid var(--bord); background: var(--blanc); padding: 16px; transition: border-color .15s; }
+.volet-card.actif { border-color: var(--caramel); }
+.volet-card-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 6px; }
+.volet-card-header strong { font-size: 13px; }
+.volet-desc { font-size: 11px; color: var(--texte-2); margin-bottom: 12px; }
+.volet-toggle { padding: 5px 12px; font-size: 10px; letter-spacing: 1px; text-transform: uppercase; cursor: pointer; border: 1px solid var(--bord); background: var(--fond); color: var(--texte-2); }
+.volet-toggle.on { background: var(--caramel); color: var(--blanc); border-color: var(--caramel); }
+.volet-docs { border-top: 1px solid var(--bord); padding-top: 12px; margin-top: 4px; }
+.volet-upload { display: flex; gap: 8px; margin-bottom: 10px; flex-wrap: wrap; }
+.doc-item { display: flex; align-items: center; gap: 8px; padding: 6px 0; border-bottom: 1px solid var(--fond); font-size: 12px; }
+.doc-item a { color: var(--caramel); text-decoration: none; flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.doc-item a:hover { text-decoration: underline; }
+.doc-size { font-size: 10px; color: var(--texte-2); white-space: nowrap; }
+.doc-del { background: none; border: none; color: var(--texte-2); cursor: pointer; font-size: 16px; line-height: 1; padding: 0 2px; }
+.doc-del:hover { color: var(--danger); }
+.facture-row { display: grid; grid-template-columns: 1fr 2fr 80px 80px 24px; gap: 8px; align-items: center; padding: 6px 0; border-bottom: 1px solid var(--fond); font-size: 12px; }
+.facture-row.header { font-size: 10px; text-transform: uppercase; letter-spacing: 1px; color: var(--texte-2); padding-bottom: 8px; }
+.badge-paye { background: #e6f4ec; color: var(--success); font-size: 10px; padding: 2px 6px; }
+.badge-partiel { background: #fef3e2; color: #b86c00; font-size: 10px; padding: 2px 6px; }
+.badge-attente { background: var(--fond); color: var(--texte-2); font-size: 10px; padding: 2px 6px; }
+.factures-total { margin-top: 12px; padding-top: 8px; border-top: 2px solid var(--bord); font-size: 13px; display: flex; justify-content: space-between; }
 .categorie-section { margin-bottom: 32px; }
 .categorie-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; padding-bottom: 8px; border-bottom: 1px solid var(--bord); }
 .categorie-header h4 { font-size: 11px; letter-spacing: 2px; text-transform: uppercase; color: var(--caramel); }
@@ -300,6 +323,7 @@ body { font-family: 'Roboto', sans-serif; background: var(--fond); color: var(--
       <div class="page-body">
         <div class="projet-tabs">
           <div class="projet-tab active" onclick="showProjetTab('postes', this)">Postes & Sélections</div>
+          <div class="projet-tab" onclick="showProjetTab('volets', this);chargerVolets()">Volets & Documents</div>
           <div class="projet-tab" onclick="showProjetTab('progression', this)">Progression client</div>
           <div class="projet-tab" onclick="showProjetTab('infos', this)">Informations</div>
         </div>
@@ -311,6 +335,13 @@ body { font-family: 'Roboto', sans-serif; background: var(--fond); color: var(--
           </div>
           <div id="postes-categories-list">
             <div class="empty-state"><div class="icon">📋</div><h3>Aucun poste</h3><p>Ajoutez des postes pour commencer.</p></div>
+          </div>
+        </div>
+
+        <!-- TAB: Volets & Documents -->
+        <div id="tab-volets" class="projet-tab-content" style="display:none">
+          <div class="volets-grid" id="volets-grid">
+            <div class="empty-state" style="grid-column:1/-1"><p>Chargement des volets…</p></div>
           </div>
         </div>
 
@@ -1691,7 +1722,311 @@ document.querySelectorAll('.modal-overlay').forEach(overlay => {
 // ============================================================
 // INIT
 // ============================================================
+// VOLETS & DOCUMENTS
+// ============================================================
+const VOLETS_CONFIG = {
+  devis:              { label: 'Devis d\'approbation',    emoji: '📋', desc: 'Items de design à approuver par le client',  approbation: false },
+  tableau_ambiance:   { label: 'Tableau d\'ambiance',     emoji: '🎨', desc: 'Planches d\'inspiration sourcées liées au devis', approbation: false },
+  approbation_plans:  { label: 'Approbation des plans',   emoji: '📐', desc: 'Plans à faire approuver avant exécution',    approbation: true  },
+  approbation_budget: { label: 'Estimation budgétaire',   emoji: '💰', desc: 'Estimation à faire approuver',               approbation: true  },
+  plans_finals:       { label: 'Plans finals',            emoji: '🏗️', desc: 'Plans finalisés après approbation',          approbation: false },
+  procuration:        { label: 'Procuration',             emoji: '✍️', desc: 'Procuration pour dépôts et permis',           approbation: false },
+  offre_service:      { label: 'Offre de service',        emoji: '📄', desc: 'Offre de service signée',                    approbation: true  },
+  factures:           { label: 'Factures & paiements',    emoji: '🧾', desc: 'Suivi des factures et solde',                approbation: false }
+};
+
+let voletsProjet = {};
+
+async function chargerVolets() {
+  const { data } = await db.from('volets_projet').select('*').eq('projet_id', currentProjetId);
+  voletsProjet = {};
+  (data || []).forEach(v => { voletsProjet[v.type_volet] = v; });
+  renderVoletsGrid();
+}
+
+function renderVoletsGrid() {
+  const grid = document.getElementById('volets-grid');
+  grid.innerHTML = Object.entries(VOLETS_CONFIG).map(([type, cfg]) => {
+    const v = voletsProjet[type];
+    const isActif = v ? v.actif : false;
+    const docsSection = isActif ? `
+      <div class="volet-docs">
+        <div class="volet-upload">
+          <input type="file" id="file-input-${type}" style="display:none"
+            accept=".pdf,.jpg,.jpeg,.png,.dwg,.dxf,.xlsx,.docx"
+            onchange="uploadDocumentVolet('${type}', this)" />
+          <button class="btn btn-outline btn-sm" onclick="document.getElementById('file-input-${type}').click()">
+            + Document
+          </button>
+          ${type === 'factures' ? `<button class="btn btn-outline btn-sm" onclick="ouvrirModalFacture()">+ Facture</button>` : ''}
+        </div>
+        <div id="docs-list-${type}"><span style="font-size:11px;color:var(--texte-2)">Chargement…</span></div>
+      </div>` : '';
+    return `
+      <div class="volet-card ${isActif ? 'actif' : ''}" id="volet-card-${type}">
+        <div class="volet-card-header">
+          <strong>${cfg.emoji} ${cfg.label}</strong>
+          <button class="volet-toggle ${isActif ? 'on' : ''}" onclick="toggleVolet('${type}')">
+            ${isActif ? 'Activé' : 'Désactivé'}
+          </button>
+        </div>
+        <p class="volet-desc">${cfg.desc}</p>
+        ${docsSection}
+      </div>`;
+  }).join('');
+
+  // Charger les documents pour chaque volet actif
+  Object.entries(VOLETS_CONFIG).forEach(([type]) => {
+    if (voletsProjet[type]?.actif) chargerDocsVolet(type);
+  });
+}
+
+async function toggleVolet(type) {
+  const v = voletsProjet[type];
+  if (v) {
+    const { error } = await db.from('volets_projet').update({ actif: !v.actif }).eq('id', v.id);
+    if (!error) { v.actif = !v.actif; renderVoletsGrid(); }
+    else toast('Erreur : ' + error.message, 'error');
+  } else {
+    const { data, error } = await db.from('volets_projet').insert({
+      projet_id: currentProjetId,
+      type_volet: type,
+      actif: true,
+      ordre: Object.keys(VOLETS_CONFIG).indexOf(type)
+    }).select().single();
+    if (!error) { voletsProjet[type] = data; renderVoletsGrid(); }
+    else toast('Erreur : ' + error.message, 'error');
+  }
+}
+
+async function uploadDocumentVolet(type, input) {
+  const file = input.files[0];
+  if (!file) return;
+  const path = `${currentProjetId}/${type}/${Date.now()}_${file.name}`;
+  toast('Envoi en cours…', 'info');
+  const { error: upErr } = await db.storage.from('portail-cmpg').upload(path, file);
+  if (upErr) { toast('Erreur upload : ' + upErr.message, 'error'); return; }
+  const { error: dbErr } = await db.from('documents_projet').insert({
+    projet_id: currentProjetId,
+    type_volet: type,
+    nom: file.name,
+    storage_path: path,
+    taille_bytes: file.size,
+    mime_type: file.type
+  });
+  if (dbErr) { toast('Erreur BD : ' + dbErr.message, 'error'); return; }
+  toast('Document ajouté.', 'success');
+  input.value = '';
+  chargerDocsVolet(type);
+}
+
+async function chargerDocsVolet(type) {
+  const container = document.getElementById('docs-list-' + type);
+  if (!container) return;
+
+  if (type === 'factures') { await chargerFactures(container); return; }
+
+  const { data } = await db.from('documents_projet')
+    .select('*').eq('projet_id', currentProjetId).eq('type_volet', type).order('created_at');
+
+  if (!data || data.length === 0) {
+    container.innerHTML = '<p style="font-size:11px;color:var(--texte-2);margin-top:4px">Aucun document.</p>';
+    return;
+  }
+  container.innerHTML = data.map(doc => `
+    <div class="doc-item">
+      <span>${mimeEmoji(doc.mime_type)}</span>
+      <a href="#" onclick="voirDocument('${doc.storage_path}');return false">${doc.nom}</a>
+      <span class="doc-size">${formatBytes(doc.taille_bytes)}</span>
+      <button class="doc-del" onclick="supprimerDocument('${doc.id}','${doc.storage_path.replace(/'/g,"\\'")}','${type}')" title="Supprimer">×</button>
+    </div>`).join('');
+}
+
+async function voirDocument(path) {
+  const { data, error } = await db.storage.from('portail-cmpg').createSignedUrl(path, 300);
+  if (error || !data?.signedUrl) { toast('Impossible d\'ouvrir le document.', 'error'); return; }
+  window.open(data.signedUrl, '_blank');
+}
+
+async function supprimerDocument(id, path, type) {
+  if (!confirm('Supprimer ce document ?')) return;
+  await db.storage.from('portail-cmpg').remove([path]);
+  await db.from('documents_projet').delete().eq('id', id);
+  toast('Document supprimé.', 'success');
+  chargerDocsVolet(type);
+}
+
+function mimeEmoji(mime) {
+  if (!mime) return '📎';
+  if (mime.startsWith('image/')) return '🖼️';
+  if (mime === 'application/pdf') return '📄';
+  if (mime.includes('spreadsheet') || mime.includes('excel')) return '📊';
+  if (mime.includes('word') || mime.includes('document')) return '📝';
+  return '📎';
+}
+
+function formatBytes(b) {
+  if (!b) return '';
+  if (b < 1024) return b + ' o';
+  if (b < 1024 * 1024) return Math.round(b / 1024) + ' Ko';
+  return (b / (1024 * 1024)).toFixed(1) + ' Mo';
+}
+
+// ---- FACTURES ----
+async function chargerFactures(container) {
+  const { data: docs } = await db.from('documents_projet')
+    .select('*').eq('projet_id', currentProjetId).eq('type_volet', 'factures').order('created_at');
+  const { data: factures } = await db.from('factures_projet')
+    .select('*').eq('projet_id', currentProjetId).order('created_at');
+
+  let html = '';
+
+  // Documents (PDFs de factures)
+  if (docs && docs.length > 0) {
+    html += '<div style="margin-bottom:12px">' +
+      docs.map(doc => `
+        <div class="doc-item">
+          <span>${mimeEmoji(doc.mime_type)}</span>
+          <a href="#" onclick="voirDocument('${doc.storage_path}');return false">${doc.nom}</a>
+          <span class="doc-size">${formatBytes(doc.taille_bytes)}</span>
+          <button class="doc-del" onclick="supprimerDocument('${doc.id}','${doc.storage_path.replace(/'/g,"\\'")}','factures')">×</button>
+        </div>`).join('') +
+    '</div>';
+  }
+
+  // Tableau de factures
+  const f = factures || [];
+  if (f.length === 0) {
+    html += '<p style="font-size:11px;color:var(--texte-2)">Aucune facture enregistrée.</p>';
+  } else {
+    const total = f.reduce((s, x) => s + (x.montant || 0), 0);
+    const paye = f.filter(x => x.statut === 'paye').reduce((s, x) => s + (x.montant || 0), 0);
+    const badgeStatutF = s => s === 'paye' ? 'badge-paye' : s === 'partiel' ? 'badge-partiel' : 'badge-attente';
+    const labelStatutF = s => s === 'paye' ? 'Payé' : s === 'partiel' ? 'Partiel' : 'En attente';
+    html += `
+      <div class="facture-row header">
+        <span>N°</span><span>Description</span><span>Montant</span><span>Statut</span><span></span>
+      </div>` +
+      f.map(fac => `
+        <div class="facture-row">
+          <span>${fac.numero || '—'}</span>
+          <span>${fac.description || '—'}</span>
+          <span>${(fac.montant || 0).toLocaleString('fr-CA', {style:'currency',currency:'CAD'})}</span>
+          <span><span class="${badgeStatutF(fac.statut)}">${labelStatutF(fac.statut)}</span></span>
+          <span style="display:flex;gap:4px">
+            <button class="doc-del" onclick="editerFacture('${fac.id}','${(fac.numero||'').replace(/'/g,"\\'")}','${(fac.description||'').replace(/'/g,"\\'")}','${fac.montant}','${fac.statut}','${fac.date_echeance||''}')">✏️</button>
+            <button class="doc-del" onclick="supprimerFacture('${fac.id}')">×</button>
+          </span>
+        </div>`).join('') +
+      `<div class="factures-total">
+        <span>Total facturé</span>
+        <strong>${total.toLocaleString('fr-CA', {style:'currency',currency:'CAD'})}</strong>
+      </div>
+      <div class="factures-total" style="color:var(--success)">
+        <span>Reçu</span>
+        <strong>${paye.toLocaleString('fr-CA', {style:'currency',currency:'CAD'})}</strong>
+      </div>
+      <div class="factures-total" style="color:var(--danger)">
+        <span>Solde dû</span>
+        <strong>${(total - paye).toLocaleString('fr-CA', {style:'currency',currency:'CAD'})}</strong>
+      </div>`;
+  }
+  container.innerHTML = html;
+}
+
+function ouvrirModalFacture() {
+  document.getElementById('facture-id').value = '';
+  document.getElementById('facture-numero').value = '';
+  document.getElementById('facture-description').value = '';
+  document.getElementById('facture-montant').value = '';
+  document.getElementById('facture-statut').value = 'en_attente';
+  document.getElementById('facture-echeance').value = '';
+  openModal('modal-facture');
+}
+
+function editerFacture(id, numero, description, montant, statut, echeance) {
+  document.getElementById('facture-id').value = id;
+  document.getElementById('facture-numero').value = numero;
+  document.getElementById('facture-description').value = description;
+  document.getElementById('facture-montant').value = montant;
+  document.getElementById('facture-statut').value = statut;
+  document.getElementById('facture-echeance').value = echeance;
+  openModal('modal-facture');
+}
+
+async function sauvegarderFacture() {
+  const id = document.getElementById('facture-id').value;
+  const payload = {
+    projet_id: currentProjetId,
+    numero: document.getElementById('facture-numero').value.trim() || null,
+    description: document.getElementById('facture-description').value.trim() || null,
+    montant: parseFloat(document.getElementById('facture-montant').value) || 0,
+    statut: document.getElementById('facture-statut').value,
+    date_echeance: document.getElementById('facture-echeance').value || null
+  };
+  if (id) {
+    await db.from('factures_projet').update(payload).eq('id', id);
+  } else {
+    await db.from('factures_projet').insert(payload);
+  }
+  closeModal('modal-facture');
+  toast('Facture enregistrée.', 'success');
+  chargerDocsVolet('factures');
+}
+
+async function supprimerFacture(id) {
+  if (!confirm('Supprimer cette facture ?')) return;
+  await db.from('factures_projet').delete().eq('id', id);
+  toast('Facture supprimée.', 'success');
+  chargerDocsVolet('factures');
+}
+
+// ============================================================
 checkAuth();
 </script>
+
+<!-- Modal Ajout Facture -->
+<div id="modal-facture" class="modal-overlay">
+  <div class="modal">
+    <div class="modal-header">
+      <h3>Ajouter une facture</h3>
+      <button class="modal-close" onclick="closeModal('modal-facture')">×</button>
+    </div>
+    <div class="modal-body">
+      <input type="hidden" id="facture-id" />
+      <div class="form-grid">
+        <div class="form-group">
+          <label>N° de facture</label>
+          <input type="text" id="facture-numero" placeholder="2024-001" />
+        </div>
+        <div class="form-group">
+          <label>Montant ($)</label>
+          <input type="number" id="facture-montant" min="0" step="0.01" placeholder="0.00" />
+        </div>
+        <div class="form-group" style="grid-column:1/-1">
+          <label>Description</label>
+          <input type="text" id="facture-description" placeholder="Acompte honoraires phase conception" />
+        </div>
+        <div class="form-group">
+          <label>Statut</label>
+          <select id="facture-statut">
+            <option value="en_attente">En attente</option>
+            <option value="partiel">Partiellement payé</option>
+            <option value="paye">Payé</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label>Date d'échéance</label>
+          <input type="date" id="facture-echeance" />
+        </div>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-outline" onclick="closeModal('modal-facture')">Annuler</button>
+      <button class="btn btn-dark" onclick="sauvegarderFacture()">Enregistrer</button>
+    </div>
+  </div>
+</div>
+
 </body>
 </html>

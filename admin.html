@@ -1,0 +1,1223 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>CMPG — Portail Administration</title>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<link href="https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;500;700&family=Noto+Serif+Display:ital,wght@0,400;0,700;1,400&display=swap" rel="stylesheet">
+<style>
+/* ===== CMPG DESIGN SYSTEM ===== */
+:root {
+  --charcoal: #3A3B3A;
+  --caramel: #CF934F;
+  --blanc: #FFFFFF;
+  --gris: #C7C8CA;
+  --fond: #F5F4EE;
+  --fond-card: #FFFFFF;
+  --bord: #E3DFD8;
+  --texte: #3A3B3A;
+  --texte-2: #706862;
+  --success: #4B7A5C;
+  --warning: #CF934F;
+  --danger: #8B3A3A;
+  --shadow: 0 1px 4px rgba(58,59,58,.08), 0 4px 16px rgba(58,59,58,.06);
+}
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body { font-family: 'Roboto', sans-serif; background: var(--fond); color: var(--texte); min-height: 100vh; }
+
+/* ===== AUTH SCREEN ===== */
+#auth-screen {
+  min-height: 100vh; display: flex; align-items: center; justify-content: center;
+  background: var(--charcoal);
+}
+.auth-card {
+  background: var(--blanc); padding: 48px 40px; width: 380px;
+  box-shadow: 0 8px 40px rgba(0,0,0,.3);
+}
+.auth-logo { text-align: center; margin-bottom: 32px; }
+.auth-logo h1 { font-family: 'Noto Serif Display', serif; font-size: 28px; color: var(--charcoal); letter-spacing: 2px; }
+.auth-logo p { font-size: 11px; letter-spacing: 3px; text-transform: uppercase; color: var(--caramel); margin-top: 4px; }
+.auth-card input {
+  width: 100%; padding: 12px 14px; border: 1px solid var(--bord); font-family: 'Roboto', sans-serif;
+  font-size: 14px; margin-bottom: 14px; outline: none; transition: border .2s;
+}
+.auth-card input:focus { border-color: var(--caramel); }
+.btn-primary {
+  width: 100%; padding: 13px; background: var(--charcoal); color: var(--blanc);
+  border: none; font-family: 'Roboto', sans-serif; font-size: 13px; letter-spacing: 1.5px;
+  text-transform: uppercase; cursor: pointer; transition: background .2s;
+}
+.btn-primary:hover { background: #555; }
+#auth-error { color: #c0392b; font-size: 13px; margin-top: 8px; text-align: center; }
+
+/* ===== LAYOUT ===== */
+#app { display: none; }
+.sidebar {
+  position: fixed; left: 0; top: 0; bottom: 0; width: 220px;
+  background: var(--charcoal); display: flex; flex-direction: column;
+}
+.sidebar-logo {
+  padding: 28px 24px 20px; border-bottom: 1px solid rgba(255,255,255,.1);
+}
+.sidebar-logo h1 { font-family: 'Noto Serif Display', serif; font-size: 20px; color: var(--blanc); }
+.sidebar-logo p { font-size: 9px; letter-spacing: 3px; text-transform: uppercase; color: var(--caramel); margin-top: 2px; }
+.sidebar-nav { flex: 1; padding: 16px 0; }
+.nav-item {
+  display: flex; align-items: center; gap: 12px; padding: 11px 24px;
+  color: rgba(255,255,255,.6); font-size: 13px; cursor: pointer;
+  transition: all .15s; border-left: 3px solid transparent; text-decoration: none;
+}
+.nav-item:hover { color: var(--blanc); background: rgba(255,255,255,.05); }
+.nav-item.active { color: var(--blanc); border-left-color: var(--caramel); background: rgba(207,147,79,.1); }
+.nav-icon { width: 18px; text-align: center; font-size: 15px; }
+.sidebar-bottom { padding: 16px 24px; border-top: 1px solid rgba(255,255,255,.1); }
+.user-email { font-size: 11px; color: rgba(255,255,255,.4); margin-bottom: 8px; }
+.btn-signout { background: none; border: 1px solid rgba(255,255,255,.2); color: rgba(255,255,255,.6); padding: 7px 14px; font-size: 11px; letter-spacing: 1px; text-transform: uppercase; cursor: pointer; width: 100%; }
+.btn-signout:hover { border-color: rgba(255,255,255,.5); color: var(--blanc); }
+
+.main-content { margin-left: 220px; min-height: 100vh; }
+.page-header {
+  background: var(--blanc); border-bottom: 1px solid var(--bord);
+  padding: 24px 36px; display: flex; align-items: center; justify-content: space-between;
+}
+.page-header h2 { font-family: 'Noto Serif Display', serif; font-size: 22px; color: var(--charcoal); }
+.page-body { padding: 32px 36px; }
+
+/* ===== VIEWS ===== */
+.view { display: none; }
+.view.active { display: block; }
+
+/* ===== CARDS ===== */
+.card {
+  background: var(--fond-card); border: 1px solid var(--bord);
+  padding: 24px; margin-bottom: 20px; box-shadow: var(--shadow);
+}
+.card-grid {
+  display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 20px; margin-bottom: 24px;
+}
+.project-card {
+  background: var(--blanc); border: 1px solid var(--bord); padding: 24px;
+  cursor: pointer; transition: all .2s; box-shadow: var(--shadow);
+}
+.project-card:hover { border-color: var(--caramel); transform: translateY(-2px); box-shadow: 0 6px 24px rgba(58,59,58,.12); }
+.project-card h3 { font-family: 'Noto Serif Display', serif; font-size: 17px; margin-bottom: 4px; }
+.project-card .client-name { font-size: 12px; color: var(--caramel); letter-spacing: 1px; text-transform: uppercase; margin-bottom: 12px; }
+.project-card .address { font-size: 13px; color: var(--texte-2); margin-bottom: 14px; }
+.progress-bar { height: 3px; background: var(--bord); margin-bottom: 6px; }
+.progress-fill { height: 100%; background: var(--caramel); transition: width .3s; }
+.progress-label { font-size: 11px; color: var(--texte-2); display: flex; justify-content: space-between; }
+.status-badge {
+  display: inline-block; padding: 3px 10px; font-size: 10px; letter-spacing: 1px;
+  text-transform: uppercase; font-weight: 500;
+}
+.status-actif { background: rgba(75,122,92,.1); color: #4B7A5C; }
+.status-complété { background: rgba(58,59,58,.1); color: var(--charcoal); }
+.status-archivé { background: rgba(199,200,202,.3); color: #706862; }
+
+/* ===== FORMS ===== */
+.form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+.form-group { margin-bottom: 16px; }
+.form-group label { display: block; font-size: 11px; letter-spacing: 1.5px; text-transform: uppercase; color: var(--texte-2); margin-bottom: 6px; }
+.form-group input, .form-group select, .form-group textarea {
+  width: 100%; padding: 10px 12px; border: 1px solid var(--bord);
+  font-family: 'Roboto', sans-serif; font-size: 13px; outline: none; background: var(--blanc);
+  transition: border .2s;
+}
+.form-group input:focus, .form-group select:focus, .form-group textarea:focus { border-color: var(--caramel); }
+.form-group textarea { resize: vertical; min-height: 80px; }
+.form-full { grid-column: 1 / -1; }
+
+.btn {
+  padding: 10px 20px; font-family: 'Roboto', sans-serif; font-size: 12px;
+  letter-spacing: 1.2px; text-transform: uppercase; cursor: pointer; border: none; transition: all .2s;
+}
+.btn-dark { background: var(--charcoal); color: var(--blanc); }
+.btn-dark:hover { background: #555; }
+.btn-outline { background: transparent; color: var(--charcoal); border: 1px solid var(--charcoal); }
+.btn-outline:hover { background: var(--charcoal); color: var(--blanc); }
+.btn-caramel { background: var(--caramel); color: var(--blanc); }
+.btn-caramel:hover { background: #b87d3f; }
+.btn-sm { padding: 7px 14px; font-size: 11px; }
+.btn-danger { background: var(--danger); color: var(--blanc); }
+
+/* ===== MODAL ===== */
+.modal-overlay {
+  display: none; position: fixed; inset: 0; background: rgba(58,59,58,.5);
+  z-index: 1000; align-items: center; justify-content: center;
+}
+.modal-overlay.open { display: flex; }
+.modal {
+  background: var(--blanc); width: 580px; max-width: 95vw; max-height: 90vh;
+  overflow-y: auto; box-shadow: 0 20px 60px rgba(0,0,0,.3);
+}
+.modal-header {
+  padding: 24px 28px; border-bottom: 1px solid var(--bord);
+  display: flex; align-items: center; justify-content: space-between;
+}
+.modal-header h3 { font-family: 'Noto Serif Display', serif; font-size: 18px; }
+.modal-close { background: none; border: none; font-size: 20px; cursor: pointer; color: var(--texte-2); }
+.modal-body { padding: 28px; }
+.modal-footer { padding: 20px 28px; border-top: 1px solid var(--bord); display: flex; gap: 12px; justify-content: flex-end; }
+
+/* ===== TABLE ===== */
+.data-table { width: 100%; border-collapse: collapse; }
+.data-table th { text-align: left; padding: 10px 14px; font-size: 10px; letter-spacing: 1.5px; text-transform: uppercase; color: var(--texte-2); border-bottom: 2px solid var(--bord); }
+.data-table td { padding: 12px 14px; border-bottom: 1px solid var(--bord); font-size: 13px; vertical-align: middle; }
+.data-table tr:hover td { background: var(--fond); }
+.data-table .product-thumb { width: 44px; height: 44px; object-fit: cover; background: var(--fond); border: 1px solid var(--bord); }
+
+/* ===== BANQUE PRODUITS ===== */
+.product-bank-filters { display: flex; gap: 12px; margin-bottom: 20px; align-items: center; flex-wrap: wrap; }
+.product-bank-filters input { padding: 9px 12px; border: 1px solid var(--bord); font-size: 13px; flex: 1; min-width: 200px; outline: none; }
+.product-bank-filters input:focus { border-color: var(--caramel); }
+.product-bank-filters select { padding: 9px 12px; border: 1px solid var(--bord); font-size: 13px; outline: none; background: var(--blanc); }
+.url-import { display: flex; gap: 10px; margin-bottom: 20px; }
+.url-import input { flex: 1; padding: 10px 14px; border: 1px solid var(--bord); font-size: 13px; outline: none; }
+.url-import input:focus { border-color: var(--caramel); }
+
+/* ===== PROJET DETAIL ===== */
+.projet-tabs { display: flex; border-bottom: 2px solid var(--bord); margin-bottom: 24px; }
+.projet-tab { padding: 12px 24px; font-size: 12px; letter-spacing: 1.5px; text-transform: uppercase; cursor: pointer; color: var(--texte-2); border-bottom: 2px solid transparent; margin-bottom: -2px; }
+.projet-tab.active { color: var(--charcoal); border-bottom-color: var(--caramel); font-weight: 500; }
+.categorie-section { margin-bottom: 32px; }
+.categorie-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; padding-bottom: 8px; border-bottom: 1px solid var(--bord); }
+.categorie-header h4 { font-size: 11px; letter-spacing: 2px; text-transform: uppercase; color: var(--caramel); }
+.poste-card { background: var(--blanc); border: 1px solid var(--bord); margin-bottom: 12px; }
+.poste-header { padding: 12px 16px; display: flex; align-items: center; justify-content: space-between; cursor: pointer; }
+.poste-header:hover { background: var(--fond); }
+.poste-ref { font-weight: 500; font-size: 13px; margin-right: 10px; }
+.poste-piece { font-size: 12px; color: var(--texte-2); }
+.poste-options { padding: 0 16px 16px; border-top: 1px solid var(--bord); }
+.option-row { display: grid; grid-template-columns: 60px 60px 1fr auto; gap: 12px; align-items: center; padding: 10px 0; border-bottom: 1px solid var(--bord); }
+.option-row:last-child { border-bottom: none; }
+.option-letter { font-size: 12px; font-weight: 700; color: var(--caramel); text-transform: uppercase; }
+.option-status { font-size: 11px; padding: 3px 8px; text-align: center; }
+.status-approuve { background: rgba(75,122,92,.12); color: #4B7A5C; }
+.status-a_revoir { background: rgba(139,58,58,.1); color: var(--danger); }
+.status-en_attente { background: rgba(199,200,202,.3); color: #706862; }
+
+/* ===== EMPTY STATES ===== */
+.empty-state { text-align: center; padding: 60px 20px; color: var(--texte-2); }
+.empty-state .icon { font-size: 40px; margin-bottom: 12px; }
+.empty-state h3 { font-family: 'Noto Serif Display', serif; font-size: 18px; color: var(--charcoal); margin-bottom: 8px; }
+.empty-state p { font-size: 13px; margin-bottom: 20px; }
+
+/* ===== SPINNER ===== */
+.spinner { display: inline-block; width: 16px; height: 16px; border: 2px solid var(--bord); border-top-color: var(--caramel); border-radius: 50%; animation: spin .7s linear infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
+
+/* ===== TOAST ===== */
+#toast-container { position: fixed; bottom: 24px; right: 24px; z-index: 9999; display: flex; flex-direction: column; gap: 8px; }
+.toast { padding: 12px 20px; font-size: 13px; color: var(--blanc); box-shadow: var(--shadow); animation: slideIn .2s ease; }
+.toast-success { background: #4B7A5C; }
+.toast-error { background: var(--danger); }
+.toast-info { background: var(--charcoal); }
+@keyframes slideIn { from { transform: translateX(100%); opacity: 0; } to { transform: translateX(0); opacity: 1; } }
+
+/* ===== RESPONSIVE ===== */
+@media (max-width: 768px) {
+  .sidebar { width: 100%; position: relative; }
+  .main-content { margin-left: 0; }
+  .form-grid { grid-template-columns: 1fr; }
+  .page-body { padding: 20px 16px; }
+}
+</style>
+</head>
+<body>
+
+<!-- AUTH -->
+<div id="auth-screen">
+  <div class="auth-card">
+    <div class="auth-logo">
+      <h1>CMPG</h1>
+      <p>Architecture & Design</p>
+    </div>
+    <input type="email" id="login-email" placeholder="Adresse courriel" />
+    <input type="password" id="login-password" placeholder="Mot de passe" />
+    <button class="btn-primary" onclick="login()">Se connecter</button>
+    <div id="auth-error"></div>
+  </div>
+</div>
+
+<!-- APP -->
+<div id="app">
+  <!-- Sidebar -->
+  <aside class="sidebar">
+    <div class="sidebar-logo">
+      <h1>CMPG</h1>
+      <p>Portail Admin</p>
+    </div>
+    <nav class="sidebar-nav">
+      <a class="nav-item active" onclick="showView('projets')" href="#">
+        <span class="nav-icon">📁</span> Projets
+      </a>
+      <a class="nav-item" onclick="showView('banque')" href="#">
+        <span class="nav-icon">🗃️</span> Banque produits
+      </a>
+      <a class="nav-item" onclick="showView('clients')" href="#">
+        <span class="nav-icon">👤</span> Clients
+      </a>
+    </nav>
+    <div class="sidebar-bottom">
+      <div class="user-email" id="user-email-display"></div>
+      <button class="btn-signout" onclick="logout()">Déconnexion</button>
+    </div>
+  </aside>
+
+  <!-- Main -->
+  <div class="main-content">
+
+    <!-- ===== VUE PROJETS ===== -->
+    <div id="view-projets" class="view active">
+      <div class="page-header">
+        <h2>Projets</h2>
+        <button class="btn btn-dark" onclick="openModal('modal-nouveau-projet')">+ Nouveau projet</button>
+      </div>
+      <div class="page-body">
+        <div id="projets-grid" class="card-grid">
+          <div class="empty-state" style="grid-column:1/-1">
+            <div class="icon">📁</div>
+            <h3>Chargement…</h3>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ===== VUE DÉTAIL PROJET ===== -->
+    <div id="view-projet-detail" class="view">
+      <div class="page-header">
+        <div>
+          <button class="btn btn-outline btn-sm" onclick="showView('projets')" style="margin-bottom:6px">← Retour</button>
+          <h2 id="detail-projet-nom">Projet</h2>
+          <div id="detail-projet-client" style="font-size:12px;color:var(--caramel);letter-spacing:1px;text-transform:uppercase;margin-top:2px"></div>
+        </div>
+        <div style="display:flex;gap:10px">
+          <button class="btn btn-outline btn-sm" onclick="genererPDF()">⬇ PDF Client</button>
+          <button class="btn btn-caramel btn-sm" onclick="genererExcel()">⬇ Excel Annexe</button>
+        </div>
+      </div>
+      <div class="page-body">
+        <div class="projet-tabs">
+          <div class="projet-tab active" onclick="showProjetTab('postes', this)">Postes & Sélections</div>
+          <div class="projet-tab" onclick="showProjetTab('progression', this)">Progression client</div>
+          <div class="projet-tab" onclick="showProjetTab('infos', this)">Informations</div>
+        </div>
+
+        <!-- TAB: Postes -->
+        <div id="tab-postes" class="projet-tab-content">
+          <div style="display:flex;justify-content:flex-end;margin-bottom:16px">
+            <button class="btn btn-dark btn-sm" onclick="openModalPoste()">+ Ajouter un poste</button>
+          </div>
+          <div id="postes-categories-list">
+            <div class="empty-state"><div class="icon">📋</div><h3>Aucun poste</h3><p>Ajoutez des postes pour commencer.</p></div>
+          </div>
+        </div>
+
+        <!-- TAB: Progression -->
+        <div id="tab-progression" class="projet-tab-content" style="display:none">
+          <div id="progression-content">
+            <div class="card">
+              <div id="progression-stats" style="display:grid;grid-template-columns:repeat(4,1fr);gap:20px;text-align:center">
+                <!-- Stats dynamiques -->
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- TAB: Infos -->
+        <div id="tab-infos" class="projet-tab-content" style="display:none">
+          <div class="card" id="infos-content"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ===== VUE BANQUE PRODUITS ===== -->
+    <div id="view-banque" class="view">
+      <div class="page-header">
+        <h2>Banque de produits</h2>
+        <button class="btn btn-dark" onclick="openModal('modal-ajout-produit')">+ Ajouter un produit</button>
+      </div>
+      <div class="page-body">
+        <!-- Import URL rapide -->
+        <div class="card">
+          <div style="font-size:11px;letter-spacing:1.5px;text-transform:uppercase;color:var(--texte-2);margin-bottom:10px">Ajout rapide par URL</div>
+          <div class="url-import">
+            <input type="url" id="url-import-input" placeholder="https://www.espaceplomberium.com/products/..." />
+            <button class="btn btn-caramel" onclick="importerParURL()">Importer</button>
+          </div>
+          <div id="url-import-status" style="font-size:12px;color:var(--texte-2);margin-top:4px"></div>
+        </div>
+
+        <!-- Filtres -->
+        <div class="product-bank-filters">
+          <input type="search" id="search-produits" placeholder="Rechercher un produit…" oninput="filtrerProduits()" />
+          <select id="filter-categorie" onchange="filtrerProduits()">
+            <option value="">Toutes les catégories</option>
+          </select>
+        </div>
+
+        <!-- Table produits -->
+        <div class="card" style="padding:0;overflow:hidden">
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th>Photo</th>
+                <th>Produit</th>
+                <th>Fabricant</th>
+                <th>Catégorie</th>
+                <th>Prix</th>
+                <th>Actions</th>
+              </tr>
+            </thead>
+            <tbody id="produits-tbody">
+              <tr><td colspan="6" style="text-align:center;padding:40px;color:var(--texte-2)">Chargement…</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <!-- ===== VUE CLIENTS ===== -->
+    <div id="view-clients" class="view">
+      <div class="page-header">
+        <h2>Clients</h2>
+        <button class="btn btn-dark" onclick="openModal('modal-nouveau-client')">+ Nouveau client</button>
+      </div>
+      <div class="page-body">
+        <div class="card" style="padding:0;overflow:hidden">
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th>Nom</th>
+                <th>Courriel</th>
+                <th>Téléphone</th>
+                <th>Projets</th>
+                <th>Actions</th>
+              </tr>
+            </thead>
+            <tbody id="clients-tbody">
+              <tr><td colspan="5" style="text-align:center;padding:40px;color:var(--texte-2)">Chargement…</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+  </div><!-- fin main-content -->
+</div><!-- fin app -->
+
+<!-- ===== MODALS ===== -->
+
+<!-- Modal Nouveau Projet -->
+<div id="modal-nouveau-projet" class="modal-overlay">
+  <div class="modal">
+    <div class="modal-header">
+      <h3>Nouveau projet</h3>
+      <button class="modal-close" onclick="closeModal('modal-nouveau-projet')">×</button>
+    </div>
+    <div class="modal-body">
+      <div class="form-grid">
+        <div class="form-group form-full">
+          <label>Nom du projet *</label>
+          <input type="text" id="np-nom" placeholder="Résidence Tremblay — Cuisine" />
+        </div>
+        <div class="form-group form-full">
+          <label>Adresse</label>
+          <input type="text" id="np-adresse" placeholder="123 rue des Érables, Montréal" />
+        </div>
+        <div class="form-group form-full">
+          <label>Client</label>
+          <select id="np-client">
+            <option value="">-- Sélectionner un client --</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label>Budget minimum ($)</label>
+          <input type="number" id="np-budget-min" placeholder="25000" />
+        </div>
+        <div class="form-group">
+          <label>Budget maximum ($)</label>
+          <input type="number" id="np-budget-max" placeholder="40000" />
+        </div>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-outline" onclick="closeModal('modal-nouveau-projet')">Annuler</button>
+      <button class="btn btn-dark" onclick="creerProjet()">Créer le projet</button>
+    </div>
+  </div>
+</div>
+
+<!-- Modal Nouveau Client -->
+<div id="modal-nouveau-client" class="modal-overlay">
+  <div class="modal">
+    <div class="modal-header">
+      <h3>Nouveau client</h3>
+      <button class="modal-close" onclick="closeModal('modal-nouveau-client')">×</button>
+    </div>
+    <div class="modal-body">
+      <div class="form-grid">
+        <div class="form-group form-full">
+          <label>Nom complet *</label>
+          <input type="text" id="nc-nom" placeholder="Martine Tremblay" />
+        </div>
+        <div class="form-group form-full">
+          <label>Adresse courriel *</label>
+          <input type="email" id="nc-email" placeholder="martine@exemple.com" />
+        </div>
+        <div class="form-group form-full">
+          <label>Téléphone</label>
+          <input type="tel" id="nc-tel" placeholder="514 555-1234" />
+        </div>
+      </div>
+      <div style="background:var(--fond);padding:12px 16px;font-size:12px;color:var(--texte-2);margin-top:8px">
+        ℹ️ Le client recevra un lien d'accès par courriel pour se connecter au portail. L'accès Supabase Auth sera configuré séparément.
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-outline" onclick="closeModal('modal-nouveau-client')">Annuler</button>
+      <button class="btn btn-dark" onclick="creerClient()">Créer le client</button>
+    </div>
+  </div>
+</div>
+
+<!-- Modal Ajout Produit -->
+<div id="modal-ajout-produit" class="modal-overlay">
+  <div class="modal">
+    <div class="modal-header">
+      <h3>Ajouter un produit</h3>
+      <button class="modal-close" onclick="closeModal('modal-ajout-produit')">×</button>
+    </div>
+    <div class="modal-body">
+      <div class="form-grid">
+        <div class="form-group form-full">
+          <label>Catégorie *</label>
+          <select id="ap-categorie">
+            <option value="">-- Sélectionner --</option>
+          </select>
+        </div>
+        <div class="form-group form-full">
+          <label>URL du produit</label>
+          <input type="url" id="ap-url" placeholder="https://..." />
+        </div>
+        <div class="form-group form-full">
+          <label>Nom / Description *</label>
+          <input type="text" id="ap-nom" placeholder="Évier Blanco Silgranit 33po" />
+        </div>
+        <div class="form-group">
+          <label>Fabricant</label>
+          <input type="text" id="ap-fabricant" placeholder="Blanco" />
+        </div>
+        <div class="form-group">
+          <label>Modèle</label>
+          <input type="text" id="ap-modele" placeholder="PRECIS II 33" />
+        </div>
+        <div class="form-group">
+          <label>SKU / Code</label>
+          <input type="text" id="ap-sku" placeholder="BL-440149" />
+        </div>
+        <div class="form-group">
+          <label>Prix ($)</label>
+          <input type="number" id="ap-prix" placeholder="749.00" step="0.01" />
+        </div>
+        <div class="form-group">
+          <label>Couleur / Fini</label>
+          <input type="text" id="ap-couleur" placeholder="Anthracite" />
+        </div>
+        <div class="form-group">
+          <label>Dimensions</label>
+          <input type="text" id="ap-dimensions" placeholder='33" x 18"' />
+        </div>
+        <div class="form-group form-full">
+          <label>Caractéristiques</label>
+          <textarea id="ap-carac" placeholder="Résine composite, 1 cuve, vidange incluse…"></textarea>
+        </div>
+        <div class="form-group form-full">
+          <label>URL Photo</label>
+          <input type="url" id="ap-photo" placeholder="https://..." />
+        </div>
+        <div class="form-group form-full">
+          <label>Notes internes</label>
+          <textarea id="ap-notes" placeholder="Notes CMPG (non visibles par le client)…"></textarea>
+        </div>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-outline" onclick="closeModal('modal-ajout-produit')">Annuler</button>
+      <button class="btn btn-dark" onclick="sauvegarderProduit()">Ajouter à la banque</button>
+    </div>
+  </div>
+</div>
+
+<!-- Modal Ajout Poste -->
+<div id="modal-ajout-poste" class="modal-overlay">
+  <div class="modal">
+    <div class="modal-header">
+      <h3>Ajouter un poste</h3>
+      <button class="modal-close" onclick="closeModal('modal-ajout-poste')">×</button>
+    </div>
+    <div class="modal-body">
+      <div class="form-grid">
+        <div class="form-group">
+          <label>Référence *</label>
+          <input type="text" id="poste-ref" placeholder="PL-01" />
+        </div>
+        <div class="form-group">
+          <label>Pièce</label>
+          <input type="text" id="poste-piece" placeholder="Cuisine" />
+        </div>
+        <div class="form-group">
+          <label>Catégorie *</label>
+          <select id="poste-categorie">
+            <option value="">-- Sélectionner --</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label>Type de sélection</label>
+          <select id="poste-type">
+            <option value="unique">Option unique (A)</option>
+            <option value="multiple">Options multiples (A, B, C)</option>
+          </select>
+        </div>
+      </div>
+      <div id="poste-options-section">
+        <div style="font-size:11px;letter-spacing:1.5px;text-transform:uppercase;color:var(--texte-2);margin-bottom:10px">Option A — Produit</div>
+        <div class="form-group">
+          <label>Produit (banque)</label>
+          <select id="poste-produit-a">
+            <option value="">-- Choisir dans la banque --</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label>Quantité</label>
+          <input type="number" id="poste-qty-a" value="1" min="1" />
+        </div>
+        <div class="form-group">
+          <label>Note pour le client</label>
+          <input type="text" id="poste-note-a" placeholder="Recommandé pour les espaces de moins de 20m²" />
+        </div>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-outline" onclick="closeModal('modal-ajout-poste')">Annuler</button>
+      <button class="btn btn-dark" onclick="sauvegarderPoste()">Ajouter le poste</button>
+    </div>
+  </div>
+</div>
+
+<!-- Toast container -->
+<div id="toast-container"></div>
+
+<script>
+// ============================================================
+// CONFIG — à modifier avec vos clés Supabase
+// ============================================================
+const SUPABASE_URL = 'https://VOTRE_PROJECT_ID.supabase.co';
+const SUPABASE_ANON_KEY = 'VOTRE_ANON_KEY_ICI';
+
+const { createClient } = supabase;
+const db = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
+// ============================================================
+// STATE
+// ============================================================
+let currentProjetId = null;
+let categories = [];
+let produitsCache = [];
+
+// ============================================================
+// AUTH
+// ============================================================
+async function login() {
+  const email = document.getElementById('login-email').value;
+  const password = document.getElementById('login-password').value;
+  const errEl = document.getElementById('auth-error');
+  errEl.textContent = '';
+
+  const { error } = await db.auth.signInWithPassword({ email, password });
+  if (error) {
+    errEl.textContent = 'Erreur : ' + error.message;
+    return;
+  }
+  initApp();
+}
+
+async function logout() {
+  await db.auth.signOut();
+  document.getElementById('app').style.display = 'none';
+  document.getElementById('auth-screen').style.display = 'flex';
+}
+
+async function checkAuth() {
+  const { data: { session } } = await db.auth.getSession();
+  if (session) {
+    initApp(session.user);
+  }
+}
+
+async function initApp(user) {
+  document.getElementById('auth-screen').style.display = 'none';
+  document.getElementById('app').style.display = 'block';
+
+  const { data: { user: u } } = await db.auth.getUser();
+  if (u) document.getElementById('user-email-display').textContent = u.email;
+
+  await chargerCategories();
+  await chargerProjets();
+}
+
+// ============================================================
+// NAVIGATION
+// ============================================================
+function showView(name) {
+  document.querySelectorAll('.view').forEach(v => v.classList.remove('active'));
+  document.getElementById('view-' + name).classList.add('active');
+
+  document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
+  const navMap = { projets: 0, banque: 1, clients: 2 };
+  const idx = navMap[name];
+  if (idx !== undefined) {
+    document.querySelectorAll('.nav-item')[idx].classList.add('active');
+  }
+
+  if (name === 'banque') chargerProduits();
+  if (name === 'clients') chargerClients();
+}
+
+function showProjetTab(tab, el) {
+  document.querySelectorAll('.projet-tab').forEach(t => t.classList.remove('active'));
+  el.classList.add('active');
+  document.querySelectorAll('.projet-tab-content').forEach(c => c.style.display = 'none');
+  document.getElementById('tab-' + tab).style.display = 'block';
+  if (tab === 'progression') chargerProgression();
+  if (tab === 'infos') chargerInfosProjet();
+}
+
+// ============================================================
+// CATÉGORIES
+// ============================================================
+async function chargerCategories() {
+  const { data } = await db.from('categories').select('*').order('ordre');
+  if (data) {
+    categories = data;
+    // Remplir les selects
+    ['np-client', 'filter-categorie', 'ap-categorie', 'poste-categorie'].forEach(id => {
+      // Gérer les selects de catégories seulement
+    });
+    const catSelects = ['filter-categorie', 'ap-categorie', 'poste-categorie'];
+    catSelects.forEach(id => {
+      const sel = document.getElementById(id);
+      if (!sel) return;
+      const first = sel.options[0];
+      sel.innerHTML = '';
+      sel.appendChild(first);
+      categories.forEach(c => {
+        const opt = document.createElement('option');
+        opt.value = c.id;
+        opt.textContent = c.nom;
+        sel.appendChild(opt);
+      });
+    });
+  }
+}
+
+// ============================================================
+// PROJETS
+// ============================================================
+async function chargerProjets() {
+  const { data: projets } = await db
+    .from('projets')
+    .select('*, clients(nom, email)')
+    .order('created_at', { ascending: false });
+
+  const grid = document.getElementById('projets-grid');
+  if (!projets || projets.length === 0) {
+    grid.innerHTML = `<div class="empty-state" style="grid-column:1/-1">
+      <div class="icon">📁</div><h3>Aucun projet</h3>
+      <p>Créez votre premier projet pour commencer.</p></div>`;
+    return;
+  }
+
+  // Charger progression pour chaque projet
+  const { data: progressions } = await db.from('vue_progression_projets').select('*');
+  const progMap = {};
+  (progressions || []).forEach(p => { progMap[p.id] = p; });
+
+  grid.innerHTML = '';
+  projets.forEach(p => {
+    const prog = progMap[p.id] || {};
+    const total = prog.total_options || 0;
+    const approuves = prog.approuves || 0;
+    const pct = total > 0 ? Math.round(approuves / total * 100) : 0;
+    const budget = prog.budget_confirme ? '$' + Number(prog.budget_confirme).toLocaleString('fr-CA') : '—';
+
+    const card = document.createElement('div');
+    card.className = 'project-card';
+    card.onclick = () => ouvrirProjet(p.id);
+    card.innerHTML = `
+      <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:8px">
+        <span class="status-badge status-${p.statut}">${p.statut}</span>
+        <span style="font-size:11px;color:var(--texte-2)">${budget} confirmé</span>
+      </div>
+      <h3>${p.nom}</h3>
+      <div class="client-name">${p.clients ? p.clients.nom : '(aucun client)'}</div>
+      ${p.adresse ? `<div class="address">${p.adresse}</div>` : ''}
+      <div class="progress-bar"><div class="progress-fill" style="width:${pct}%"></div></div>
+      <div class="progress-label"><span>Approbations</span><span>${approuves}/${total} (${pct}%)</span></div>
+    `;
+    grid.appendChild(card);
+  });
+
+  // Charger clients dans le select
+  const { data: clients } = await db.from('clients').select('id, nom').order('nom');
+  const selClient = document.getElementById('np-client');
+  const firstOpt = selClient.options[0];
+  selClient.innerHTML = '';
+  selClient.appendChild(firstOpt);
+  (clients || []).forEach(c => {
+    const opt = document.createElement('option');
+    opt.value = c.id;
+    opt.textContent = c.nom;
+    selClient.appendChild(opt);
+  });
+}
+
+async function creerProjet() {
+  const nom = document.getElementById('np-nom').value.trim();
+  if (!nom) { toast('Le nom du projet est requis.', 'error'); return; }
+
+  const { error } = await db.from('projets').insert({
+    nom,
+    adresse: document.getElementById('np-adresse').value.trim() || null,
+    client_id: document.getElementById('np-client').value || null,
+    budget_min: parseFloat(document.getElementById('np-budget-min').value) || null,
+    budget_max: parseFloat(document.getElementById('np-budget-max').value) || null,
+  });
+
+  if (error) { toast('Erreur : ' + error.message, 'error'); return; }
+  closeModal('modal-nouveau-projet');
+  toast('Projet créé avec succès.', 'success');
+  document.getElementById('np-nom').value = '';
+  document.getElementById('np-adresse').value = '';
+  chargerProjets();
+}
+
+async function ouvrirProjet(projetId) {
+  currentProjetId = projetId;
+
+  const { data: projet } = await db.from('projets').select('*, clients(nom)').eq('id', projetId).single();
+  document.getElementById('detail-projet-nom').textContent = projet.nom;
+  document.getElementById('detail-projet-client').textContent = projet.clients ? projet.clients.nom : '';
+
+  document.querySelectorAll('.view').forEach(v => v.classList.remove('active'));
+  document.getElementById('view-projet-detail').classList.add('active');
+
+  // Reset tabs
+  document.querySelectorAll('.projet-tab').forEach(t => t.classList.remove('active'));
+  document.querySelector('.projet-tab').classList.add('active');
+  document.querySelectorAll('.projet-tab-content').forEach(c => c.style.display = 'none');
+  document.getElementById('tab-postes').style.display = 'block';
+
+  chargerPostes();
+  chargerProduitsBanqueSelect();
+}
+
+// ============================================================
+// POSTES
+// ============================================================
+async function chargerPostes() {
+  const { data: postes } = await db
+    .from('postes')
+    .select('*, categories(nom, ordre), options_produits(*, banque_produits(nom, fabricant, modele, prix, photo_url, couleur))')
+    .eq('projet_id', currentProjetId)
+    .order('ordre');
+
+  const container = document.getElementById('postes-categories-list');
+  if (!postes || postes.length === 0) {
+    container.innerHTML = `<div class="empty-state"><div class="icon">📋</div><h3>Aucun poste</h3><p>Ajoutez des postes pour définir les sélections du projet.</p></div>`;
+    return;
+  }
+
+  // Grouper par catégorie
+  const byCat = {};
+  postes.forEach(p => {
+    const catNom = p.categories ? p.categories.nom : 'Autre';
+    if (!byCat[catNom]) byCat[catNom] = [];
+    byCat[catNom].push(p);
+  });
+
+  container.innerHTML = '';
+  Object.entries(byCat).forEach(([catNom, catPostes]) => {
+    const section = document.createElement('div');
+    section.className = 'categorie-section';
+    section.innerHTML = `
+      <div class="categorie-header">
+        <h4>${catNom}</h4>
+        <span style="font-size:12px;color:var(--texte-2)">${catPostes.length} poste(s)</span>
+      </div>
+    `;
+
+    catPostes.forEach(poste => {
+      const card = document.createElement('div');
+      card.className = 'poste-card';
+      const options = poste.options_produits || [];
+
+      let optionsHTML = options.length === 0
+        ? '<div style="padding:12px 16px;font-size:12px;color:var(--texte-2)">Aucune option — ajoutez un produit.</div>'
+        : options.map(opt => {
+            const bp = opt.banque_produits;
+            const statusClass = 'status-' + opt.statut_client.replace('é', 'e').replace('_', '');
+            const statusLabel = { 'en_attente': 'En attente', 'approuvé': 'Approuvé', 'à_revoir': 'À revoir' }[opt.statut_client] || opt.statut_client;
+            return `<div class="option-row">
+              <div class="option-letter">Option ${opt.lettre_option}</div>
+              <div class="option-status ${statusClass}">${statusLabel}</div>
+              <div>
+                ${bp ? `<div style="font-size:13px;font-weight:500">${bp.nom || ''}</div>
+                <div style="font-size:11px;color:var(--texte-2)">${bp.fabricant || ''} ${bp.modele || ''} ${bp.couleur ? '· ' + bp.couleur : ''}</div>` : '<div style="font-size:12px;color:var(--texte-2)">Produit non disponible</div>'}
+                ${opt.commentaire_client ? `<div style="font-size:11px;color:var(--caramel);margin-top:3px">💬 ${opt.commentaire_client}</div>` : ''}
+              </div>
+              <div style="text-align:right">
+                ${bp && bp.prix ? `<div style="font-size:13px;font-weight:500">$${Number(bp.prix * opt.quantite).toLocaleString('fr-CA')}</div>` : ''}
+                <div style="font-size:11px;color:var(--texte-2)">Qté: ${opt.quantite}</div>
+              </div>
+            </div>`;
+          }).join('');
+
+      card.innerHTML = `
+        <div class="poste-header">
+          <div>
+            <span class="poste-ref">${poste.reference}</span>
+            <span class="poste-piece">${poste.piece || ''}</span>
+          </div>
+          <span style="font-size:11px;color:var(--texte-2)">${options.length} option(s)</span>
+        </div>
+        <div class="poste-options">${optionsHTML}</div>
+      `;
+      section.appendChild(card);
+    });
+
+    container.appendChild(section);
+  });
+}
+
+function openModalPoste() {
+  // Remplir catégories dans le select du modal poste
+  const sel = document.getElementById('poste-categorie');
+  const first = sel.options[0];
+  sel.innerHTML = '';
+  sel.appendChild(first);
+  categories.forEach(c => {
+    const opt = document.createElement('option');
+    opt.value = c.id;
+    opt.textContent = c.nom;
+    sel.appendChild(opt);
+  });
+  openModal('modal-ajout-poste');
+}
+
+async function chargerProduitsBanqueSelect() {
+  const { data } = await db.from('banque_produits').select('id, nom, fabricant, modele, prix').order('nom');
+  produitsCache = data || [];
+  const sel = document.getElementById('poste-produit-a');
+  const first = sel.options[0];
+  sel.innerHTML = '';
+  sel.appendChild(first);
+  produitsCache.forEach(p => {
+    const opt = document.createElement('option');
+    opt.value = p.id;
+    opt.textContent = (p.fabricant ? p.fabricant + ' — ' : '') + (p.nom || '') + (p.prix ? ' ($' + p.prix + ')' : '');
+    sel.appendChild(opt);
+  });
+}
+
+async function sauvegarderPoste() {
+  const ref = document.getElementById('poste-ref').value.trim();
+  const catId = document.getElementById('poste-categorie').value;
+  if (!ref || !catId) { toast('Référence et catégorie sont requis.', 'error'); return; }
+
+  const { data: newPoste, error } = await db.from('postes').insert({
+    projet_id: currentProjetId,
+    reference: ref,
+    piece: document.getElementById('poste-piece').value.trim() || null,
+    categorie_id: catId,
+    type_selection: document.getElementById('poste-type').value,
+    ordre: 0
+  }).select().single();
+
+  if (error) { toast('Erreur : ' + error.message, 'error'); return; }
+
+  const produitId = document.getElementById('poste-produit-a').value;
+  if (produitId) {
+    await db.from('options_produits').insert({
+      poste_id: newPoste.id,
+      banque_produit_id: produitId,
+      lettre_option: 'A',
+      quantite: parseInt(document.getElementById('poste-qty-a').value) || 1,
+      note_client: document.getElementById('poste-note-a').value.trim() || null
+    });
+  }
+
+  closeModal('modal-ajout-poste');
+  toast('Poste ajouté avec succès.', 'success');
+  chargerPostes();
+}
+
+// ============================================================
+// BANQUE PRODUITS
+// ============================================================
+async function chargerProduits() {
+  const { data } = await db
+    .from('banque_produits')
+    .select('*, categories(nom)')
+    .order('created_at', { ascending: false });
+
+  produitsCache = data || [];
+  renderProduits(produitsCache);
+}
+
+function renderProduits(produits) {
+  const tbody = document.getElementById('produits-tbody');
+  if (!produits.length) {
+    tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;padding:40px;color:var(--texte-2)">Aucun produit dans la banque.</td></tr>';
+    return;
+  }
+  tbody.innerHTML = produits.map(p => `
+    <tr>
+      <td>${p.photo_url ? `<img src="${p.photo_url}" class="product-thumb" onerror="this.style.display='none'" />` : '<div class="product-thumb" style="display:inline-block"></div>'}</td>
+      <td>
+        <div style="font-weight:500;font-size:13px">${p.nom || '—'}</div>
+        <div style="font-size:11px;color:var(--texte-2)">${p.sku || ''}</div>
+        ${p.url ? `<a href="${p.url}" target="_blank" style="font-size:11px;color:var(--caramel)">↗ Voir le produit</a>` : ''}
+      </td>
+      <td style="font-size:13px">${p.fabricant || '—'}<br><span style="font-size:11px;color:var(--texte-2)">${p.modele || ''}</span></td>
+      <td style="font-size:12px">${p.categories ? p.categories.nom : '—'}</td>
+      <td style="font-size:13px;font-weight:500">${p.prix ? '$' + Number(p.prix).toLocaleString('fr-CA') : '—'}</td>
+      <td>
+        <button class="btn btn-outline btn-sm" onclick="editerProduit('${p.id}')">Modifier</button>
+      </td>
+    </tr>
+  `).join('');
+}
+
+function filtrerProduits() {
+  const q = document.getElementById('search-produits').value.toLowerCase();
+  const cat = document.getElementById('filter-categorie').value;
+  const filtered = produitsCache.filter(p => {
+    const matchQ = !q || [p.nom, p.fabricant, p.modele, p.sku].some(v => v && v.toLowerCase().includes(q));
+    const matchCat = !cat || p.categorie_id === cat;
+    return matchQ && matchCat;
+  });
+  renderProduits(filtered);
+}
+
+async function importerParURL() {
+  const url = document.getElementById('url-import-input').value.trim();
+  if (!url) return;
+  const statusEl = document.getElementById('url-import-status');
+  statusEl.innerHTML = '<span class="spinner"></span> Analyse en cours…';
+
+  // Essai Shopify JSON
+  try {
+    const jsonUrl = url.replace(/\?.*$/, '') + '.json';
+    const resp = await fetch(jsonUrl);
+    if (resp.ok) {
+      const data = await resp.json();
+      const p = data.product;
+      const v = p.variants && p.variants[0];
+
+      document.getElementById('ap-nom').value = p.title || '';
+      document.getElementById('ap-fabricant').value = p.vendor || '';
+      document.getElementById('ap-modele').value = v ? v.title : '';
+      document.getElementById('ap-sku').value = v ? v.sku : '';
+      document.getElementById('ap-prix').value = v ? v.price : '';
+      document.getElementById('ap-url').value = url;
+
+      // Photo
+      if (p.images && p.images[0]) {
+        document.getElementById('ap-photo').value = p.images[0].src;
+      }
+
+      // Ouvrir le modal
+      openModal('modal-ajout-produit');
+      statusEl.innerHTML = '✅ Données importées depuis le site.';
+      document.getElementById('url-import-input').value = '';
+      return;
+    }
+  } catch(e) {}
+
+  statusEl.innerHTML = '⚠️ Impossible d\'importer automatiquement. Remplissez le formulaire manuellement.';
+  document.getElementById('ap-url').value = url;
+  openModal('modal-ajout-produit');
+}
+
+async function sauvegarderProduit() {
+  const nom = document.getElementById('ap-nom').value.trim();
+  const catId = document.getElementById('ap-categorie').value;
+  if (!nom) { toast('Le nom du produit est requis.', 'error'); return; }
+
+  const { error } = await db.from('banque_produits').insert({
+    categorie_id: catId || null,
+    url: document.getElementById('ap-url').value.trim() || null,
+    nom,
+    fabricant: document.getElementById('ap-fabricant').value.trim() || null,
+    modele: document.getElementById('ap-modele').value.trim() || null,
+    sku: document.getElementById('ap-sku').value.trim() || null,
+    prix: parseFloat(document.getElementById('ap-prix').value) || null,
+    couleur: document.getElementById('ap-couleur').value.trim() || null,
+    dimensions: document.getElementById('ap-dimensions').value.trim() || null,
+    caracteristiques: document.getElementById('ap-carac').value.trim() || null,
+    photo_url: document.getElementById('ap-photo').value.trim() || null,
+    notes_internes: document.getElementById('ap-notes').value.trim() || null,
+  });
+
+  if (error) { toast('Erreur : ' + error.message, 'error'); return; }
+  closeModal('modal-ajout-produit');
+  toast('Produit ajouté à la banque.', 'success');
+  chargerProduits();
+}
+
+function editerProduit(id) {
+  toast('Modification à venir — Phase 2.', 'info');
+}
+
+// ============================================================
+// CLIENTS
+// ============================================================
+async function chargerClients() {
+  const { data: clients } = await db.from('clients').select('*, projets(id)').order('nom');
+  const tbody = document.getElementById('clients-tbody');
+
+  if (!clients || clients.length === 0) {
+    tbody.innerHTML = '<tr><td colspan="5" style="text-align:center;padding:40px;color:var(--texte-2)">Aucun client enregistré.</td></tr>';
+    return;
+  }
+
+  tbody.innerHTML = clients.map(c => `
+    <tr>
+      <td style="font-weight:500">${c.nom}</td>
+      <td><a href="mailto:${c.email}" style="color:var(--caramel)">${c.email}</a></td>
+      <td>${c.telephone || '—'}</td>
+      <td>${c.projets ? c.projets.length : 0} projet(s)</td>
+      <td>
+        <button class="btn btn-outline btn-sm" onclick="copierLienClient('${c.email}')">📋 Lien portail</button>
+      </td>
+    </tr>
+  `).join('');
+}
+
+async function creerClient() {
+  const nom = document.getElementById('nc-nom').value.trim();
+  const email = document.getElementById('nc-email').value.trim();
+  if (!nom || !email) { toast('Nom et courriel sont requis.', 'error'); return; }
+
+  const { error } = await db.from('clients').insert({
+    nom,
+    email,
+    telephone: document.getElementById('nc-tel').value.trim() || null
+  });
+
+  if (error) { toast('Erreur : ' + error.message, 'error'); return; }
+  closeModal('modal-nouveau-client');
+  toast('Client créé avec succès.', 'success');
+  chargerClients();
+  chargerProjets();
+}
+
+function copierLienClient(email) {
+  const lien = window.location.href.replace('admin.html', 'client.html') + '?email=' + encodeURIComponent(email);
+  navigator.clipboard.writeText(lien);
+  toast('Lien portail copié dans le presse-papier.', 'success');
+}
+
+// ============================================================
+// PROGRESSION
+// ============================================================
+async function chargerProgression() {
+  const { data } = await db.from('vue_progression_projets').select('*').eq('id', currentProjetId).single();
+  if (!data) return;
+
+  document.getElementById('progression-stats').innerHTML = `
+    <div>
+      <div style="font-family:'Noto Serif Display',serif;font-size:36px;color:var(--charcoal)">${data.approuves || 0}</div>
+      <div style="font-size:11px;letter-spacing:1.5px;text-transform:uppercase;color:var(--success);margin-top:4px">Approuvés</div>
+    </div>
+    <div>
+      <div style="font-family:'Noto Serif Display',serif;font-size:36px;color:var(--danger)">${data.a_revoir || 0}</div>
+      <div style="font-size:11px;letter-spacing:1.5px;text-transform:uppercase;color:var(--danger);margin-top:4px">À revoir</div>
+    </div>
+    <div>
+      <div style="font-family:'Noto Serif Display',serif;font-size:36px;color:var(--texte-2)">${data.en_attente || 0}</div>
+      <div style="font-size:11px;letter-spacing:1.5px;text-transform:uppercase;color:var(--texte-2);margin-top:4px">En attente</div>
+    </div>
+    <div>
+      <div style="font-family:'Noto Serif Display',serif;font-size:24px;color:var(--caramel)">${data.budget_confirme ? '$' + Number(data.budget_confirme).toLocaleString('fr-CA') : '—'}</div>
+      <div style="font-size:11px;letter-spacing:1.5px;text-transform:uppercase;color:var(--caramel);margin-top:4px">Budget confirmé</div>
+    </div>
+  `;
+}
+
+async function chargerInfosProjet() {
+  const { data: p } = await db.from('projets').select('*, clients(nom, email, telephone)').eq('id', currentProjetId).single();
+  if (!p) return;
+  document.getElementById('infos-content').innerHTML = `
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:24px">
+      <div>
+        <div style="font-size:11px;letter-spacing:1.5px;text-transform:uppercase;color:var(--texte-2);margin-bottom:4px">Projet</div>
+        <div style="font-size:15px;font-weight:500;margin-bottom:2px">${p.nom}</div>
+        <div style="font-size:13px;color:var(--texte-2)">${p.adresse || '—'}</div>
+        <div style="margin-top:12px;font-size:12px;color:var(--texte-2)">Statut : <span class="status-badge status-${p.statut}">${p.statut}</span></div>
+        <div style="margin-top:12px;font-size:12px">Budget : ${p.budget_min ? '$' + Number(p.budget_min).toLocaleString('fr-CA') : '—'} – ${p.budget_max ? '$' + Number(p.budget_max).toLocaleString('fr-CA') : '—'}</div>
+      </div>
+      <div>
+        <div style="font-size:11px;letter-spacing:1.5px;text-transform:uppercase;color:var(--texte-2);margin-bottom:4px">Client</div>
+        ${p.clients ? `
+          <div style="font-size:15px;font-weight:500;margin-bottom:2px">${p.clients.nom}</div>
+          <div style="font-size:13px;color:var(--caramel)">${p.clients.email}</div>
+          <div style="font-size:13px;color:var(--texte-2)">${p.clients.telephone || ''}</div>
+          <button class="btn btn-outline btn-sm" style="margin-top:14px" onclick="copierLienClient('${p.clients.email}')">📋 Copier lien portail</button>
+        ` : '<div style="font-size:13px;color:var(--texte-2)">Aucun client associé</div>'}
+      </div>
+    </div>
+  `;
+}
+
+// ============================================================
+// GÉNÉRATION DOCUMENTS (Phase 2)
+// ============================================================
+function genererPDF() {
+  toast('Génération PDF — Phase 2 (bientôt disponible).', 'info');
+}
+function genererExcel() {
+  toast('Génération Excel Annexe — Phase 2 (bientôt disponible).', 'info');
+}
+
+// ============================================================
+// UTILITAIRES
+// ============================================================
+function openModal(id) { document.getElementById(id).classList.add('open'); }
+function closeModal(id) { document.getElementById(id).classList.remove('open'); }
+
+function toast(msg, type = 'info') {
+  const container = document.getElementById('toast-container');
+  const div = document.createElement('div');
+  div.className = 'toast toast-' + type;
+  div.textContent = msg;
+  container.appendChild(div);
+  setTimeout(() => div.remove(), 4000);
+}
+
+// Fermer modal en cliquant sur l'overlay
+document.querySelectorAll('.modal-overlay').forEach(overlay => {
+  overlay.addEventListener('click', e => {
+    if (e.target === overlay) overlay.classList.remove('open');
+  });
+});
+
+// ============================================================
+// INIT
+// ============================================================
+checkAuth();
+</script>
+</body>
+</html>

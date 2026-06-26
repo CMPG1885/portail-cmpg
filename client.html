@@ -1,0 +1,652 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>CMPG — Portail Client</title>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<link href="https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;500;700&family=Noto+Serif+Display:ital,wght@0,400;0,700;1,400&display=swap" rel="stylesheet">
+<style>
+/* ===== CMPG DESIGN SYSTEM ===== */
+:root {
+  --charcoal: #3A3B3A;
+  --caramel: #CF934F;
+  --blanc: #FFFFFF;
+  --gris: #C7C8CA;
+  --fond: #F5F4EE;
+  --bord: #E3DFD8;
+  --texte: #3A3B3A;
+  --texte-2: #706862;
+  --success: #4B7A5C;
+  --danger: #8B3A3A;
+  --shadow: 0 1px 4px rgba(58,59,58,.08), 0 4px 16px rgba(58,59,58,.06);
+}
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body { font-family: 'Roboto', sans-serif; background: var(--fond); color: var(--texte); min-height: 100vh; }
+
+/* ===== AUTH ===== */
+#auth-screen {
+  min-height: 100vh; display: flex; align-items: center; justify-content: center;
+  background: var(--charcoal);
+}
+.auth-card { background: var(--blanc); padding: 48px 40px; width: 380px; box-shadow: 0 8px 40px rgba(0,0,0,.3); }
+.auth-logo { text-align: center; margin-bottom: 32px; }
+.auth-logo h1 { font-family: 'Noto Serif Display', serif; font-size: 28px; color: var(--charcoal); letter-spacing: 2px; }
+.auth-logo p { font-size: 11px; letter-spacing: 3px; text-transform: uppercase; color: var(--caramel); margin-top: 4px; }
+.auth-welcome { font-size: 14px; color: var(--texte-2); text-align: center; margin-bottom: 24px; line-height: 1.5; }
+.auth-card input {
+  width: 100%; padding: 12px 14px; border: 1px solid var(--bord);
+  font-family: 'Roboto', sans-serif; font-size: 14px; margin-bottom: 14px; outline: none;
+}
+.auth-card input:focus { border-color: var(--caramel); }
+.btn-primary {
+  width: 100%; padding: 13px; background: var(--charcoal); color: var(--blanc);
+  border: none; font-family: 'Roboto', sans-serif; font-size: 13px;
+  letter-spacing: 1.5px; text-transform: uppercase; cursor: pointer;
+}
+.btn-primary:hover { background: #555; }
+#auth-error { color: #c0392b; font-size: 13px; margin-top: 8px; text-align: center; }
+
+/* ===== HEADER CLIENT ===== */
+#app { display: none; }
+.client-header {
+  background: var(--charcoal); padding: 0 40px;
+  display: flex; align-items: center; justify-content: space-between;
+  position: sticky; top: 0; z-index: 100;
+}
+.client-header-logo { padding: 18px 0; }
+.client-header-logo h1 { font-family: 'Noto Serif Display', serif; font-size: 18px; color: var(--blanc); }
+.client-header-logo p { font-size: 9px; letter-spacing: 3px; text-transform: uppercase; color: var(--caramel); }
+.client-header-right { display: flex; align-items: center; gap: 20px; }
+.client-header-right .user-name { color: rgba(255,255,255,.7); font-size: 13px; }
+.btn-signout-sm { background: none; border: 1px solid rgba(255,255,255,.3); color: rgba(255,255,255,.7); padding: 6px 14px; font-size: 11px; letter-spacing: 1px; text-transform: uppercase; cursor: pointer; }
+.btn-signout-sm:hover { border-color: rgba(255,255,255,.6); color: var(--blanc); }
+
+/* ===== PROJET SELECTOR ===== */
+.projet-selector { background: var(--blanc); border-bottom: 1px solid var(--bord); padding: 12px 40px; display: flex; align-items: center; gap: 14px; }
+.projet-selector label { font-size: 11px; letter-spacing: 1.5px; text-transform: uppercase; color: var(--texte-2); }
+.projet-selector select { padding: 8px 12px; border: 1px solid var(--bord); font-size: 13px; outline: none; background: var(--blanc); }
+.projet-selector select:focus { border-color: var(--caramel); }
+
+/* ===== PROGRESSION BANNER ===== */
+.progression-banner {
+  background: var(--blanc); border-bottom: 1px solid var(--bord);
+  padding: 16px 40px; display: flex; align-items: center; gap: 32px;
+}
+.prog-stat { text-align: center; }
+.prog-stat .value { font-family: 'Noto Serif Display', serif; font-size: 24px; color: var(--charcoal); }
+.prog-stat .label { font-size: 10px; letter-spacing: 1.5px; text-transform: uppercase; color: var(--texte-2); margin-top: 2px; }
+.prog-bar-wrap { flex: 1; }
+.prog-bar-wrap .label { font-size: 11px; color: var(--texte-2); margin-bottom: 6px; display: flex; justify-content: space-between; }
+.prog-bar { height: 4px; background: var(--bord); }
+.prog-fill { height: 100%; background: var(--caramel); transition: width .5s; }
+
+/* ===== CATEGORY TABS ===== */
+.cat-nav {
+  background: var(--blanc); border-bottom: 1px solid var(--bord);
+  padding: 0 40px; display: flex; gap: 0; overflow-x: auto;
+}
+.cat-tab {
+  padding: 14px 20px; font-size: 12px; letter-spacing: 1.5px; text-transform: uppercase;
+  cursor: pointer; color: var(--texte-2); border-bottom: 2px solid transparent;
+  white-space: nowrap; transition: all .15s;
+}
+.cat-tab:hover { color: var(--charcoal); }
+.cat-tab.active { color: var(--charcoal); border-bottom-color: var(--caramel); font-weight: 500; }
+
+/* ===== CONTENT ===== */
+.content { max-width: 900px; margin: 0 auto; padding: 40px 20px; }
+
+/* ===== INTRO CARD ===== */
+.intro-card { background: var(--charcoal); color: var(--blanc); padding: 32px 36px; margin-bottom: 32px; }
+.intro-card h2 { font-family: 'Noto Serif Display', serif; font-size: 22px; margin-bottom: 8px; }
+.intro-card p { font-size: 13px; color: rgba(255,255,255,.7); line-height: 1.6; }
+
+/* ===== POSTE CARDS ===== */
+.poste-section { margin-bottom: 48px; }
+.poste-section-title { font-size: 11px; letter-spacing: 2px; text-transform: uppercase; color: var(--caramel); margin-bottom: 16px; padding-bottom: 8px; border-bottom: 1px solid var(--bord); }
+
+.selection-card { background: var(--blanc); border: 1px solid var(--bord); margin-bottom: 16px; box-shadow: var(--shadow); }
+.selection-card-header { padding: 16px 20px 12px; border-bottom: 1px solid var(--bord); display: flex; align-items: center; justify-content: space-between; }
+.selection-ref { font-size: 11px; letter-spacing: 1.5px; text-transform: uppercase; font-weight: 500; color: var(--charcoal); }
+.selection-piece { font-size: 12px; color: var(--texte-2); }
+.selection-type-badge { font-size: 10px; padding: 3px 10px; background: var(--fond); color: var(--texte-2); }
+
+/* Simple (option unique) */
+.option-simple { padding: 20px; display: grid; grid-template-columns: 120px 1fr auto; gap: 20px; align-items: start; }
+.option-photo { width: 120px; height: 90px; object-fit: contain; background: var(--fond); border: 1px solid var(--bord); }
+.option-photo-placeholder { width: 120px; height: 90px; background: var(--fond); border: 1px solid var(--bord); display: flex; align-items: center; justify-content: center; font-size: 32px; }
+.option-details h4 { font-size: 15px; font-weight: 500; margin-bottom: 4px; }
+.option-details .fabricant { font-size: 12px; color: var(--caramel); text-transform: uppercase; letter-spacing: 1px; margin-bottom: 8px; }
+.option-details .specs { font-size: 12px; color: var(--texte-2); line-height: 1.6; }
+.option-details .note-cmpg { font-size: 12px; color: var(--texte-2); background: var(--fond); padding: 8px 12px; margin-top: 10px; border-left: 3px solid var(--caramel); }
+.option-details .prix { font-size: 16px; font-weight: 500; margin-top: 10px; }
+.option-actions { display: flex; flex-direction: column; gap: 8px; min-width: 130px; }
+
+/* Options multiples (A/B/C) */
+.options-multiple { padding: 0; }
+.option-tab-nav { display: flex; border-bottom: 1px solid var(--bord); }
+.option-tab { padding: 12px 20px; font-size: 12px; letter-spacing: 1px; cursor: pointer; color: var(--texte-2); border-bottom: 2px solid transparent; }
+.option-tab.active { color: var(--charcoal); border-bottom-color: var(--caramel); font-weight: 500; }
+.option-tab-content { padding: 20px; display: none; grid-template-columns: 120px 1fr auto; gap: 20px; align-items: start; }
+.option-tab-content.active { display: grid; }
+
+/* Boutons décision */
+.btn-decision {
+  padding: 10px 14px; font-family: 'Roboto', sans-serif; font-size: 11px;
+  letter-spacing: 1px; text-transform: uppercase; cursor: pointer; border: none;
+  transition: all .15s; text-align: center;
+}
+.btn-approuver { background: rgba(75,122,92,.1); color: #4B7A5C; border: 1px solid rgba(75,122,92,.3); }
+.btn-approuver:hover, .btn-approuver.actif { background: #4B7A5C; color: var(--blanc); border-color: #4B7A5C; }
+.btn-revoir { background: rgba(139,58,58,.08); color: var(--danger); border: 1px solid rgba(139,58,58,.25); }
+.btn-revoir:hover, .btn-revoir.actif { background: var(--danger); color: var(--blanc); border-color: var(--danger); }
+
+/* Commentaire client */
+.commentaire-section { padding: 12px 20px; background: var(--fond); border-top: 1px solid var(--bord); display: none; }
+.commentaire-section.open { display: block; }
+.commentaire-section textarea { width: 100%; padding: 10px 12px; border: 1px solid var(--bord); font-family: 'Roboto', sans-serif; font-size: 13px; resize: vertical; min-height: 70px; outline: none; }
+.commentaire-section textarea:focus { border-color: var(--caramel); }
+.commentaire-section .btn-envoyer { margin-top: 8px; padding: 8px 18px; background: var(--charcoal); color: var(--blanc); border: none; font-family: 'Roboto', sans-serif; font-size: 11px; letter-spacing: 1px; text-transform: uppercase; cursor: pointer; }
+
+/* Status indicators */
+.status-dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; margin-right: 5px; }
+.dot-attente { background: var(--gris); }
+.dot-approuve { background: #4B7A5C; }
+.dot-revoir { background: var(--danger); }
+
+/* ===== EMPTY ===== */
+.empty-state { text-align: center; padding: 60px 20px; color: var(--texte-2); }
+.empty-state h3 { font-family: 'Noto Serif Display', serif; font-size: 20px; color: var(--charcoal); margin-bottom: 8px; }
+.empty-state p { font-size: 13px; }
+
+/* ===== MODAL ===== */
+.modal-overlay { display: none; position: fixed; inset: 0; background: rgba(58,59,58,.5); z-index: 1000; align-items: center; justify-content: center; }
+.modal-overlay.open { display: flex; }
+.modal { background: var(--blanc); width: 480px; max-width: 95vw; box-shadow: 0 20px 60px rgba(0,0,0,.3); }
+.modal-header { padding: 24px 28px; border-bottom: 1px solid var(--bord); display: flex; align-items: center; justify-content: space-between; }
+.modal-header h3 { font-family: 'Noto Serif Display', serif; font-size: 18px; }
+.modal-close { background: none; border: none; font-size: 20px; cursor: pointer; color: var(--texte-2); }
+.modal-body { padding: 28px; }
+.modal-footer { padding: 20px 28px; border-top: 1px solid var(--bord); display: flex; gap: 12px; justify-content: flex-end; }
+.btn { padding: 10px 20px; font-family: 'Roboto', sans-serif; font-size: 12px; letter-spacing: 1.2px; text-transform: uppercase; cursor: pointer; border: none; }
+.btn-dark { background: var(--charcoal); color: var(--blanc); }
+.btn-outline { background: transparent; color: var(--charcoal); border: 1px solid var(--charcoal); }
+
+/* ===== TOAST ===== */
+#toast-container { position: fixed; bottom: 24px; right: 24px; z-index: 9999; display: flex; flex-direction: column; gap: 8px; }
+.toast { padding: 12px 20px; font-size: 13px; color: var(--blanc); box-shadow: var(--shadow); animation: slideIn .2s ease; }
+.toast-success { background: #4B7A5C; }
+.toast-error { background: var(--danger); }
+.toast-info { background: var(--charcoal); }
+@keyframes slideIn { from { transform: translateX(100%); opacity: 0; } to { transform: translateX(0); opacity: 1; } }
+
+/* ===== RESPONSIVE ===== */
+@media (max-width: 600px) {
+  .client-header { padding: 0 16px; }
+  .cat-nav { padding: 0 16px; }
+  .content { padding: 24px 12px; }
+  .option-simple, .option-tab-content { grid-template-columns: 1fr; }
+  .option-photo, .option-photo-placeholder { width: 100%; height: 180px; }
+  .progression-banner { flex-wrap: wrap; padding: 16px; }
+  .projet-selector { padding: 12px 16px; }
+}
+</style>
+</head>
+<body>
+
+<!-- AUTH -->
+<div id="auth-screen">
+  <div class="auth-card">
+    <div class="auth-logo">
+      <h1>CMPG</h1>
+      <p>Architecture & Design</p>
+    </div>
+    <p class="auth-welcome">Bienvenue dans votre portail de sélections.<br>Connectez-vous pour accéder à votre projet.</p>
+    <input type="email" id="login-email" placeholder="Votre adresse courriel" />
+    <input type="password" id="login-password" placeholder="Mot de passe" />
+    <button class="btn-primary" onclick="login()">Accéder à mon portail</button>
+    <div id="auth-error"></div>
+  </div>
+</div>
+
+<!-- APP -->
+<div id="app">
+  <!-- Header -->
+  <header class="client-header">
+    <div class="client-header-logo">
+      <h1>CMPG</h1>
+      <p>Portail client</p>
+    </div>
+    <div class="client-header-right">
+      <span class="user-name" id="user-name-display"></span>
+      <button class="btn-signout-sm" onclick="logout()">Déconnexion</button>
+    </div>
+  </header>
+
+  <!-- Sélecteur projet -->
+  <div class="projet-selector">
+    <label>Projet</label>
+    <select id="projet-select" onchange="chargerProjet()">
+      <option value="">Chargement…</option>
+    </select>
+  </div>
+
+  <!-- Barre de progression -->
+  <div class="progression-banner" id="progression-banner">
+    <div class="prog-stat">
+      <div class="value" id="prog-total">—</div>
+      <div class="label">Sélections</div>
+    </div>
+    <div class="prog-bar-wrap">
+      <div class="label">
+        <span id="prog-label-left">Progression</span>
+        <span id="prog-pct">—</span>
+      </div>
+      <div class="prog-bar"><div class="prog-fill" id="prog-fill" style="width:0%"></div></div>
+    </div>
+    <div class="prog-stat">
+      <div class="value" id="prog-approuves" style="color:var(--success)">—</div>
+      <div class="label" style="color:var(--success)">Approuvés</div>
+    </div>
+    <div class="prog-stat">
+      <div class="value" id="prog-revoir" style="color:var(--danger)">—</div>
+      <div class="label" style="color:var(--danger)">À revoir</div>
+    </div>
+    <div class="prog-stat">
+      <div class="value" id="prog-budget" style="color:var(--caramel);font-size:18px">—</div>
+      <div class="label">Budget confirmé</div>
+    </div>
+  </div>
+
+  <!-- Navigation catégories -->
+  <nav class="cat-nav" id="cat-nav"></nav>
+
+  <!-- Contenu -->
+  <div class="content" id="content">
+    <div class="empty-state">
+      <h3>Sélectionnez votre projet</h3>
+      <p>Choisissez un projet dans le menu ci-dessus pour voir vos sélections.</p>
+    </div>
+  </div>
+</div>
+
+<!-- Modal commentaire -->
+<div id="modal-commentaire" class="modal-overlay">
+  <div class="modal">
+    <div class="modal-header">
+      <h3>Demande de révision</h3>
+      <button class="modal-close" onclick="closeModal('modal-commentaire')">×</button>
+    </div>
+    <div class="modal-body">
+      <div id="commentaire-produit-info" style="margin-bottom:16px;font-size:13px;color:var(--texte-2)"></div>
+      <textarea id="commentaire-text" rows="4" placeholder="Décrivez votre commentaire ou ce que vous souhaiteriez modifier…" style="width:100%;padding:12px;border:1px solid var(--bord);font-family:'Roboto',sans-serif;font-size:13px;resize:vertical;outline:none"></textarea>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-outline" onclick="closeModal('modal-commentaire')">Annuler</button>
+      <button class="btn btn-dark" onclick="envoyerCommentaire()">Envoyer</button>
+    </div>
+  </div>
+</div>
+
+<div id="toast-container"></div>
+
+<script>
+// ============================================================
+// CONFIG
+// ============================================================
+const SUPABASE_URL = 'https://VOTRE_PROJECT_ID.supabase.co';
+const SUPABASE_ANON_KEY = 'VOTRE_ANON_KEY_ICI';
+
+const { createClient } = supabase;
+const db = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
+// ============================================================
+// STATE
+// ============================================================
+let currentProjetId = null;
+let allPostes = [];
+let currentCategorie = null;
+let commentaireOptionId = null;
+let clientRecord = null;
+
+// ============================================================
+// AUTH
+// ============================================================
+async function login() {
+  const email = document.getElementById('login-email').value;
+  const password = document.getElementById('login-password').value;
+  const errEl = document.getElementById('auth-error');
+  errEl.textContent = '';
+
+  const { error } = await db.auth.signInWithPassword({ email, password });
+  if (error) {
+    errEl.textContent = 'Identifiants incorrects. Vérifiez votre courriel et mot de passe.';
+    return;
+  }
+  initApp();
+}
+
+async function logout() {
+  await db.auth.signOut();
+  document.getElementById('app').style.display = 'none';
+  document.getElementById('auth-screen').style.display = 'flex';
+}
+
+async function checkAuth() {
+  const { data: { session } } = await db.auth.getSession();
+  if (session) initApp();
+}
+
+async function initApp() {
+  const { data: { user } } = await db.auth.getUser();
+  if (!user) return;
+
+  document.getElementById('auth-screen').style.display = 'none';
+  document.getElementById('app').style.display = 'block';
+
+  // Trouver le record client correspondant
+  const { data: clients } = await db.from('clients').select('*').eq('email', user.email);
+  clientRecord = clients && clients[0];
+
+  if (clientRecord) {
+    document.getElementById('user-name-display').textContent = clientRecord.nom;
+  } else {
+    document.getElementById('user-name-display').textContent = user.email;
+  }
+
+  await chargerProjetsClient(user.email);
+}
+
+async function chargerProjetsClient(email) {
+  // Chercher les projets du client
+  let projets = [];
+
+  if (clientRecord) {
+    const { data } = await db.from('projets').select('id, nom, statut').eq('client_id', clientRecord.id).order('created_at', { ascending: false });
+    projets = data || [];
+  }
+
+  const sel = document.getElementById('projet-select');
+  if (projets.length === 0) {
+    sel.innerHTML = '<option value="">Aucun projet disponible</option>';
+    return;
+  }
+
+  sel.innerHTML = projets.map(p => `<option value="${p.id}">${p.nom}</option>`).join('');
+  currentProjetId = projets[0].id;
+  chargerProjet();
+}
+
+// ============================================================
+// PROJET
+// ============================================================
+async function chargerProjet() {
+  currentProjetId = document.getElementById('projet-select').value;
+  if (!currentProjetId) return;
+
+  // Charger tous les postes avec options
+  const { data: postes } = await db
+    .from('postes')
+    .select(`
+      *,
+      categories(id, nom, ordre),
+      options_produits(
+        *,
+        banque_produits(nom, fabricant, modele, sku, couleur, dimensions, caracteristiques, prix, photo_url, url)
+      )
+    `)
+    .eq('projet_id', currentProjetId)
+    .order('ordre');
+
+  allPostes = postes || [];
+
+  // Construire nav catégories
+  const cats = {};
+  allPostes.forEach(p => {
+    if (p.categories) {
+      cats[p.categories.id] = p.categories;
+    }
+  });
+
+  const sortedCats = Object.values(cats).sort((a, b) => a.ordre - b.ordre);
+
+  const catNav = document.getElementById('cat-nav');
+  catNav.innerHTML = sortedCats.map((c, i) =>
+    `<div class="cat-tab ${i === 0 ? 'active' : ''}" onclick="filtrerCategorie('${c.id}', this)">${c.nom}</div>`
+  ).join('');
+
+  currentCategorie = sortedCats.length > 0 ? sortedCats[0].id : null;
+
+  // Progression
+  mettreAJourProgression();
+
+  // Afficher
+  renderPostes();
+}
+
+function filtrerCategorie(catId, el) {
+  document.querySelectorAll('.cat-tab').forEach(t => t.classList.remove('active'));
+  el.classList.add('active');
+  currentCategorie = catId;
+  renderPostes();
+}
+
+function renderPostes() {
+  const filtered = allPostes.filter(p => p.categories && p.categories.id === currentCategorie);
+  const content = document.getElementById('content');
+
+  if (filtered.length === 0) {
+    content.innerHTML = `<div class="empty-state"><h3>Aucune sélection</h3><p>Aucun poste dans cette catégorie pour l'instant.</p></div>`;
+    return;
+  }
+
+  content.innerHTML = filtered.map(poste => buildPosteHTML(poste)).join('');
+}
+
+function buildPosteHTML(poste) {
+  const options = poste.options_produits || [];
+  const isMultiple = options.length > 1;
+
+  let optionsHTML = '';
+
+  if (!isMultiple && options.length === 1) {
+    const opt = options[0];
+    optionsHTML = `<div class="option-simple">${buildOptionContent(opt)}</div>`;
+  } else if (isMultiple) {
+    const tabs = options.map((opt, i) =>
+      `<div class="option-tab ${i === 0 ? 'active' : ''}" onclick="switchOptionTab('${poste.id}', ${i})">${opt.lettre_option ? 'Option ' + opt.lettre_option : 'Option ' + (i + 1)}</div>`
+    ).join('');
+    const contents = options.map((opt, i) =>
+      `<div class="option-tab-content ${i === 0 ? 'active' : ''}" id="opt-content-${poste.id}-${i}">${buildOptionContent(opt)}</div>`
+    ).join('');
+    optionsHTML = `<div class="options-multiple"><div class="option-tab-nav">${tabs}</div>${contents}</div>`;
+  } else {
+    optionsHTML = '<div style="padding:20px;color:var(--texte-2);font-size:13px">Aucun produit proposé pour ce poste.</div>';
+  }
+
+  const statusSummary = getPosteStatus(options);
+
+  return `
+    <div class="selection-card" id="poste-card-${poste.id}">
+      <div class="selection-card-header">
+        <div>
+          <span class="selection-ref">${poste.reference}</span>
+          ${poste.piece ? `<span class="selection-piece"> — ${poste.piece}</span>` : ''}
+        </div>
+        <div style="display:flex;align-items:center;gap:8px">
+          <span class="status-dot ${statusSummary.dotClass}"></span>
+          <span style="font-size:12px;color:var(--texte-2)">${statusSummary.label}</span>
+        </div>
+      </div>
+      ${optionsHTML}
+    </div>
+  `;
+}
+
+function buildOptionContent(opt) {
+  const bp = opt.banque_produits;
+  if (!bp) return '<div style="color:var(--texte-2);font-size:13px">Produit non disponible.</div>';
+
+  const isApprouve = opt.statut_client === 'approuvé';
+  const isRevoir = opt.statut_client === 'à_revoir';
+
+  const specsArr = [];
+  if (bp.couleur) specsArr.push('Couleur : ' + bp.couleur);
+  if (bp.dimensions) specsArr.push('Dimensions : ' + bp.dimensions);
+  if (bp.sku) specsArr.push('SKU : ' + bp.sku);
+  if (bp.caracteristiques) specsArr.push(bp.caracteristiques);
+
+  return `
+    ${bp.photo_url
+      ? `<img src="${bp.photo_url}" class="option-photo" onerror="this.parentNode.replaceChild(Object.assign(document.createElement('div'),{className:'option-photo-placeholder',innerHTML:'📦'}),this)" />`
+      : '<div class="option-photo-placeholder">📦</div>'
+    }
+    <div class="option-details">
+      <div class="fabricant">${bp.fabricant || ''} ${bp.modele ? '· ' + bp.modele : ''}</div>
+      <h4>${bp.nom || '—'}</h4>
+      ${specsArr.length ? `<div class="specs">${specsArr.join('<br>')}</div>` : ''}
+      ${opt.note_client ? `<div class="note-cmpg">💡 ${opt.note_client}</div>` : ''}
+      ${bp.prix ? `<div class="prix">${Number(bp.prix * opt.quantite).toLocaleString('fr-CA', {style:'currency',currency:'CAD'})}<span style="font-size:11px;font-weight:400;color:var(--texte-2)"> (qté: ${opt.quantite})</span></div>` : ''}
+      ${bp.url ? `<a href="${bp.url}" target="_blank" style="font-size:12px;color:var(--caramel);display:inline-block;margin-top:8px">↗ Voir le produit en ligne</a>` : ''}
+      ${opt.commentaire_client ? `<div style="font-size:12px;color:var(--caramel);margin-top:8px;font-style:italic">Votre commentaire : "${opt.commentaire_client}"</div>` : ''}
+    </div>
+    <div class="option-actions">
+      <button class="btn-decision btn-approuver ${isApprouve ? 'actif' : ''}"
+        onclick="decider('${opt.id}', 'approuvé', this)">
+        ✓ Approuver
+      </button>
+      <button class="btn-decision btn-revoir ${isRevoir ? 'actif' : ''}"
+        onclick="ouvrirCommentaire('${opt.id}', '${bp.nom ? bp.nom.replace(/'/g, "\\'") : 'ce produit'}')">
+        ↩ Demander révision
+      </button>
+    </div>
+  `;
+}
+
+function getPosteStatus(options) {
+  if (options.length === 0) return { dotClass: 'dot-attente', label: 'En attente' };
+  const all = options.every(o => o.statut_client !== 'en_attente');
+  const anyRevoir = options.some(o => o.statut_client === 'à_revoir');
+  const allApprouves = options.every(o => o.statut_client === 'approuvé');
+  if (allApprouves) return { dotClass: 'dot-approuve', label: 'Approuvé' };
+  if (anyRevoir) return { dotClass: 'dot-revoir', label: 'À revoir' };
+  return { dotClass: 'dot-attente', label: 'En attente' };
+}
+
+function switchOptionTab(posteId, idx) {
+  const card = document.getElementById('poste-card-' + posteId);
+  card.querySelectorAll('.option-tab').forEach((t, i) => t.classList.toggle('active', i === idx));
+  card.querySelectorAll('.option-tab-content').forEach((c, i) => c.classList.toggle('active', i === idx));
+}
+
+// ============================================================
+// DÉCISIONS
+// ============================================================
+async function decider(optionId, statut, btn) {
+  const { error } = await db.from('options_produits').update({
+    statut_client: statut,
+    date_decision: new Date().toISOString()
+  }).eq('id', optionId);
+
+  if (error) { toast('Erreur lors de la mise à jour.', 'error'); return; }
+
+  // Mettre à jour dans le cache local
+  allPostes.forEach(p => {
+    const opt = (p.options_produits || []).find(o => o.id === optionId);
+    if (opt) opt.statut_client = statut;
+  });
+
+  toast(statut === 'approuvé' ? '✓ Sélection approuvée !' : 'Demande de révision envoyée.', 'success');
+  mettreAJourProgression();
+  renderPostes();
+}
+
+function ouvrirCommentaire(optionId, nomProduit) {
+  commentaireOptionId = optionId;
+  document.getElementById('commentaire-produit-info').textContent = 'Produit : ' + nomProduit;
+  document.getElementById('commentaire-text').value = '';
+  openModal('modal-commentaire');
+}
+
+async function envoyerCommentaire() {
+  const commentaire = document.getElementById('commentaire-text').value.trim();
+  if (!commentaire) { toast('Veuillez entrer un commentaire.', 'error'); return; }
+
+  const { error } = await db.from('options_produits').update({
+    statut_client: 'à_revoir',
+    commentaire_client: commentaire,
+    date_decision: new Date().toISOString()
+  }).eq('id', commentaireOptionId);
+
+  if (error) { toast('Erreur lors de l\'envoi.', 'error'); return; }
+
+  allPostes.forEach(p => {
+    const opt = (p.options_produits || []).find(o => o.id === commentaireOptionId);
+    if (opt) { opt.statut_client = 'à_revoir'; opt.commentaire_client = commentaire; }
+  });
+
+  closeModal('modal-commentaire');
+  toast('Commentaire envoyé à CMPG.', 'success');
+  mettreAJourProgression();
+  renderPostes();
+}
+
+// ============================================================
+// PROGRESSION
+// ============================================================
+function mettreAJourProgression() {
+  let total = 0, approuves = 0, revoir = 0, budgetConfirme = 0;
+
+  allPostes.forEach(p => {
+    (p.options_produits || []).forEach(opt => {
+      total++;
+      if (opt.statut_client === 'approuvé') {
+        approuves++;
+        const bp = opt.banque_produits;
+        if (bp && bp.prix) budgetConfirme += bp.prix * opt.quantite;
+      }
+      if (opt.statut_client === 'à_revoir') revoir++;
+    });
+  });
+
+  const pct = total > 0 ? Math.round(approuves / total * 100) : 0;
+
+  document.getElementById('prog-total').textContent = total;
+  document.getElementById('prog-approuves').textContent = approuves;
+  document.getElementById('prog-revoir').textContent = revoir;
+  document.getElementById('prog-pct').textContent = pct + '%';
+  document.getElementById('prog-fill').style.width = pct + '%';
+  document.getElementById('prog-budget').textContent = budgetConfirme > 0
+    ? budgetConfirme.toLocaleString('fr-CA', { style: 'currency', currency: 'CAD' })
+    : '—';
+}
+
+// ============================================================
+// UTILITAIRES
+// ============================================================
+function openModal(id) { document.getElementById(id).classList.add('open'); }
+function closeModal(id) { document.getElementById(id).classList.remove('open'); }
+
+function toast(msg, type = 'info') {
+  const container = document.getElementById('toast-container');
+  const div = document.createElement('div');
+  div.className = 'toast toast-' + type;
+  div.textContent = msg;
+  container.appendChild(div);
+  setTimeout(() => div.remove(), 4000);
+}
+
+document.querySelectorAll('.modal-overlay').forEach(overlay => {
+  overlay.addEventListener('click', e => {
+    if (e.target === overlay) overlay.classList.remove('open');
+  });
+});
+
+// ============================================================
+// INIT
+// ============================================================
+checkAuth();
+</script>
+</body>
+</html>

@@ -391,9 +391,10 @@ async function chargerProjet() {
     .select(`
       *,
       categories(id, nom, ordre),
+      sous_categories(id, nom, ordre),
       options_produits(
         *,
-        banque_produits(nom, fabricant, modele, sku, couleur, dimensions, caracteristiques, prix, photo_url, url)
+        banque_produits(nom, fabricant, modele, sku, couleur, dimensions, caracteristiques, prix, photo_url, url, statut)
       )
     `)
     .eq('projet_id', currentProjetId)
@@ -441,11 +442,30 @@ function renderPostes() {
     return;
   }
 
-  content.innerHTML = filtered.map(poste => buildPosteHTML(poste)).join('');
+  // Regrouper par sous-catégorie
+  const groupes = {};
+  const SANS_GROUPE = '__sans__';
+  filtered.forEach(poste => {
+    const scNom = poste.sous_categories ? poste.sous_categories.nom : SANS_GROUPE;
+    const scOrdre = poste.sous_categories ? (poste.sous_categories.ordre || 999) : 0;
+    if (!groupes[scNom]) groupes[scNom] = { ordre: scOrdre, postes: [] };
+    groupes[scNom].postes.push(poste);
+  });
+
+  const sortedGroupes = Object.entries(groupes).sort((a,b) => a[1].ordre - b[1].ordre);
+
+  content.innerHTML = sortedGroupes.map(([scNom, g]) => {
+    const header = scNom !== SANS_GROUPE
+      ? `<div style="font-size:11px;letter-spacing:2px;text-transform:uppercase;color:var(--caramel);
+                     padding:20px 0 10px;border-bottom:1px solid var(--bord);margin-bottom:16px">${scNom}</div>`
+      : '';
+    return header + g.postes.map(poste => buildPosteHTML(poste)).join('');
+  }).join('');
 }
 
 function buildPosteHTML(poste) {
-  const options = poste.options_produits || [];
+  // Exclure les options dont le produit est discontinué
+  const options = (poste.options_produits || []).filter(o => !o.banque_produits || o.banque_produits.statut !== 'discontinue');
   const isMultiple = options.length > 1;
 
   let optionsHTML = '';

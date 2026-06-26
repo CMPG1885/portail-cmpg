@@ -352,8 +352,17 @@ body { font-family: 'Roboto', sans-serif; background: var(--fond); color: var(--
         <!-- Filtres -->
         <div class="product-bank-filters">
           <input type="search" id="search-produits" placeholder="Rechercher un produit…" oninput="filtrerProduits()" />
-          <select id="filter-categorie" onchange="filtrerProduits()">
+          <select id="filter-categorie" onchange="onCatFiltreChange()">
             <option value="">Toutes les catégories</option>
+          </select>
+          <select id="filter-sous-cat" onchange="filtrerProduits()">
+            <option value="">Toutes les sous-catégories</option>
+          </select>
+          <select id="filter-statut" onchange="filtrerProduits()">
+            <option value="">Tous les statuts</option>
+            <option value="actif">Actif</option>
+            <option value="prix_a_verifier">Prix à vérifier</option>
+            <option value="discontinue">Discontinué</option>
           </select>
         </div>
 
@@ -365,8 +374,9 @@ body { font-family: 'Roboto', sans-serif; background: var(--fond); color: var(--
                 <th>Photo</th>
                 <th>Produit</th>
                 <th>Fabricant</th>
-                <th>Catégorie</th>
+                <th>Catégorie / Sous-catégorie</th>
                 <th>Prix</th>
+                <th>Statut</th>
                 <th>Actions</th>
               </tr>
             </thead>
@@ -491,10 +501,16 @@ body { font-family: 'Roboto', sans-serif; background: var(--fond); color: var(--
     </div>
     <div class="modal-body">
       <div class="form-grid">
-        <div class="form-group form-full">
+        <div class="form-group">
           <label>Catégorie *</label>
-          <select id="ap-categorie">
+          <select id="ap-categorie" onchange="onCatFormChange()">
             <option value="">-- Sélectionner --</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label>Sous-catégorie</label>
+          <select id="ap-sous-cat">
+            <option value="">-- Sélectionner une catégorie d'abord --</option>
           </select>
         </div>
         <div class="form-group form-full">
@@ -536,6 +552,14 @@ body { font-family: 'Roboto', sans-serif; background: var(--fond); color: var(--
         <div class="form-group form-full">
           <label>URL Photo</label>
           <input type="url" id="ap-photo" placeholder="https://..." />
+        </div>
+        <div class="form-group">
+          <label>Statut</label>
+          <select id="ap-statut">
+            <option value="actif">Actif</option>
+            <option value="prix_a_verifier">Prix à vérifier</option>
+            <option value="discontinue">Discontinué</option>
+          </select>
         </div>
         <div class="form-group form-full">
           <label>Notes internes</label>
@@ -624,6 +648,7 @@ const db = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 // ============================================================
 let currentProjetId = null;
 let categories = [];
+let sousCategories = [];
 let produitsCache = [];
 let editingProduitId = null;
 
@@ -699,13 +724,12 @@ function showProjetTab(tab, el) {
 // CATÉGORIES
 // ============================================================
 async function chargerCategories() {
-  const { data } = await db.from('categories').select('*').order('ordre');
-  if (data) {
-    categories = data;
-    // Remplir les selects
-    ['np-client', 'filter-categorie', 'ap-categorie', 'poste-categorie'].forEach(id => {
-      // Gérer les selects de catégories seulement
-    });
+  const [{ data: cats }, { data: scats }] = await Promise.all([
+    db.from('categories').select('*').order('ordre'),
+    db.from('sous_categories').select('*').order('ordre')
+  ]);
+  if (cats) {
+    categories = cats;
     const catSelects = ['filter-categorie', 'ap-categorie', 'poste-categorie'];
     catSelects.forEach(id => {
       const sel = document.getElementById(id);
@@ -721,6 +745,36 @@ async function chargerCategories() {
       });
     });
   }
+  if (scats) {
+    sousCategories = scats;
+  }
+}
+
+function mettreAJourSousCats(catId, selectId, valeurActuelle) {
+  const sel = document.getElementById(selectId);
+  if (!sel) return;
+  const first = sel.options[0];
+  sel.innerHTML = '';
+  sel.appendChild(first);
+  const filtrees = sousCategories.filter(sc => sc.categorie_id === catId);
+  filtrees.forEach(sc => {
+    const opt = document.createElement('option');
+    opt.value = sc.id;
+    opt.textContent = sc.nom;
+    if (valeurActuelle && sc.id === valeurActuelle) opt.selected = true;
+    sel.appendChild(opt);
+  });
+}
+
+function onCatFiltreChange() {
+  const catId = document.getElementById('filter-categorie').value;
+  mettreAJourSousCats(catId, 'filter-sous-cat');
+  filtrerProduits();
+}
+
+function onCatFormChange() {
+  const catId = document.getElementById('ap-categorie').value;
+  mettreAJourSousCats(catId, 'ap-sous-cat');
 }
 
 // ============================================================
@@ -970,21 +1024,36 @@ async function sauvegarderPoste() {
 async function chargerProduits() {
   const { data } = await db
     .from('banque_produits')
-    .select('*, categories(nom)')
+    .select('*, categories(nom), sous_categories(nom)')
     .order('created_at', { ascending: false });
 
   produitsCache = data || [];
   renderProduits(produitsCache);
 }
 
+function badgeStatut(statut) {
+  if (statut === 'discontinue')
+    return `<span style="background:#f8e0e0;color:var(--danger);font-size:10px;padding:2px 8px;letter-spacing:1px;text-transform:uppercase">Discontinué</span>`;
+  if (statut === 'prix_a_verifier')
+    return `<span style="background:#fef3e2;color:#b86c00;font-size:10px;padding:2px 8px;letter-spacing:1px;text-transform:uppercase">Prix à vérifier</span>`;
+  return `<span style="background:#e6f4ec;color:var(--success);font-size:10px;padding:2px 8px;letter-spacing:1px;text-transform:uppercase">Actif</span>`;
+}
+
+function avertissementPrix(dateVerif) {
+  if (!dateVerif) return '<div style="font-size:10px;color:#b86c00;margin-top:3px">⚠ Prix non vérifié</div>';
+  const mois = (Date.now() - new Date(dateVerif)) / (1000*60*60*24*30);
+  if (mois > 6) return `<div style="font-size:10px;color:#b86c00;margin-top:3px">⚠ Vérifié il y a ${Math.round(mois)} mois</div>`;
+  return '';
+}
+
 function renderProduits(produits) {
   const tbody = document.getElementById('produits-tbody');
   if (!produits.length) {
-    tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;padding:40px;color:var(--texte-2)">Aucun produit dans la banque.</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="7" style="text-align:center;padding:40px;color:var(--texte-2)">Aucun produit dans la banque.</td></tr>';
     return;
   }
   tbody.innerHTML = produits.map(p => `
-    <tr>
+    <tr style="${p.statut === 'discontinue' ? 'opacity:.5' : ''}">
       <td>${p.photo_url ? `<img src="${p.photo_url}" class="product-thumb" onerror="this.style.display='none'" />` : '<div class="product-thumb" style="display:inline-block"></div>'}</td>
       <td>
         <div style="font-weight:500;font-size:13px">${p.nom || '—'}</div>
@@ -992,8 +1061,15 @@ function renderProduits(produits) {
         ${p.url ? `<a href="${p.url}" target="_blank" style="font-size:11px;color:var(--caramel)">↗ Voir le produit</a>` : ''}
       </td>
       <td style="font-size:13px">${p.fabricant || '—'}<br><span style="font-size:11px;color:var(--texte-2)">${p.modele || ''}</span></td>
-      <td style="font-size:12px">${p.categories ? p.categories.nom : '—'}</td>
-      <td style="font-size:13px;font-weight:500">${p.prix ? '$' + Number(p.prix).toLocaleString('fr-CA') : '—'}</td>
+      <td style="font-size:12px">
+        ${p.categories ? p.categories.nom : '—'}
+        ${p.sous_categories ? `<div style="font-size:11px;color:var(--caramel);margin-top:2px">${p.sous_categories.nom}</div>` : ''}
+      </td>
+      <td style="font-size:13px;font-weight:500">
+        ${p.prix ? '$' + Number(p.prix).toLocaleString('fr-CA') : '—'}
+        ${avertissementPrix(p.date_verification_prix)}
+      </td>
+      <td>${badgeStatut(p.statut || 'actif')}</td>
       <td>
         <button class="btn btn-outline btn-sm" onclick="editerProduit('${p.id}')">Modifier</button>
         <button class="btn btn-outline btn-sm" style="color:var(--danger);border-color:var(--danger);margin-left:6px" onclick="supprimerProduit('${p.id}','${(p.nom||'').replace(/'/g,"\\'")}')">Supprimer</button>
@@ -1003,12 +1079,16 @@ function renderProduits(produits) {
 }
 
 function filtrerProduits() {
-  const q = document.getElementById('search-produits').value.toLowerCase();
-  const cat = document.getElementById('filter-categorie').value;
+  const q      = document.getElementById('search-produits').value.toLowerCase();
+  const cat    = document.getElementById('filter-categorie').value;
+  const sCat   = document.getElementById('filter-sous-cat').value;
+  const statut = document.getElementById('filter-statut').value;
   const filtered = produitsCache.filter(p => {
-    const matchQ = !q || [p.nom, p.fabricant, p.modele, p.sku].some(v => v && v.toLowerCase().includes(q));
-    const matchCat = !cat || p.categorie_id === cat;
-    return matchQ && matchCat;
+    const matchQ  = !q      || [p.nom, p.fabricant, p.modele, p.sku].some(v => v && v.toLowerCase().includes(q));
+    const matchC  = !cat    || p.categorie_id === cat;
+    const matchSC = !sCat   || p.sous_categorie_id === sCat;
+    const matchSt = !statut || (p.statut || 'actif') === statut;
+    return matchQ && matchC && matchSC && matchSt;
   });
   renderProduits(filtered);
 }
@@ -1189,23 +1269,35 @@ async function importerParURL() {
 }
 
 async function sauvegarderProduit() {
-  const nom = document.getElementById('ap-nom').value.trim();
+  const nom   = document.getElementById('ap-nom').value.trim();
   const catId = document.getElementById('ap-categorie').value;
+  const urlProduit = document.getElementById('ap-url').value.trim() || null;
   if (!nom) { toast('Le nom du produit est requis.', 'error'); return; }
 
+  // Vérification doublon par URL
+  if (urlProduit && !editingProduitId) {
+    const { data: existe } = await db.from('banque_produits').select('id, nom').eq('url', urlProduit).maybeSingle();
+    if (existe) {
+      if (!confirm(`Ce produit semble déjà exister dans la banque :\n"${existe.nom}"\n\nVoulez-vous quand même l'ajouter?`)) return;
+    }
+  }
+
   const payload = {
-    categorie_id: catId || null,
-    url: document.getElementById('ap-url').value.trim() || null,
+    categorie_id:          catId || null,
+    sous_categorie_id:     document.getElementById('ap-sous-cat').value || null,
+    url:                   urlProduit,
     nom,
-    fabricant: document.getElementById('ap-fabricant').value.trim() || null,
-    modele: document.getElementById('ap-modele').value.trim() || null,
-    sku: document.getElementById('ap-sku').value.trim() || null,
-    prix: parseFloat(document.getElementById('ap-prix').value) || null,
-    couleur: document.getElementById('ap-couleur').value.trim() || null,
-    dimensions: document.getElementById('ap-dimensions').value.trim() || null,
-    caracteristiques: document.getElementById('ap-carac').value.trim() || null,
-    photo_url: document.getElementById('ap-photo').value.trim() || null,
-    notes_internes: document.getElementById('ap-notes').value.trim() || null,
+    fabricant:             document.getElementById('ap-fabricant').value.trim() || null,
+    modele:                document.getElementById('ap-modele').value.trim() || null,
+    sku:                   document.getElementById('ap-sku').value.trim() || null,
+    prix:                  parseFloat(document.getElementById('ap-prix').value) || null,
+    couleur:               document.getElementById('ap-couleur').value.trim() || null,
+    dimensions:            document.getElementById('ap-dimensions').value.trim() || null,
+    caracteristiques:      document.getElementById('ap-carac').value.trim() || null,
+    photo_url:             document.getElementById('ap-photo').value.trim() || null,
+    notes_internes:        document.getElementById('ap-notes').value.trim() || null,
+    statut:                document.getElementById('ap-statut').value || 'actif',
+    date_verification_prix: new Date().toISOString(),
   };
 
   const wasEditing = !!editingProduitId;
@@ -1227,9 +1319,11 @@ function resetModalProduit() {
   editingProduitId = null;
   document.querySelector('#modal-ajout-produit .modal-header h3').textContent = 'Ajouter un produit';
   document.querySelector('#modal-ajout-produit .modal-footer .btn-dark').textContent = 'Ajouter à la banque';
-  ['ap-categorie','ap-url','ap-nom','ap-fabricant','ap-modele','ap-sku',
+  ['ap-categorie','ap-sous-cat','ap-url','ap-nom','ap-fabricant','ap-modele','ap-sku',
    'ap-prix','ap-couleur','ap-dimensions','ap-carac','ap-photo','ap-notes']
     .forEach(id => { const el = document.getElementById(id); if(el) el.value = ''; });
+  const statutEl = document.getElementById('ap-statut');
+  if (statutEl) statutEl.value = 'actif';
 }
 
 async function supprimerProduit(id, nom) {
@@ -1245,6 +1339,7 @@ function editerProduit(id) {
   if (!p) return;
   editingProduitId = id;
   document.getElementById('ap-categorie').value   = p.categorie_id || '';
+  mettreAJourSousCats(p.categorie_id, 'ap-sous-cat', p.sous_categorie_id);
   document.getElementById('ap-url').value         = p.url || '';
   document.getElementById('ap-nom').value         = p.nom || '';
   document.getElementById('ap-fabricant').value   = p.fabricant || '';
@@ -1256,6 +1351,7 @@ function editerProduit(id) {
   document.getElementById('ap-carac').value       = p.caracteristiques || '';
   document.getElementById('ap-photo').value       = p.photo_url || '';
   document.getElementById('ap-notes').value       = p.notes_internes || '';
+  document.getElementById('ap-statut').value      = p.statut || 'actif';
   document.querySelector('#modal-ajout-produit .modal-header h3').textContent = 'Modifier le produit';
   document.querySelector('#modal-ajout-produit .modal-footer .btn-dark').textContent = 'Enregistrer';
   openModal('modal-ajout-produit');

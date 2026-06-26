@@ -1099,6 +1099,13 @@ async function importerParURL() {
   const statusEl = document.getElementById('url-import-status');
   statusEl.innerHTML = '<span class="spinner"></span> Analyse en cours…';
 
+  // Vérification doublon avant tout
+  const { data: doublon } = await db.from('banque_produits').select('id, nom').eq('url', url).maybeSingle();
+  if (doublon) {
+    statusEl.innerHTML = `⛔ Ce produit est déjà dans la banque : <strong>${doublon.nom}</strong>. Utilisez le bouton Modifier si vous souhaitez le mettre à jour.`;
+    return;
+  }
+
   // Helpers
   const estSlug = s => s && (s.match(/-/g)||[]).length > 3 && (s.match(/ /g)||[]).length < 2;
   const nettoyerTitre = t => {

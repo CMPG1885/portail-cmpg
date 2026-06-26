@@ -1274,11 +1274,12 @@ async function sauvegarderProduit() {
   const urlProduit = document.getElementById('ap-url').value.trim() || null;
   if (!nom) { toast('Le nom du produit est requis.', 'error'); return; }
 
-  // Vérification doublon par URL
+  // Vérification doublon par URL — blocage complet
   if (urlProduit && !editingProduitId) {
     const { data: existe } = await db.from('banque_produits').select('id, nom').eq('url', urlProduit).maybeSingle();
     if (existe) {
-      if (!confirm(`Ce produit semble déjà exister dans la banque :\n"${existe.nom}"\n\nVoulez-vous quand même l'ajouter?`)) return;
+      toast(`Ce produit existe déjà dans la banque : "${existe.nom}"`, 'error');
+      return;
     }
   }
 

@@ -487,7 +487,7 @@ body { font-family: 'Roboto', sans-serif; background: var(--fond); color: var(--
   <div class="modal">
     <div class="modal-header">
       <h3>Ajouter un produit</h3>
-      <button class="modal-close" onclick="closeModal('modal-ajout-produit')">×</button>
+      <button class="modal-close" onclick="resetModalProduit();closeModal('modal-ajout-produit')">×</button>
     </div>
     <div class="modal-body">
       <div class="form-grid">
@@ -544,7 +544,7 @@ body { font-family: 'Roboto', sans-serif; background: var(--fond); color: var(--
       </div>
     </div>
     <div class="modal-footer">
-      <button class="btn btn-outline" onclick="closeModal('modal-ajout-produit')">Annuler</button>
+      <button class="btn btn-outline" onclick="resetModalProduit();closeModal('modal-ajout-produit')">Annuler</button>
       <button class="btn btn-dark" onclick="sauvegarderProduit()">Ajouter à la banque</button>
     </div>
   </div>
@@ -625,6 +625,7 @@ const db = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 let currentProjetId = null;
 let categories = [];
 let produitsCache = [];
+let editingProduitId = null;
 
 // ============================================================
 // AUTH
@@ -1061,13 +1062,20 @@ async function importerParURL() {
       const result = await resp.json();
       if (result.status === 'success') {
         const m = result.data;
+        // Nettoyer le titre : enlever le nom du site après " | " ou " – " ou " - "
+        let titre = m.title || '';
+        titre = titre.split(/\s*[\|–\-]\s+/)[0].trim();
+        // Si le titre ressemble à une URL, l'ignorer
+        if (titre.startsWith('http') || titre.length < 3) titre = '';
+        const photoUrl = m.image ? m.image.url : '';
         remplirFormulaire({
-          nom:   m.title  || '',
-          photo: m.image  ? m.image.url : '',
+          nom:   titre,
+          photo: photoUrl,
           carac: m.description ? m.description.substring(0,300) : ''
         });
         openModal('modal-ajout-produit');
-        statusEl.innerHTML = '✅ Nom et photo importés — vérifiez les autres champs.';
+        const photoPart = photoUrl ? ' + photo' : '';
+        statusEl.innerHTML = `✅ Nom${photoPart} importé — vérifiez et complétez les autres champs.`;
         document.getElementById('url-import-input').value = '';
         return;
       }
@@ -1139,7 +1147,7 @@ async function sauvegarderProduit() {
   const catId = document.getElementById('ap-categorie').value;
   if (!nom) { toast('Le nom du produit est requis.', 'error'); return; }
 
-  const { error } = await db.from('banque_produits').insert({
+  const payload = {
     categorie_id: catId || null,
     url: document.getElementById('ap-url').value.trim() || null,
     nom,
@@ -1152,16 +1160,51 @@ async function sauvegarderProduit() {
     caracteristiques: document.getElementById('ap-carac').value.trim() || null,
     photo_url: document.getElementById('ap-photo').value.trim() || null,
     notes_internes: document.getElementById('ap-notes').value.trim() || null,
-  });
+  };
+
+  const wasEditing = !!editingProduitId;
+  let error;
+  if (wasEditing) {
+    ({ error } = await db.from('banque_produits').update(payload).eq('id', editingProduitId));
+  } else {
+    ({ error } = await db.from('banque_produits').insert(payload));
+  }
 
   if (error) { toast('Erreur : ' + error.message, 'error'); return; }
+  resetModalProduit();
   closeModal('modal-ajout-produit');
-  toast('Produit ajouté à la banque.', 'success');
+  toast(wasEditing ? 'Produit modifié.' : 'Produit ajouté à la banque.', 'success');
   chargerProduits();
 }
 
+function resetModalProduit() {
+  editingProduitId = null;
+  document.querySelector('#modal-ajout-produit .modal-header h3').textContent = 'Ajouter un produit';
+  document.querySelector('#modal-ajout-produit .modal-footer .btn-dark').textContent = 'Ajouter à la banque';
+  ['ap-categorie','ap-url','ap-nom','ap-fabricant','ap-modele','ap-sku',
+   'ap-prix','ap-couleur','ap-dimensions','ap-carac','ap-photo','ap-notes']
+    .forEach(id => { const el = document.getElementById(id); if(el) el.value = ''; });
+}
+
 function editerProduit(id) {
-  toast('Modification à venir — Phase 2.', 'info');
+  const p = produitsCache.find(x => x.id === id);
+  if (!p) return;
+  editingProduitId = id;
+  document.getElementById('ap-categorie').value   = p.categorie_id || '';
+  document.getElementById('ap-url').value         = p.url || '';
+  document.getElementById('ap-nom').value         = p.nom || '';
+  document.getElementById('ap-fabricant').value   = p.fabricant || '';
+  document.getElementById('ap-modele').value      = p.modele || '';
+  document.getElementById('ap-sku').value         = p.sku || '';
+  document.getElementById('ap-prix').value        = p.prix || '';
+  document.getElementById('ap-couleur').value     = p.couleur || '';
+  document.getElementById('ap-dimensions').value  = p.dimensions || '';
+  document.getElementById('ap-carac').value       = p.caracteristiques || '';
+  document.getElementById('ap-photo').value       = p.photo_url || '';
+  document.getElementById('ap-notes').value       = p.notes_internes || '';
+  document.querySelector('#modal-ajout-produit .modal-header h3').textContent = 'Modifier le produit';
+  document.querySelector('#modal-ajout-produit .modal-footer .btn-dark').textContent = 'Enregistrer';
+  openModal('modal-ajout-produit');
 }
 
 // ============================================================

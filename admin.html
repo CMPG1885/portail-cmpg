@@ -1309,7 +1309,14 @@ async function sauvegarderProduit() {
     ({ error } = await db.from('banque_produits').insert(payload));
   }
 
-  if (error) { toast('Erreur : ' + error.message, 'error'); return; }
+  if (error) {
+    if (error.code === '23505') {
+      toast('Ce produit existe déjà dans la banque (URL en double).', 'error');
+    } else {
+      toast('Erreur : ' + error.message, 'error');
+    }
+    return;
+  }
   resetModalProduit();
   closeModal('modal-ajout-produit');
   toast(wasEditing ? 'Produit modifié.' : 'Produit ajouté à la banque.', 'success');

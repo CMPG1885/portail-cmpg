@@ -272,7 +272,7 @@ body { font-family: 'Roboto', sans-serif; background: var(--fond); color: var(--
     <div id="view-projets" class="view active">
       <div class="page-header">
         <h2>Projets</h2>
-        <button class="btn btn-dark" onclick="openModal('modal-nouveau-projet')">+ Nouveau projet</button>
+        <button class="btn btn-dark" onclick="ouvrirModalNouveauProjet()">+ Nouveau projet</button>
       </div>
       <div class="page-body">
         <div id="projets-grid" class="card-grid">
@@ -836,6 +836,20 @@ async function chargerProjets() {
     opt.textContent = c.nom;
     selClient.appendChild(opt);
   });
+}
+
+async function ouvrirModalNouveauProjet() {
+  // Recharger les clients à chaque ouverture
+  const { data: clients } = await db.from('clients').select('id, nom').order('nom');
+  const sel = document.getElementById('np-client');
+  sel.innerHTML = '<option value="">-- Sélectionner un client --</option>';
+  (clients || []).forEach(c => {
+    const opt = document.createElement('option');
+    opt.value = c.id;
+    opt.textContent = c.nom;
+    sel.appendChild(opt);
+  });
+  openModal('modal-nouveau-projet');
 }
 
 async function creerProjet() {

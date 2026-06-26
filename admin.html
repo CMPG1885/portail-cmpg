@@ -459,6 +459,55 @@ body { font-family: 'Roboto', sans-serif; background: var(--fond); color: var(--
   </div>
 </div>
 
+<!-- Modal Modifier Projet -->
+<div id="modal-modifier-projet" class="modal-overlay">
+  <div class="modal">
+    <div class="modal-header">
+      <h3>Modifier le projet</h3>
+      <button class="modal-close" onclick="closeModal('modal-modifier-projet')">×</button>
+    </div>
+    <div class="modal-body">
+      <div class="form-grid">
+        <input type="hidden" id="mp-id" />
+        <div class="form-group form-full">
+          <label>Nom du projet *</label>
+          <input type="text" id="mp-nom" />
+        </div>
+        <div class="form-group form-full">
+          <label>Adresse</label>
+          <input type="text" id="mp-adresse" />
+        </div>
+        <div class="form-group form-full">
+          <label>Client</label>
+          <select id="mp-client">
+            <option value="">-- Sélectionner un client --</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label>Budget minimum ($)</label>
+          <input type="number" id="mp-budget-min" />
+        </div>
+        <div class="form-group">
+          <label>Budget maximum ($)</label>
+          <input type="number" id="mp-budget-max" />
+        </div>
+        <div class="form-group form-full">
+          <label>Statut</label>
+          <select id="mp-statut">
+            <option value="actif">Actif</option>
+            <option value="complété">Complété</option>
+            <option value="archivé">Archivé</option>
+          </select>
+        </div>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-outline" onclick="closeModal('modal-modifier-projet')">Annuler</button>
+      <button class="btn btn-dark" onclick="sauvegarderProjet()">Enregistrer</button>
+    </div>
+  </div>
+</div>
+
 <!-- Modal Nouveau Client -->
 <div id="modal-nouveau-client" class="modal-overlay">
   <div class="modal">
@@ -813,7 +862,10 @@ async function chargerProjets() {
     card.innerHTML = `
       <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:8px">
         <span class="status-badge status-${p.statut}">${p.statut}</span>
-        <span style="font-size:11px;color:var(--texte-2)">${budget} confirmé</span>
+        <div style="display:flex;gap:6px">
+          <button class="btn btn-outline btn-sm" onclick="event.stopPropagation();ouvrirModalModifierProjet('${p.id}')" title="Modifier">✏️</button>
+          <button class="btn btn-outline btn-sm" style="color:var(--danger);border-color:var(--danger)" onclick="event.stopPropagation();supprimerProjet('${p.id}','${p.nom.replace(/'/g,"\\'")}')" title="Supprimer">🗑</button>
+        </div>
       </div>
       <h3>${p.nom}</h3>
       <div class="client-name">${p.clients ? p.clients.nom : '(aucun client)'}</div>
@@ -869,6 +921,59 @@ async function creerProjet() {
   toast('Projet créé avec succès.', 'success');
   document.getElementById('np-nom').value = '';
   document.getElementById('np-adresse').value = '';
+  chargerProjets();
+}
+
+async function ouvrirModalModifierProjet(projetId) {
+  const { data: clients } = await db.from('clients').select('id, nom').order('nom');
+  const sel = document.getElementById('mp-client');
+  sel.innerHTML = '<option value="">-- Aucun client --</option>';
+  (clients || []).forEach(c => {
+    const opt = document.createElement('option');
+    opt.value = c.id;
+    opt.textContent = c.nom;
+    sel.appendChild(opt);
+  });
+
+  const { data: p } = await db.from('projets').select('*').eq('id', projetId).single();
+  if (!p) return;
+
+  document.getElementById('mp-id').value         = p.id;
+  document.getElementById('mp-nom').value        = p.nom || '';
+  document.getElementById('mp-adresse').value    = p.adresse || '';
+  document.getElementById('mp-client').value     = p.client_id || '';
+  document.getElementById('mp-budget-min').value = p.budget_min || '';
+  document.getElementById('mp-budget-max').value = p.budget_max || '';
+  document.getElementById('mp-statut').value     = p.statut || 'actif';
+  openModal('modal-modifier-projet');
+}
+
+async function sauvegarderProjet() {
+  const id  = document.getElementById('mp-id').value;
+  const nom = document.getElementById('mp-nom').value.trim();
+  if (!nom) { toast('Le nom du projet est requis.', 'error'); return; }
+
+  const { error } = await db.from('projets').update({
+    nom,
+    adresse:    document.getElementById('mp-adresse').value.trim() || null,
+    client_id:  document.getElementById('mp-client').value || null,
+    budget_min: parseFloat(document.getElementById('mp-budget-min').value) || null,
+    budget_max: parseFloat(document.getElementById('mp-budget-max').value) || null,
+    statut:     document.getElementById('mp-statut').value,
+    updated_at: new Date().toISOString(),
+  }).eq('id', id);
+
+  if (error) { toast('Erreur : ' + error.message, 'error'); return; }
+  closeModal('modal-modifier-projet');
+  toast('Projet mis à jour.', 'success');
+  chargerProjets();
+}
+
+async function supprimerProjet(id, nom) {
+  if (!confirm(`Supprimer le projet "${nom}" ?\n\nTous les postes et sélections seront supprimés. Cette action est irréversible.`)) return;
+  const { error } = await db.from('projets').delete().eq('id', id);
+  if (error) { toast('Erreur : ' + error.message, 'error'); return; }
+  toast('Projet supprimé.', 'success');
   chargerProjets();
 }
 

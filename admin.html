@@ -996,6 +996,7 @@ function renderProduits(produits) {
       <td style="font-size:13px;font-weight:500">${p.prix ? '$' + Number(p.prix).toLocaleString('fr-CA') : '—'}</td>
       <td>
         <button class="btn btn-outline btn-sm" onclick="editerProduit('${p.id}')">Modifier</button>
+        <button class="btn btn-outline btn-sm" style="color:var(--danger);border-color:var(--danger);margin-left:6px" onclick="supprimerProduit('${p.id}','${(p.nom||'').replace(/'/g,"\\'")}')">Supprimer</button>
       </td>
     </tr>
   `).join('');
@@ -1184,6 +1185,14 @@ function resetModalProduit() {
   ['ap-categorie','ap-url','ap-nom','ap-fabricant','ap-modele','ap-sku',
    'ap-prix','ap-couleur','ap-dimensions','ap-carac','ap-photo','ap-notes']
     .forEach(id => { const el = document.getElementById(id); if(el) el.value = ''; });
+}
+
+async function supprimerProduit(id, nom) {
+  if (!confirm(`Supprimer "${nom}" de la banque de produits ?\n\nCette action est irréversible.`)) return;
+  const { error } = await db.from('banque_produits').delete().eq('id', id);
+  if (error) { toast('Erreur : ' + error.message, 'error'); return; }
+  toast('Produit supprimé.', 'success');
+  chargerProduits();
 }
 
 function editerProduit(id) {

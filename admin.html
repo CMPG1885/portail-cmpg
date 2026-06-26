@@ -211,6 +211,9 @@ body { font-family: 'Roboto', sans-serif; background: var(--fond); color: var(--
 .poste-header:hover { background: var(--fond); }
 .poste-ref { font-weight: 500; font-size: 13px; margin-right: 10px; }
 .poste-piece { font-size: 12px; color: var(--texte-2); }
+.piece-chip { display:inline-flex;align-items:center;gap:5px;padding:5px 11px;border:1px solid var(--bord);background:var(--fond);font-size:12px;cursor:pointer;user-select:none;transition:all .1s; }
+.piece-chip.checked { background:var(--caramel);color:var(--blanc);border-color:var(--caramel); }
+.piece-chip input[type=checkbox] { display:none; }
 .poste-options { padding: 0 16px 16px; border-top: 1px solid var(--bord); }
 .option-row { display: grid; grid-template-columns: 60px 60px 1fr auto; gap: 12px; align-items: center; padding: 10px 0; border-bottom: 1px solid var(--bord); }
 .option-row:last-child { border-bottom: none; }
@@ -668,13 +671,15 @@ body { font-family: 'Roboto', sans-serif; background: var(--fond); color: var(--
           <input type="text" id="poste-ref" placeholder="PL-01" />
         </div>
         <div class="form-group">
-          <label>Pièce</label>
-          <input type="text" id="poste-piece" placeholder="Cuisine" />
+          <label>Catégorie *</label>
+          <select id="poste-categorie" onchange="mettreAJourSousCatsPoste(this.value,'')">
+            <option value="">-- Sélectionner --</option>
+          </select>
         </div>
         <div class="form-group">
-          <label>Catégorie *</label>
-          <select id="poste-categorie">
-            <option value="">-- Sélectionner --</option>
+          <label>Sous-catégorie</label>
+          <select id="poste-sous-cat">
+            <option value="">-- Aucune --</option>
           </select>
         </div>
         <div class="form-group">
@@ -683,6 +688,16 @@ body { font-family: 'Roboto', sans-serif; background: var(--fond); color: var(--
             <option value="unique">Option unique (A)</option>
             <option value="multiple">Options multiples (A, B, C)</option>
           </select>
+        </div>
+        <div class="form-group" style="grid-column:1/-1">
+          <label>Pièce(s)</label>
+          <div id="pieces-checklist" style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:10px"></div>
+          <div style="display:flex;gap:8px">
+            <input type="text" id="nouvelle-piece" placeholder="Nouvelle pièce…"
+              style="flex:1;padding:8px 10px;border:1px solid var(--bord);font-size:13px;outline:none"
+              onkeydown="if(event.key==='Enter'){event.preventDefault();ajouterPiece()}" />
+            <button type="button" class="btn btn-outline btn-sm" onclick="ajouterPiece()">+ Ajouter</button>
+          </div>
         </div>
       </div>
       <div id="poste-options-section">
@@ -729,6 +744,14 @@ const db = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 let currentProjetId = null;
 let categories = [];
 let sousCategories = [];
+let postesCache = [];
+
+const PIECES_DEFAUT = [
+  'Cuisine','Salon','Salle à manger','Entrée','Couloir',
+  'SDB principale','SDB secondaire','SDB enfants','SDB parents',
+  'Chambre principale','Chambre enfant 1','Chambre enfant 2',
+  'Bureau','Sous-sol','Buanderie','Garage','Mudroom','Extérieur','Général'
+];
 let produitsCache = [];
 let editingProduitId = null;
 let editingPosteId = null;
@@ -1035,10 +1058,11 @@ async function ouvrirProjet(projetId) {
 async function chargerPostes() {
   const { data: postes } = await db
     .from('postes')
-    .select('*, categories(nom, ordre), options_produits(*, banque_produits(nom, fabricant, modele, prix, photo_url, couleur))')
+    .select('*, categories(nom, ordre), sous_categories(nom), options_produits(*, banque_produits(nom, fabricant, modele, prix, photo_url, couleur))')
     .eq('projet_id', currentProjetId)
     .order('ordre');
 
+  postesCache = postes || [];
   const container = document.getElementById('postes-categories-list');
   if (!postes || postes.length === 0) {
     container.innerHTML = `<div class="empty-state"><div class="icon">📋</div><h3>Aucun poste</h3><p>Ajoutez des postes pour définir les sélections du projet.</p></div>`;
@@ -1094,11 +1118,11 @@ async function chargerPostes() {
         <div class="poste-header">
           <div>
             <span class="poste-ref">${poste.reference}</span>
-            <span class="poste-piece">${poste.piece || ''}</span>
+            <span class="poste-piece">${(poste.pieces && poste.pieces.length ? poste.pieces.join(', ') : (poste.piece || ''))}</span>
           </div>
           <div style="display:flex;align-items:center;gap:8px">
             <span style="font-size:11px;color:var(--texte-2)">${options.length} option(s)</span>
-            <button class="btn btn-outline btn-sm" onclick="event.stopPropagation();ouvrirModalEditerPoste('${poste.id}','${poste.reference.replace(/'/g,"\\'")}','${(poste.piece||'').replace(/'/g,"\\'")}','${poste.categorie_id}','${poste.type_selection}')" title="Modifier">✏️</button>
+            <button class="btn btn-outline btn-sm" onclick="event.stopPropagation();ouvrirModalEditerPoste('${poste.id}')" title="Modifier">✏️</button>
             <button class="btn btn-outline btn-sm" style="color:var(--danger);border-color:var(--danger)" onclick="event.stopPropagation();supprimerPoste('${poste.id}','${poste.reference.replace(/'/g,"\\'")}')" title="Supprimer">🗑</button>
           </div>
         </div>
@@ -1111,24 +1135,7 @@ async function chargerPostes() {
   });
 }
 
-function openModalPoste() {
-  // Réinitialiser en mode AJOUT
-  editingPosteId = null;
-  document.getElementById('poste-ref').value = '';
-  document.getElementById('poste-piece').value = '';
-  document.getElementById('poste-type').value = 'unique';
-
-  // Restaurer titre et bouton
-  const titreEl = document.querySelector('#modal-ajout-poste h3');
-  if (titreEl) titreEl.textContent = 'Ajouter un poste';
-  const btnEl = document.querySelector('#modal-ajout-poste .modal-footer .btn-dark');
-  if (btnEl) btnEl.textContent = 'Ajouter le poste';
-
-  // Réafficher la section produit
-  const sectProduit = document.getElementById('poste-options-section');
-  if (sectProduit) sectProduit.style.display = '';
-
-  // Remplir catégories dans le select du modal poste
+function peuplerCatsPoste() {
   const sel = document.getElementById('poste-categorie');
   const first = sel.options[0];
   sel.innerHTML = '';
@@ -1139,6 +1146,78 @@ function openModalPoste() {
     opt.textContent = c.nom;
     sel.appendChild(opt);
   });
+}
+
+function mettreAJourSousCatsPoste(catId, valeurActuelle) {
+  const sel = document.getElementById('poste-sous-cat');
+  sel.innerHTML = '<option value="">-- Aucune --</option>';
+  if (!catId) return;
+  sousCategories.filter(sc => sc.categorie_id === catId).forEach(sc => {
+    const opt = document.createElement('option');
+    opt.value = sc.id;
+    opt.textContent = sc.nom;
+    if (sc.id === valeurActuelle) opt.selected = true;
+    sel.appendChild(opt);
+  });
+}
+
+function renderPiecesChecklist(toutesLesPieces, selectionnees) {
+  const container = document.getElementById('pieces-checklist');
+  container.innerHTML = [...toutesLesPieces].map(piece => {
+    const checked = selectionnees.includes(piece);
+    return `<label class="piece-chip ${checked ? 'checked' : ''}" onclick="this.classList.toggle('checked');this.querySelector('input').checked=!this.querySelector('input').checked">
+      <input type="checkbox" value="${piece.replace(/"/g,'&quot;')}" ${checked ? 'checked' : ''} style="display:none" />
+      ${piece}
+    </label>`;
+  }).join('');
+}
+
+function getPiecesSelectionnees() {
+  return [...document.querySelectorAll('#pieces-checklist .piece-chip.checked input')]
+    .map(cb => cb.value);
+}
+
+function ajouterPiece() {
+  const input = document.getElementById('nouvelle-piece');
+  const nom = input.value.trim();
+  if (!nom) return;
+  const existing = [...document.querySelectorAll('#pieces-checklist input')].find(cb => cb.value === nom);
+  if (!existing) {
+    const container = document.getElementById('pieces-checklist');
+    const label = document.createElement('label');
+    label.className = 'piece-chip checked';
+    label.onclick = function() { this.classList.toggle('checked'); this.querySelector('input').checked = !this.querySelector('input').checked; };
+    label.innerHTML = `<input type="checkbox" value="${nom}" checked style="display:none" />${nom}`;
+    container.appendChild(label);
+  }
+  input.value = '';
+}
+
+async function construirePiecesChecklist(selectionnees) {
+  const toutesLesPieces = new Set(PIECES_DEFAUT);
+  postesCache.forEach(p => {
+    if (p.piece) toutesLesPieces.add(p.piece);
+    if (p.pieces) p.pieces.forEach(pc => toutesLesPieces.add(pc));
+  });
+  renderPiecesChecklist(toutesLesPieces, selectionnees);
+}
+
+async function openModalPoste() {
+  editingPosteId = null;
+  document.getElementById('poste-ref').value = '';
+  document.getElementById('poste-type').value = 'unique';
+  document.getElementById('nouvelle-piece').value = '';
+
+  const titreEl = document.querySelector('#modal-ajout-poste h3');
+  if (titreEl) titreEl.textContent = 'Ajouter un poste';
+  const btnEl = document.querySelector('#modal-ajout-poste .modal-footer .btn-dark');
+  if (btnEl) btnEl.textContent = 'Ajouter le poste';
+  const sectProduit = document.getElementById('poste-options-section');
+  if (sectProduit) sectProduit.style.display = '';
+
+  peuplerCatsPoste();
+  mettreAJourSousCatsPoste('', '');
+  await construirePiecesChecklist([]);
   openModal('modal-ajout-poste');
 }
 
@@ -1162,10 +1241,13 @@ async function sauvegarderPoste() {
   const catId = document.getElementById('poste-categorie').value;
   if (!ref || !catId) { toast('Référence et catégorie sont requis.', 'error'); return; }
 
+  const pieces = getPiecesSelectionnees();
   const payload = {
     reference: ref,
-    piece: document.getElementById('poste-piece').value.trim() || null,
+    pieces: pieces,
+    piece: pieces[0] || null,
     categorie_id: catId,
+    sous_categorie_id: document.getElementById('poste-sous-cat').value || null,
     type_selection: document.getElementById('poste-type').value
   };
 
@@ -1204,18 +1286,26 @@ async function sauvegarderPoste() {
   }
 }
 
-function ouvrirModalEditerPoste(id, reference, piece, categorieId, typeSelection) {
-  editingPosteId = id;
-  document.getElementById('poste-ref').value = reference;
-  document.getElementById('poste-piece').value = piece;
-  document.getElementById('poste-categorie').value = categorieId;
-  document.getElementById('poste-type').value = typeSelection;
+async function ouvrirModalEditerPoste(id) {
+  const poste = postesCache.find(p => p.id === id);
+  if (!poste) return;
 
-  // Masquer la section produit (non pertinente en mode édition)
+  editingPosteId = id;
+  document.getElementById('poste-ref').value = poste.reference;
+  document.getElementById('poste-type').value = poste.type_selection;
+  document.getElementById('nouvelle-piece').value = '';
+
+  peuplerCatsPoste();
+  document.getElementById('poste-categorie').value = poste.categorie_id;
+  mettreAJourSousCatsPoste(poste.categorie_id, poste.sous_categorie_id || '');
+
+  const selectionnees = poste.pieces && poste.pieces.length > 0
+    ? poste.pieces
+    : (poste.piece ? [poste.piece] : []);
+  await construirePiecesChecklist(selectionnees);
+
   const sectProduit = document.getElementById('poste-options-section');
   if (sectProduit) sectProduit.style.display = 'none';
-
-  // Changer le titre et le bouton
   const titreEl = document.querySelector('#modal-ajout-poste h3');
   if (titreEl) titreEl.textContent = 'Modifier le poste';
   const btnEl = document.querySelector('#modal-ajout-poste .modal-footer .btn-dark');

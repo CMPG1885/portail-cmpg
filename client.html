@@ -265,14 +265,87 @@ body { font-family: 'Roboto', sans-serif; background: var(--fond); color: var(--
 @keyframes slideIn { from { transform: translateX(100%); opacity: 0; } to { transform: translateX(0); opacity: 1; } }
 
 /* ===== RESPONSIVE ===== */
-@media (max-width: 600px) {
+@media (max-width: 768px) {
+  /* Header */
   .client-header { padding: 0 16px; }
-  .cat-nav { padding: 0 16px; }
-  .content { padding: 24px 12px; }
-  .option-simple, .option-tab-content { grid-template-columns: 1fr; }
-  .option-photo, .option-photo-placeholder { width: 100%; height: 180px; }
-  .progression-banner { flex-wrap: wrap; padding: 16px; }
-  .projet-selector { padding: 12px 16px; }
+  .client-header-logo h1 { font-size: 16px; }
+  .client-header-right .user-name { display: none; }
+
+  /* Nav volets & catégories */
+  .volet-nav { padding: 0 12px; }
+  .volet-tab { padding: 12px 14px; font-size: 10px; }
+  .cat-nav { padding: 0 12px; }
+  .cat-tab { padding: 12px 14px; font-size: 11px; }
+
+  /* Projet selector */
+  .projet-selector { padding: 10px 16px; }
+  .projet-selector select { font-size: 14px; width: 100%; }
+
+  /* Progression */
+  .progression-banner { flex-wrap: wrap; padding: 14px 16px; gap: 16px; }
+  .prog-bar-wrap { order: 99; width: 100%; }
+  .prog-stat .value { font-size: 20px; }
+
+  /* Filtre mode toggle */
+  .filtre-mode-row { padding: 0 4px; }
+  .filtre-mode-btn { padding: 10px 14px; font-size: 11px; }
+
+  /* Filtre pièces */
+  .pieces-filter-row { padding: 10px 14px; }
+
+  /* Content */
+  .content { padding: 16px 12px; }
+
+  /* Cards */
+  .selection-card-header { flex-direction: column; gap: 8px; align-items: flex-start; }
+
+  /* Option layout : empilé sur mobile */
+  .option-simple,
+  .option-tab-content { grid-template-columns: 1fr; gap: 14px; padding: 16px; }
+
+  /* Photo */
+  .option-photo,
+  .option-photo-placeholder { width: 100%; height: 200px; }
+
+  /* Boutons décision : rangée horizontale sur mobile */
+  .option-actions {
+    flex-direction: row;
+    flex-wrap: wrap;
+    gap: 8px;
+    min-width: unset;
+    width: 100%;
+  }
+  .btn-decision {
+    flex: 1;
+    min-width: 80px;
+    padding: 12px 10px;
+    font-size: 11px;
+  }
+
+  /* Options multiples tabs */
+  .option-tab { padding: 10px 14px; font-size: 11px; }
+  .option-tab-content { padding: 14px; }
+
+  /* Volet autre */
+  #volet-autre { padding: 20px 12px; }
+
+  /* Modal */
+  .modal { width: 95vw !important; }
+  .modal-body { padding: 20px 16px; }
+  .modal-footer { padding: 14px 16px; }
+  .modal-header { padding: 18px 16px; }
+
+  /* Approbation volet */
+  .approbation-section { padding: 20px 16px; }
+  .approbation-btns { flex-direction: column; }
+
+  /* Intro card */
+  .intro-card { padding: 24px 20px; }
+  .intro-card h2 { font-size: 18px; }
+
+  /* Toast */
+  #toast-container { right: 12px; left: 12px; bottom: 16px; }
+  .toast { font-size: 12px; padding: 10px 14px; }
 }
 </style>
 </head>
@@ -604,16 +677,27 @@ function renderPostes() {
     if (p.pieces && p.pieces.length) p.pieces.forEach(pc => piecesDispos.add(pc));
     else if (p.piece) piecesDispos.add(p.piece);
   });
-  const hasPieces = piecesDispos.size > 0;
+  const hasPieces   = piecesDispos.size > 0;
+  const hasSousCats = parCategorie.some(p => p.sous_categories);
 
-  // Toggle de mode (si des pièces existent)
+  // Corriger le mode si le mode actuel n'a pas de données
+  if (filtreMode === 'sous-cat' && !hasSousCats && hasPieces)  filtreMode = 'piece';
+  if (filtreMode === 'piece'    && !hasPieces    && hasSousCats) filtreMode = 'sous-cat';
+
+  // Toggle de mode (seulement si les deux modes sont disponibles)
   let modeToggleHtml = '';
-  if (hasPieces) {
+  if (hasPieces && hasSousCats) {
     modeToggleHtml = `<div class="filtre-mode-row">
       <button class="filtre-mode-btn ${filtreMode === 'sous-cat' ? 'active' : ''}" onclick="setFiltreMode('sous-cat')">📁 Sous-catégorie</button>
       <span style="color:var(--bord);padding:0 4px;line-height:1">|</span>
       <button class="filtre-mode-btn ${filtreMode === 'piece' ? 'active' : ''}" onclick="setFiltreMode('piece')">🏠 Par pièce</button>
     </div>`;
+  } else if (hasPieces && !hasSousCats) {
+    // Seulement "par pièce" disponible → pas de toggle, mode forcé
+    filtreMode = 'piece';
+  } else if (hasSousCats && !hasPieces) {
+    // Seulement "sous-catégorie" disponible → pas de toggle, mode forcé
+    filtreMode = 'sous-cat';
   }
 
   let filtreHtml = '';

@@ -199,6 +199,16 @@ body { font-family: 'Roboto', sans-serif; background: var(--fond); color: var(--
 .btn-approuver:hover, .btn-approuver.actif { background: #4B7A5C; color: var(--blanc); border-color: #4B7A5C; }
 .btn-revoir { background: rgba(139,58,58,.08); color: var(--danger); border: 1px solid rgba(139,58,58,.25); }
 .btn-revoir:hover, .btn-revoir.actif { background: var(--danger); color: var(--blanc); border-color: var(--danger); }
+.btn-rejeter { background: rgba(139,58,58,.06); color: var(--danger); border: 1px solid rgba(139,58,58,.2); font-size: 10px; }
+.btn-rejeter:hover, .btn-rejeter.actif { background: var(--danger); color: var(--blanc); border-color: var(--danger); }
+.btn-revision { background: rgba(207,147,79,.1); color: var(--caramel); border: 1px solid rgba(207,147,79,.3); }
+.btn-revision:hover, .btn-revision.actif { background: var(--caramel); color: var(--blanc); border-color: var(--caramel); }
+
+/* ===== FILTRE MODE TOGGLE ===== */
+.filtre-mode-row { display: flex; align-items: center; background: var(--blanc); border-bottom: 1px solid var(--bord); margin-bottom: 0; }
+.filtre-mode-btn { padding: 10px 18px; font-size: 11px; letter-spacing: 1px; text-transform: uppercase; cursor: pointer; color: var(--texte-2); background: none; border: none; border-bottom: 2px solid transparent; transition: all .15s; font-family: 'Roboto', sans-serif; }
+.filtre-mode-btn:hover { color: var(--charcoal); }
+.filtre-mode-btn.active { color: var(--charcoal); border-bottom-color: var(--caramel); font-weight: 500; }
 
 /* Commentaire client */
 .commentaire-section { padding: 12px 20px; background: var(--fond); border-top: 1px solid var(--bord); display: none; }
@@ -341,7 +351,7 @@ body { font-family: 'Roboto', sans-serif; background: var(--fond); color: var(--
     </div>
     <div class="prog-stat">
       <div class="value" id="prog-revoir" style="color:var(--danger)">—</div>
-      <div class="label" style="color:var(--danger)">À revoir</div>
+      <div class="label" style="color:var(--danger)">Rejetés</div>
     </div>
     <div class="prog-stat">
       <div class="value" id="prog-budget" style="color:var(--caramel);font-size:18px">—</div>
@@ -374,7 +384,7 @@ body { font-family: 'Roboto', sans-serif; background: var(--fond); color: var(--
 <div id="modal-commentaire" class="modal-overlay">
   <div class="modal">
     <div class="modal-header">
-      <h3>Demande de révision</h3>
+      <h3 id="modal-commentaire-titre">Rejeter ce produit</h3>
       <button class="modal-close" onclick="closeModal('modal-commentaire')">×</button>
     </div>
     <div class="modal-body">
@@ -383,7 +393,7 @@ body { font-family: 'Roboto', sans-serif; background: var(--fond); color: var(--
     </div>
     <div class="modal-footer">
       <button class="btn btn-outline" onclick="closeModal('modal-commentaire')">Annuler</button>
-      <button class="btn btn-dark" onclick="envoyerCommentaire()">Envoyer</button>
+      <button class="btn btn-dark btn-envoyer" onclick="envoyerCommentaire()">Confirmer le rejet</button>
     </div>
   </div>
 </div>
@@ -407,6 +417,7 @@ let currentProjetId = null;
 let allPostes = [];
 let currentCategorie = null;
 let currentPieceFilter = null;
+let filtreMode = 'sous-cat'; // 'sous-cat' | 'piece'
 let commentaireOptionId = null;
 let clientRecord = null;
 
@@ -538,7 +549,8 @@ function filtrerCategorie(catId, el) {
   document.querySelectorAll('.cat-tab').forEach(t => t.classList.remove('active'));
   el.classList.add('active');
   currentCategorie = catId;
-  currentPieceFilter = null; // Réinitialiser filtre pièce lors du changement de catégorie
+  currentPieceFilter = null;
+  filtreMode = 'sous-cat';
   renderPostes();
 }
 
@@ -547,6 +559,34 @@ function filtrerParPiece(piece, el) {
   document.querySelectorAll('.piece-filtre-btn').forEach(b => b.classList.remove('active'));
   if (el) el.classList.add('active');
   renderPostes();
+}
+
+function setFiltreMode(mode) {
+  filtreMode = mode;
+  currentPieceFilter = null;
+  renderPostes();
+}
+
+function renderGroupesSousCat(postes) {
+  if (postes.length === 0) {
+    return `<div class="empty-state"><h3>Aucun résultat</h3><p>Aucun poste disponible.</p></div>`;
+  }
+  const groupes = {};
+  const SANS_GROUPE = '__sans__';
+  postes.forEach(poste => {
+    const scNom = poste.sous_categories ? poste.sous_categories.nom : SANS_GROUPE;
+    const scOrdre = poste.sous_categories ? (poste.sous_categories.ordre || 999) : 0;
+    if (!groupes[scNom]) groupes[scNom] = { ordre: scOrdre, postes: [] };
+    groupes[scNom].postes.push(poste);
+  });
+  return Object.entries(groupes)
+    .sort((a, b) => a[1].ordre - b[1].ordre)
+    .map(([scNom, g]) => {
+      const header = scNom !== SANS_GROUPE
+        ? `<div style="font-size:11px;letter-spacing:2px;text-transform:uppercase;color:var(--caramel);padding:20px 0 10px;border-bottom:1px solid var(--bord);margin-bottom:16px">${scNom}</div>`
+        : '';
+      return header + g.postes.map(poste => buildPosteHTML(poste)).join('');
+    }).join('');
 }
 
 function renderPostes() {
@@ -558,16 +598,29 @@ function renderPostes() {
     return;
   }
 
-  // Construire la liste des pièces disponibles dans cette catégorie
+  // Pièces disponibles dans cette catégorie
   const piecesDispos = new Set();
   parCategorie.forEach(p => {
     if (p.pieces && p.pieces.length) p.pieces.forEach(pc => piecesDispos.add(pc));
     else if (p.piece) piecesDispos.add(p.piece);
   });
+  const hasPieces = piecesDispos.size > 0;
 
-  // Barre de filtre par pièce (uniquement si > 1 pièce)
+  // Toggle de mode (si des pièces existent)
+  let modeToggleHtml = '';
+  if (hasPieces) {
+    modeToggleHtml = `<div class="filtre-mode-row">
+      <button class="filtre-mode-btn ${filtreMode === 'sous-cat' ? 'active' : ''}" onclick="setFiltreMode('sous-cat')">📁 Sous-catégorie</button>
+      <span style="color:var(--bord);padding:0 4px;line-height:1">|</span>
+      <button class="filtre-mode-btn ${filtreMode === 'piece' ? 'active' : ''}" onclick="setFiltreMode('piece')">🏠 Par pièce</button>
+    </div>`;
+  }
+
   let filtreHtml = '';
-  if (piecesDispos.size > 1) {
+  let postesHtml = '';
+
+  if (filtreMode === 'piece' && hasPieces) {
+    // Barre de filtre par pièce
     filtreHtml = `<div class="pieces-filter-row">
       <span class="pieces-filter-label">Pièce :</span>
       <div class="piece-filtre-btn ${!currentPieceFilter ? 'active' : ''}" onclick="filtrerParPiece(null, this)">Tout</div>
@@ -576,39 +629,40 @@ function renderPostes() {
         return `<div class="piece-filtre-btn ${currentPieceFilter === p ? 'active' : ''}" onclick="filtrerParPiece('${esc}', this)">${p}</div>`;
       }).join('')}
     </div>`;
-  }
 
-  // Appliquer le filtre pièce
-  const filtered = currentPieceFilter
-    ? parCategorie.filter(p => {
+    if (currentPieceFilter) {
+      // Filtré sur une pièce → grouper par sous-cat
+      const filtered = parCategorie.filter(p => {
         if (p.pieces && p.pieces.length) return p.pieces.includes(currentPieceFilter);
         return p.piece === currentPieceFilter;
-      })
-    : parCategorie;
-
-  // Regrouper par sous-catégorie
-  const groupes = {};
-  const SANS_GROUPE = '__sans__';
-  filtered.forEach(poste => {
-    const scNom = poste.sous_categories ? poste.sous_categories.nom : SANS_GROUPE;
-    const scOrdre = poste.sous_categories ? (poste.sous_categories.ordre || 999) : 0;
-    if (!groupes[scNom]) groupes[scNom] = { ordre: scOrdre, postes: [] };
-    groupes[scNom].postes.push(poste);
-  });
-
-  const sortedGroupes = Object.entries(groupes).sort((a,b) => a[1].ordre - b[1].ordre);
-
-  const postesHtml = filtered.length === 0
-    ? `<div class="empty-state"><h3>Aucun résultat</h3><p>Aucun poste pour la pièce sélectionnée.</p></div>`
-    : sortedGroupes.map(([scNom, g]) => {
-        const header = scNom !== SANS_GROUPE
-          ? `<div style="font-size:11px;letter-spacing:2px;text-transform:uppercase;color:var(--caramel);
-                       padding:20px 0 10px;border-bottom:1px solid var(--bord);margin-bottom:16px">${scNom}</div>`
+      });
+      postesHtml = filtered.length === 0
+        ? `<div class="empty-state"><h3>Aucun résultat</h3><p>Aucun poste pour cette pièce.</p></div>`
+        : renderGroupesSousCat(filtered);
+    } else {
+      // Tout → grouper par pièce
+      const byPiece = {};
+      const SANS_PIECE = '__sans__';
+      parCategorie.forEach(poste => {
+        const pcs = (poste.pieces && poste.pieces.length) ? poste.pieces : (poste.piece ? [poste.piece] : [SANS_PIECE]);
+        pcs.forEach(pc => {
+          if (!byPiece[pc]) byPiece[pc] = [];
+          if (!byPiece[pc].find(x => x.id === poste.id)) byPiece[pc].push(poste);
+        });
+      });
+      postesHtml = Object.entries(byPiece).map(([pc, postes]) => {
+        const header = pc !== SANS_PIECE
+          ? `<div style="font-size:11px;letter-spacing:2px;text-transform:uppercase;color:var(--caramel);padding:20px 0 10px;border-bottom:1px solid var(--bord);margin-bottom:16px">${pc}</div>`
           : '';
-        return header + g.postes.map(poste => buildPosteHTML(poste)).join('');
+        return header + postes.map(poste => buildPosteHTML(poste)).join('');
       }).join('');
+    }
+  } else {
+    // Mode sous-catégorie (défaut)
+    postesHtml = renderGroupesSousCat(parCategorie);
+  }
 
-  content.innerHTML = filtreHtml + `<div style="padding-top:${piecesDispos.size > 1 ? '20px' : '0'}">${postesHtml}</div>`;
+  content.innerHTML = modeToggleHtml + filtreHtml + `<div style="padding:20px 0">${postesHtml}</div>`;
 }
 
 function buildPosteHTML(poste) {
@@ -656,8 +710,15 @@ function buildOptionContent(opt, isMultiple, posteId) {
   const bp = opt.banque_produits;
   if (!bp) return '<div style="color:var(--texte-2);font-size:13px">Produit non disponible.</div>';
 
-  const isApprouve = opt.statut_client === 'approuvé';
-  const isRevoir = opt.statut_client === 'à_revoir';
+  const MARKER_REJETE = '__rejete__';
+  const isApprouve  = opt.statut_client === 'approuvé';
+  const isRevision  = opt.statut_client === 'à_revoir' && opt.commentaire_client
+                      && opt.commentaire_client !== MARKER_REJETE
+                      && opt.commentaire_client !== 'Option non retenue';
+  const isRejete    = opt.statut_client === 'à_revoir'
+                      && (!opt.commentaire_client || opt.commentaire_client === MARKER_REJETE);
+  const isNonRetenu = opt.statut_client === 'à_revoir' && opt.commentaire_client === 'Option non retenue';
+
   const nomEsc = bp.nom ? bp.nom.replace(/'/g, "\\'") : 'ce produit';
 
   const specsArr = [];
@@ -666,27 +727,28 @@ function buildOptionContent(opt, isMultiple, posteId) {
   if (bp.sku) specsArr.push('SKU : ' + bp.sku);
   if (bp.caracteristiques) specsArr.push(bp.caracteristiques);
 
-  // Boutons selon le mode
-  let btnApprouver, btnRejeter;
+  // Commentaire visible (masquer les marqueurs internes)
+  const commentAffiche = opt.commentaire_client
+    && opt.commentaire_client !== MARKER_REJETE
+    && opt.commentaire_client !== 'Option non retenue'
+    ? opt.commentaire_client : null;
+
+  // 3 boutons selon le mode
+  let btnApprouver, btnRevision, btnRejeter;
   if (isMultiple) {
-    // Choix exclusif : sélectionner une option rejette automatiquement les autres
     btnApprouver = `<button class="btn-decision btn-approuver ${isApprouve ? 'actif' : ''}"
-        onclick="choisirOption('${opt.id}', '${posteId}')">
-        ✓ Choisir cette option
-      </button>`;
-    btnRejeter = `<button class="btn-decision btn-revoir ${isRevoir && !isApprouve ? 'actif' : ''}"
-        onclick="rejeterOption('${opt.id}')">
-        ✗ Ne pas retenir
-      </button>`;
+        onclick="choisirOption('${opt.id}', '${posteId}')">✓ Choisir</button>`;
+    btnRevision  = `<button class="btn-decision btn-revision ${isRevision ? 'actif' : ''}"
+        onclick="ouvrirCommentaire('${opt.id}', '${nomEsc}')">↩ Révision</button>`;
+    btnRejeter   = `<button class="btn-decision btn-revoir ${isNonRetenu ? 'actif' : ''}"
+        onclick="rejeterOption('${opt.id}')">✗ Ne pas retenir</button>`;
   } else {
     btnApprouver = `<button class="btn-decision btn-approuver ${isApprouve ? 'actif' : ''}"
-        onclick="decider('${opt.id}', 'approuvé', this)">
-        ✓ Approuver
-      </button>`;
-    btnRejeter = `<button class="btn-decision btn-revoir ${isRevoir ? 'actif' : ''}"
-        onclick="ouvrirCommentaire('${opt.id}', '${nomEsc}')">
-        ↩ Demander révision
-      </button>`;
+        onclick="decider('${opt.id}', 'approuvé', this)">✓ Approuver</button>`;
+    btnRevision  = `<button class="btn-decision btn-revision ${isRevision ? 'actif' : ''}"
+        onclick="ouvrirCommentaire('${opt.id}', '${nomEsc}')">↩ Demande de révision</button>`;
+    btnRejeter   = `<button class="btn-decision btn-rejeter ${isRejete ? 'actif' : ''}"
+        onclick="rejeterDirectement('${opt.id}')">✗ Rejeter</button>`;
   }
 
   return `
@@ -701,10 +763,11 @@ function buildOptionContent(opt, isMultiple, posteId) {
       ${opt.note_client ? `<div class="note-cmpg">💡 ${opt.note_client}</div>` : ''}
       ${bp.prix ? `<div class="prix">${Number(bp.prix * opt.quantite).toLocaleString('fr-CA', {style:'currency',currency:'CAD'})}<span style="font-size:11px;font-weight:400;color:var(--texte-2)"> (qté: ${opt.quantite})</span></div>` : ''}
       ${bp.url ? `<a href="${bp.url}" target="_blank" style="font-size:12px;color:var(--caramel);display:inline-block;margin-top:8px">↗ Voir le produit en ligne</a>` : ''}
-      ${opt.commentaire_client ? `<div style="font-size:12px;color:var(--caramel);margin-top:8px;font-style:italic">Votre commentaire : "${opt.commentaire_client}"</div>` : ''}
+      ${commentAffiche ? `<div style="font-size:12px;color:var(--caramel);margin-top:8px;font-style:italic">Votre note : "${commentAffiche}"</div>` : ''}
     </div>
     <div class="option-actions">
       ${btnApprouver}
+      ${btnRevision}
       ${btnRejeter}
     </div>
   `;
@@ -712,11 +775,18 @@ function buildOptionContent(opt, isMultiple, posteId) {
 
 function getPosteStatus(options) {
   if (options.length === 0) return { dotClass: 'dot-attente', label: 'En attente' };
-  const all = options.every(o => o.statut_client !== 'en_attente');
-  const anyRevoir = options.some(o => o.statut_client === 'à_revoir');
   const allApprouves = options.every(o => o.statut_client === 'approuvé');
+  const anyApprouve  = options.some(o => o.statut_client === 'approuvé');
+  const anyRevision  = options.some(o => o.statut_client === 'à_revoir'
+                        && o.commentaire_client && o.commentaire_client !== '__rejete__'
+                        && o.commentaire_client !== 'Option non retenue');
+  const anyRejete    = options.some(o => o.statut_client === 'à_revoir'
+                        && (!o.commentaire_client || o.commentaire_client === '__rejete__'
+                            || o.commentaire_client === 'Option non retenue'));
   if (allApprouves) return { dotClass: 'dot-approuve', label: 'Approuvé' };
-  if (anyRevoir) return { dotClass: 'dot-revoir', label: 'À revoir' };
+  if (anyApprouve)  return { dotClass: 'dot-approuve', label: 'Partiellement approuvé' };
+  if (anyRevision)  return { dotClass: 'dot-revoir',   label: 'Révision demandée' };
+  if (anyRejete)    return { dotClass: 'dot-revoir',   label: 'Rejeté' };
   return { dotClass: 'dot-attente', label: 'En attente' };
 }
 
@@ -788,6 +858,7 @@ async function choisirOption(optionId, posteId) {
 async function rejeterOption(optionId) {
   const { error } = await db.from('options_produits').update({
     statut_client: 'à_revoir',
+    commentaire_client: 'Option non retenue',
     date_decision: new Date().toISOString()
   }).eq('id', optionId);
 
@@ -795,7 +866,7 @@ async function rejeterOption(optionId) {
 
   allPostes.forEach(p => {
     const opt = (p.options_produits || []).find(o => o.id === optionId);
-    if (opt) opt.statut_client = 'à_revoir';
+    if (opt) { opt.statut_client = 'à_revoir'; opt.commentaire_client = 'Option non retenue'; }
   });
 
   toast('Option non retenue.', 'info');
@@ -803,10 +874,51 @@ async function rejeterOption(optionId) {
   renderPostes();
 }
 
+// Option unique : rejet direct, sans commentaire
+async function rejeterDirectement(optionId) {
+  const { error } = await db.from('options_produits').update({
+    statut_client: 'à_revoir',
+    commentaire_client: '__rejete__',
+    date_decision: new Date().toISOString()
+  }).eq('id', optionId);
+
+  if (error) { toast('Erreur lors de la mise à jour.', 'error'); return; }
+
+  allPostes.forEach(p => {
+    const opt = (p.options_produits || []).find(o => o.id === optionId);
+    if (opt) { opt.statut_client = 'à_revoir'; opt.commentaire_client = '__rejete__'; }
+  });
+
+  toast('Produit rejeté.', 'info');
+  mettreAJourProgression();
+  renderPostes();
+}
+
+// Ouvrir le modal de rejet (option unique) — avec message contextuel
+function ouvrirRejection(optionId, nomProduit) {
+  commentaireOptionId = optionId;
+  document.getElementById('modal-commentaire-titre').textContent = 'Rejeter ce produit';
+  const info = document.getElementById('commentaire-produit-info');
+  info.innerHTML = `<strong>Rejeter :</strong> ${nomProduit}<br>
+    <span style="font-size:12px;color:var(--texte-2);display:block;margin-top:4px">
+      Précisez ce que vous recherchez à la place (facultatif) —
+      CMPG vous proposera une alternative.
+    </span>`;
+  document.getElementById('commentaire-text').value = '';
+  document.getElementById('commentaire-text').placeholder = 'Ex : Je préfère une finition mate, un modèle plus compact, une autre marque…';
+  const btnEnvoyer = document.querySelector('#modal-commentaire .btn-envoyer');
+  if (btnEnvoyer) btnEnvoyer.textContent = 'Confirmer le rejet';
+  openModal('modal-commentaire');
+}
+
 function ouvrirCommentaire(optionId, nomProduit) {
   commentaireOptionId = optionId;
+  document.getElementById('modal-commentaire-titre').textContent = 'Demander une révision';
   document.getElementById('commentaire-produit-info').textContent = 'Produit : ' + nomProduit;
   document.getElementById('commentaire-text').value = '';
+  document.getElementById('commentaire-text').placeholder = 'Décrivez ce que vous souhaitez modifier ou préciser…';
+  const btnEnvoyer = document.querySelector('#modal-commentaire .btn-envoyer');
+  if (btnEnvoyer) btnEnvoyer.textContent = 'Envoyer';
   openModal('modal-commentaire');
 }
 

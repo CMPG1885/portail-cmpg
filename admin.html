@@ -685,7 +685,7 @@ body { font-family: 'Roboto', sans-serif; background: var(--fond); color: var(--
         </div>
         <div class="form-group">
           <label>Type de sélection</label>
-          <select id="poste-type">
+          <select id="poste-type" onchange="onTypeSelectionChange()">
             <option value="unique">Option unique (A)</option>
             <option value="multiple">Options multiples (A, B, C)</option>
           </select>
@@ -702,27 +702,50 @@ body { font-family: 'Roboto', sans-serif; background: var(--fond); color: var(--
         </div>
       </div>
       <div id="poste-options-section">
-        <div style="font-size:11px;letter-spacing:1.5px;text-transform:uppercase;color:var(--texte-2);margin-bottom:10px">Option A — Produit</div>
-        <div class="form-group">
-          <label>Produit (banque)</label>
-          <select id="poste-produit-a" onchange="mettreAJourApercuProduit(this.value)">
-            <option value="">-- Choisir dans la banque --</option>
-          </select>
-          <div id="produit-apercu-a" style="display:none;margin-top:10px;display:none;align-items:center;gap:12px;padding:10px;background:var(--fond);border:1px solid var(--bord)"></div>
-        </div>
-        <div class="form-group">
-          <label>Quantité</label>
-          <input type="number" id="poste-qty-a" value="1" min="1" />
-        </div>
-        <div class="form-group">
-          <label>Note pour le client</label>
-          <input type="text" id="poste-note-a" placeholder="Recommandé pour les espaces de moins de 20m²" />
+        <div style="font-size:11px;letter-spacing:1.5px;text-transform:uppercase;color:var(--texte-2);margin-bottom:12px">Produit(s) associé(s)</div>
+        <div id="options-slots-container"></div>
+        <div id="btn-ajouter-option-wrap" style="display:none;margin-top:6px">
+          <button type="button" class="btn btn-outline btn-sm" onclick="ajouterSlotOption()">➕ Ajouter option</button>
         </div>
       </div>
     </div>
     <div class="modal-footer">
       <button class="btn btn-outline" onclick="closeModal('modal-ajout-poste')">Annuler</button>
       <button class="btn btn-dark" onclick="sauvegarderPoste()">Ajouter le poste</button>
+    </div>
+  </div>
+</div>
+
+<!-- Modal ajout option à poste existant -->
+<div id="modal-ajout-option" class="modal-overlay">
+  <div class="modal" style="width:540px">
+    <div class="modal-header">
+      <h3 id="ajout-option-titre">Ajouter une option</h3>
+      <button class="modal-close" onclick="closeModal('modal-ajout-option')">×</button>
+    </div>
+    <div class="modal-body">
+      <div id="ajout-option-info" style="margin-bottom:14px;padding:10px 12px;background:var(--fond);border:1px solid var(--bord);font-size:12px;color:var(--texte-2)"></div>
+      <div class="form-group">
+        <label>Produit (banque)</label>
+        <select id="ao-produit" onchange="mettreAJourApercuAO(this.value)">
+          <option value="">-- Choisir dans la banque --</option>
+        </select>
+      </div>
+      <div id="ao-apercu" style="display:none;margin-top:10px;align-items:center;gap:12px;padding:10px;background:var(--fond);border:1px solid var(--bord)"></div>
+      <div class="form-grid" style="margin-top:14px">
+        <div class="form-group">
+          <label>Quantité</label>
+          <input type="number" id="ao-qty" value="1" min="1" />
+        </div>
+        <div class="form-group">
+          <label>Note pour le client</label>
+          <input type="text" id="ao-note" placeholder="Optionnel" />
+        </div>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-outline" onclick="closeModal('modal-ajout-option')">Annuler</button>
+      <button class="btn btn-dark" onclick="sauvegarderNouvelleOption()">Ajouter</button>
     </div>
   </div>
 </div>
@@ -1095,35 +1118,55 @@ async function chargerPostes() {
       card.className = 'poste-card';
       const options = poste.options_produits || [];
 
+      // Lettres déjà utilisées → prochaine lettre disponible
+      const usedLetters = options.map(o => o.lettre_option);
+      const allLetters = ['A','B','C','D','E'];
+      const nextLetter = allLetters.find(l => !usedLetters.includes(l)) || '';
+      const isMultiple = poste.type_selection === 'multiple';
+
       let optionsHTML = options.length === 0
         ? '<div style="padding:12px 16px;font-size:12px;color:var(--texte-2)">Aucune option — ajoutez un produit.</div>'
-        : options.map(opt => {
-            const bp = opt.banque_produits;
-            const statusClass = 'status-' + opt.statut_client.replace('é', 'e').replace('_', '');
-            const statusLabel = { 'en_attente': 'En attente', 'approuvé': 'Approuvé', 'à_revoir': 'À revoir' }[opt.statut_client] || opt.statut_client;
-            return `<div class="option-row">
-              <div class="option-letter">Option ${opt.lettre_option}</div>
-              <div class="option-status ${statusClass}">${statusLabel}</div>
-              <div>
-                ${bp ? `<div style="font-size:13px;font-weight:500">${bp.nom || ''}</div>
-                <div style="font-size:11px;color:var(--texte-2)">${bp.fabricant || ''} ${bp.modele || ''} ${bp.couleur ? '· ' + bp.couleur : ''}</div>` : '<div style="font-size:12px;color:var(--texte-2)">Produit non disponible</div>'}
-                ${opt.commentaire_client ? `<div style="font-size:11px;color:var(--caramel);margin-top:3px">💬 ${opt.commentaire_client}</div>` : ''}
-              </div>
-              <div style="text-align:right">
-                ${bp && bp.prix ? `<div style="font-size:13px;font-weight:500">$${Number(bp.prix * opt.quantite).toLocaleString('fr-CA')}</div>` : ''}
-                <div style="font-size:11px;color:var(--texte-2)">Qté: ${opt.quantite}</div>
-              </div>
-            </div>`;
-          }).join('');
+        : options
+            .sort((a, b) => (a.lettre_option || 'A').localeCompare(b.lettre_option || 'A'))
+            .map(opt => {
+              const bp = opt.banque_produits;
+              const sc = opt.statut_client || 'en_attente';
+              const statusClass = 'status-' + sc.replace('é', 'e').replace('_', '');
+              const statusLabel = { 'en_attente': 'En attente', 'approuvé': 'Approuvé', 'à_revoir': 'À revoir' }[sc] || sc;
+              const canDelete = sc !== 'approuvé';
+              return `<div class="option-row">
+                <div class="option-letter">Opt. ${opt.lettre_option}</div>
+                <div class="option-status ${statusClass}">${statusLabel}</div>
+                <div style="flex:1">
+                  ${bp ? `<div style="font-size:13px;font-weight:500">${bp.nom || ''}</div>
+                  <div style="font-size:11px;color:var(--texte-2)">${[bp.fabricant, bp.modele, bp.couleur].filter(Boolean).join(' · ')}</div>` : '<div style="font-size:12px;color:var(--texte-2)">Produit non disponible</div>'}
+                  ${opt.commentaire_client && opt.commentaire_client !== '__rejete__' ? `<div style="font-size:11px;color:var(--caramel);margin-top:3px">💬 ${opt.commentaire_client}</div>` : ''}
+                </div>
+                <div style="text-align:right;display:flex;flex-direction:column;align-items:flex-end;gap:4px">
+                  ${bp && bp.prix ? `<div style="font-size:13px;font-weight:500">$${Number(bp.prix * opt.quantite).toLocaleString('fr-CA')}</div>` : ''}
+                  <div style="font-size:11px;color:var(--texte-2)">Qté: ${opt.quantite}</div>
+                  ${canDelete ? `<button class="btn btn-outline btn-sm" style="font-size:10px;padding:2px 8px;color:var(--danger);border-color:var(--danger)" onclick="event.stopPropagation();supprimerOption('${opt.id}','${(bp?.nom||'ce produit').replace(/'/g,"\\'")}')">✕</button>` : ''}
+                </div>
+              </div>`;
+            }).join('');
+
+      const typeBadge = isMultiple
+        ? `<span style="font-size:10px;background:rgba(207,147,79,.15);color:var(--caramel);padding:2px 7px;letter-spacing:.5px">MULTIPLE</span>`
+        : `<span style="font-size:10px;background:var(--fond);color:var(--texte-2);padding:2px 7px;letter-spacing:.5px">UNIQUE</span>`;
+
+      const btnAjouterOption = (isMultiple && nextLetter)
+        ? `<button class="btn btn-outline btn-sm" style="font-size:11px" onclick="event.stopPropagation();ouvrirModalAjoutOption('${poste.id}','${nextLetter}')" title="Ajouter option ${nextLetter}">➕ Option ${nextLetter}</button>`
+        : '';
 
       card.innerHTML = `
         <div class="poste-header">
-          <div>
+          <div style="display:flex;align-items:center;gap:8px">
             <span class="poste-ref">${poste.reference}</span>
+            ${typeBadge}
             <span class="poste-piece">${(poste.pieces && poste.pieces.length ? poste.pieces.join(', ') : (poste.piece || ''))}</span>
           </div>
           <div style="display:flex;align-items:center;gap:8px">
-            <span style="font-size:11px;color:var(--texte-2)">${options.length} option(s)</span>
+            ${btnAjouterOption}
             <button class="btn btn-outline btn-sm" onclick="event.stopPropagation();ouvrirModalEditerPoste('${poste.id}')" title="Modifier">✏️</button>
             <button class="btn btn-outline btn-sm" style="color:var(--danger);border-color:var(--danger)" onclick="event.stopPropagation();supprimerPoste('${poste.id}','${poste.reference.replace(/'/g,"\\'")}')" title="Supprimer">🗑</button>
           </div>
@@ -1218,6 +1261,10 @@ async function openModalPoste() {
   peuplerCatsPoste();
   mettreAJourSousCatsPoste('', '');
   await construirePiecesChecklist([]);
+  // Initialiser les slots d'options
+  optionSlots = ['A'];
+  await chargerProduitsBanqueSelect();
+  renderOptionsSlots();
   openModal('modal-ajout-poste');
 }
 
@@ -1230,32 +1277,105 @@ async function chargerProduitsBanqueSelect() {
   filtrerProduitsBanqueSelect();
 }
 
-function filtrerProduitsBanqueSelect() {
+// ============================================================
+// GESTION DES SLOTS D'OPTIONS (modal ajout/modif poste)
+// ============================================================
+let optionSlots = ['A']; // lettres actives
+
+function onTypeSelectionChange() {
+  renderOptionsSlots();
+}
+
+function ajouterSlotOption() {
+  const letters = ['A','B','C','D','E'];
+  const next = letters[optionSlots.length];
+  if (!next) return;
+  optionSlots.push(next);
+  renderOptionsSlots();
+}
+
+function supprimerSlotOption(letter) {
+  if (letter === 'A') return;
+  optionSlots = optionSlots.filter(l => l !== letter);
+  renderOptionsSlots();
+}
+
+function renderOptionsSlots() {
+  const isMultiple = document.getElementById('poste-type')?.value === 'multiple';
+  const container  = document.getElementById('options-slots-container');
+  const btnWrap    = document.getElementById('btn-ajouter-option-wrap');
+  if (!container) return;
+
   const catId    = document.getElementById('poste-categorie')?.value || '';
   const sousCatId = document.getElementById('poste-sous-cat')?.value || '';
-
   let filtered = produitsCache;
   if (catId)     filtered = filtered.filter(p => p.categorie_id === catId);
   if (sousCatId) filtered = filtered.filter(p => p.sous_categorie_id === sousCatId);
+  const optionsHTML = '<option value="">-- Choisir --</option>' +
+    filtered.map(p => `<option value="${p.id}">${p.fabricant ? p.fabricant + ' — ' : ''}${p.nom || ''}${p.prix ? ' ($' + p.prix + ')' : ''}</option>`).join('');
 
-  const sel = document.getElementById('poste-produit-a');
-  if (!sel) return;
-  const valeurActuelle = sel.value;
-  sel.innerHTML = '<option value="">-- Choisir dans la banque --</option>';
-  filtered.forEach(p => {
-    const opt = document.createElement('option');
-    opt.value = p.id;
-    opt.textContent = (p.fabricant ? p.fabricant + ' — ' : '') + (p.nom || '') + (p.prix ? ' ($' + p.prix + ')' : '');
-    sel.appendChild(opt);
-  });
-  // Restaurer la valeur si encore disponible
-  if (valeurActuelle && filtered.some(p => p.id === valeurActuelle)) {
-    sel.value = valeurActuelle;
+  container.innerHTML = optionSlots.map((letter, idx) => `
+    <div style="margin-bottom:12px;padding:14px;background:var(--fond);border:1px solid var(--bord)">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">
+        <span style="font-size:11px;letter-spacing:1.5px;text-transform:uppercase;color:var(--caramel);font-weight:500">
+          Option ${letter}${letter === 'A' && !isMultiple ? ' — Produit' : ''}
+        </span>
+        ${idx > 0 ? `<button type="button" onclick="supprimerSlotOption('${letter}')" style="background:none;border:none;color:var(--danger);cursor:pointer;font-size:12px;padding:0">✕ Retirer</button>` : ''}
+      </div>
+      <div class="form-grid" style="grid-template-columns:2fr 80px 1fr">
+        <div class="form-group" style="margin-bottom:0">
+          <label>Produit</label>
+          <select id="slot-prod-${letter}" onchange="mettreAJourApercuSlot('${letter}',this.value)">${optionsHTML}</select>
+        </div>
+        <div class="form-group" style="margin-bottom:0">
+          <label>Qté</label>
+          <input type="number" id="slot-qty-${letter}" value="1" min="1" />
+        </div>
+        <div class="form-group" style="margin-bottom:0">
+          <label>Note client</label>
+          <input type="text" id="slot-note-${letter}" placeholder="Optionnel" />
+        </div>
+      </div>
+      <div id="slot-apercu-${letter}" style="display:none;margin-top:10px;align-items:center;gap:12px;padding:10px;background:var(--blanc);border:1px solid var(--bord)"></div>
+    </div>
+  `).join('');
+
+  // Bouton ajouter option suivante
+  if (btnWrap) {
+    const letters = ['A','B','C','D','E'];
+    const next = letters[optionSlots.length];
+    btnWrap.style.display = (isMultiple && next) ? 'block' : 'none';
+    const btn = btnWrap.querySelector('button');
+    if (btn) btn.textContent = `➕ Ajouter option ${next || ''}`;
   }
-  mettreAJourApercuProduit(sel.value);
+}
+
+function mettreAJourApercuSlot(letter, produitId) {
+  const preview = document.getElementById(`slot-apercu-${letter}`);
+  if (!preview) return;
+  if (!produitId) { preview.style.display = 'none'; return; }
+  const p = produitsCache.find(x => x.id === produitId);
+  if (!p) { preview.style.display = 'none'; return; }
+  preview.style.display = 'flex';
+  preview.innerHTML = `
+    ${p.photo_url
+      ? `<img src="${p.photo_url}" style="width:56px;height:56px;object-fit:contain;border:1px solid var(--bord);flex-shrink:0" onerror="this.style.display='none'" />`
+      : `<div style="width:56px;height:56px;background:var(--fond);border:1px solid var(--bord);display:flex;align-items:center;justify-content:center;font-size:20px;flex-shrink:0">📦</div>`}
+    <div>
+      <div style="font-weight:500;font-size:13px">${p.nom || '—'}</div>
+      <div style="font-size:11px;color:var(--texte-2);margin-top:2px">${[p.fabricant, p.modele].filter(Boolean).join(' · ')}</div>
+      ${p.prix ? `<div style="font-size:12px;color:var(--caramel);margin-top:4px">${Number(p.prix).toLocaleString('fr-CA',{style:'currency',currency:'CAD'})}</div>` : ''}
+    </div>`;
+}
+
+function filtrerProduitsBanqueSelect() {
+  // Re-rendre tous les slots (met à jour les selects selon catégorie/sous-cat)
+  renderOptionsSlots();
 }
 
 function mettreAJourApercuProduit(produitId) {
+  // Compatibilité — déléguer au slot A
+  mettreAJourApercuSlot('A', produitId);
   const preview = document.getElementById('produit-apercu-a');
   if (!preview) return;
   if (!produitId) { preview.style.display = 'none'; return; }
@@ -1299,7 +1419,7 @@ async function sauvegarderPoste() {
     editingPosteId = null;
     chargerPostes();
   } else {
-    // MODE AJOUT — on crée le poste + l'option initiale
+    // MODE AJOUT — on crée le poste + toutes les options remplies
     const { data: newPoste, error } = await db.from('postes').insert({
       ...payload,
       projet_id: currentProjetId,
@@ -1308,14 +1428,16 @@ async function sauvegarderPoste() {
 
     if (error) { toast('Erreur : ' + error.message, 'error'); return; }
 
-    const produitId = document.getElementById('poste-produit-a').value;
-    if (produitId) {
+    // Sauvegarder chaque slot rempli
+    for (const letter of optionSlots) {
+      const produitId = document.getElementById(`slot-prod-${letter}`)?.value;
+      if (!produitId) continue;
       await db.from('options_produits').insert({
         poste_id: newPoste.id,
         banque_produit_id: produitId,
-        lettre_option: 'A',
-        quantite: parseInt(document.getElementById('poste-qty-a').value) || 1,
-        note_client: document.getElementById('poste-note-a').value.trim() || null
+        lettre_option: letter,
+        quantite: parseInt(document.getElementById(`slot-qty-${letter}`)?.value) || 1,
+        note_client: document.getElementById(`slot-note-${letter}`)?.value?.trim() || null
       });
     }
 
@@ -1351,6 +1473,80 @@ async function ouvrirModalEditerPoste(id) {
   if (btnEl) btnEl.textContent = 'Enregistrer';
 
   openModal('modal-ajout-poste');
+}
+
+// ── Modal ajout option sur poste existant ──────────────────
+let _aoPosteId   = null;
+let _aoLettre    = 'B';
+
+async function ouvrirModalAjoutOption(posteId, lettre) {
+  _aoPosteId = posteId;
+  _aoLettre  = lettre || 'B';
+
+  const poste = postesCache.find(p => p.id === posteId);
+  const titreEl = document.getElementById('ajout-option-titre');
+  if (titreEl) titreEl.textContent = `Ajouter option ${_aoLettre}`;
+  const infoEl = document.getElementById('ajout-option-info');
+  if (infoEl) infoEl.textContent = `Poste : ${poste?.reference || ''} — ${(poste?.pieces || []).join(', ') || poste?.piece || ''} · Cette option sera présentée au client comme l'option ${_aoLettre}.`;
+
+  // Peupler le select avec tous les produits de la banque
+  const sel = document.getElementById('ao-produit');
+  if (sel) {
+    sel.innerHTML = '<option value="">-- Choisir dans la banque --</option>' +
+      (produitsCache || []).map(p =>
+        `<option value="${p.id}">${p.fabricant ? p.fabricant + ' — ' : ''}${p.nom || ''}${p.prix ? ' ($' + p.prix + ')' : ''}</option>`
+      ).join('');
+    sel.value = '';
+  }
+  const ap = document.getElementById('ao-apercu');
+  if (ap) ap.style.display = 'none';
+  const qtyEl = document.getElementById('ao-qty');
+  if (qtyEl) qtyEl.value = '1';
+  const noteEl = document.getElementById('ao-note');
+  if (noteEl) noteEl.value = '';
+
+  openModal('modal-ajout-option');
+}
+
+function mettreAJourApercuAO(produitId) {
+  const preview = document.getElementById('ao-apercu');
+  if (!preview) return;
+  if (!produitId) { preview.style.display = 'none'; return; }
+  const p = produitsCache.find(x => x.id === produitId);
+  if (!p) { preview.style.display = 'none'; return; }
+  preview.style.cssText = 'display:flex;align-items:center;gap:12px;margin-top:10px;padding:10px;background:var(--fond);border:1px solid var(--bord)';
+  preview.innerHTML = `
+    ${p.photo_url ? `<img src="${p.photo_url}" style="width:56px;height:56px;object-fit:contain;border:1px solid var(--bord);flex-shrink:0" onerror="this.style.display='none'" />` : `<div style="width:56px;height:56px;background:var(--fond);border:1px solid var(--bord);display:flex;align-items:center;justify-content:center;font-size:20px;flex-shrink:0">📦</div>`}
+    <div>
+      <div style="font-size:13px;font-weight:500">${p.nom || '—'}</div>
+      <div style="font-size:11px;color:var(--texte-2);margin-top:2px">${[p.fabricant, p.modele].filter(Boolean).join(' · ')}</div>
+      ${p.prix ? `<div style="font-size:12px;color:var(--caramel);margin-top:4px">${Number(p.prix).toLocaleString('fr-CA',{style:'currency',currency:'CAD'})}</div>` : ''}
+    </div>`;
+}
+
+async function sauvegarderNouvelleOption() {
+  const produitId = document.getElementById('ao-produit')?.value;
+  if (!produitId) { toast('Veuillez choisir un produit.', 'error'); return; }
+  if (!_aoPosteId) return;
+  const { error } = await db.from('options_produits').insert({
+    poste_id:        _aoPosteId,
+    banque_produit_id: produitId,
+    lettre_option:   _aoLettre,
+    quantite:        parseInt(document.getElementById('ao-qty')?.value) || 1,
+    note_client:     document.getElementById('ao-note')?.value?.trim() || null
+  });
+  if (error) { toast('Erreur : ' + error.message, 'error'); return; }
+  closeModal('modal-ajout-option');
+  toast(`Option ${_aoLettre} ajoutée avec succès.`, 'success');
+  chargerPostes();
+}
+
+async function supprimerOption(optionId, nomProduit) {
+  if (!confirm(`Supprimer l'option "${nomProduit}" de ce poste ?`)) return;
+  const { error } = await db.from('options_produits').delete().eq('id', optionId);
+  if (error) { toast('Erreur : ' + error.message, 'error'); return; }
+  toast('Option supprimée.', 'success');
+  chargerPostes();
 }
 
 async function supprimerPoste(id, reference) {
@@ -1866,9 +2062,12 @@ async function chargerImageProduit(url) {
   });
 }
 
-function genererExcelClient() { genererExcel_base('client'); }
+function genererExcelClient()   { genererExcel_base('client'); }
 function genererExcelChantier() { genererExcel_base('chantier'); }
 
+// ─────────────────────────────────────────────────────────────
+// GÉNÉRATION EXCEL — reproduit fidèlement le template CMPG
+// ─────────────────────────────────────────────────────────────
 async function genererExcel_base(mode) {
   if (!currentProjetId) { toast('Aucun projet sélectionné.', 'error'); return; }
   if (typeof ExcelJS === 'undefined') { toast('Bibliothèque Excel non chargée. Rechargez la page.', 'error'); return; }
@@ -1892,7 +2091,7 @@ async function genererExcel_base(mode) {
     .eq('projet_id', currentProjetId)
     .order('ordre');
 
-  // ── Regrouper par catégorie ──
+  // ── Regrouper par catégorie → sous-catégorie ──
   const catMap = {};
   (postesAll || []).forEach(poste => {
     const cat = poste.categories;
@@ -1900,12 +2099,18 @@ async function genererExcel_base(mode) {
     let opts = poste.options_produits || [];
     if (mode === 'chantier') opts = opts.filter(o => o.statut_client === 'approuvé');
     if (opts.length === 0) return;
-    if (!catMap[cat.id]) catMap[cat.id] = { cat, rows: [] };
+
+    if (!catMap[cat.id]) catMap[cat.id] = { cat, scMap: {} };
+    const sc      = poste.sous_categories;
+    const scKey   = sc ? sc.id : '__none__';
+    const scNom   = sc ? sc.nom : null;
+    const scOrdre = sc ? (sc.ordre ?? 999) : 0;
+    if (!catMap[cat.id].scMap[scKey]) catMap[cat.id].scMap[scKey] = { scNom, scOrdre, rows: [] };
+
     opts.forEach(opt => {
       const bp = opt.banque_produits;
       if (!bp) return;
-      const isPending = !opt.statut_client;
-      catMap[cat.id].rows.push({
+      catMap[cat.id].scMap[scKey].rows.push({
         ref:         poste.reference || '',
         pieces:      (poste.pieces || []).join(', ') || poste.piece || '',
         nom:         bp.nom || '',
@@ -1917,30 +2122,28 @@ async function genererExcel_base(mode) {
         dims:        bp.dimensions || '',
         caract:      bp.caracteristiques || '',
         photo_url:   bp.photo_url || '',
-        choix_faire: isPending ? 'OUI' : '',
+        choix_faire: !opt.statut_client ? 'OUI' : '',
         prix_u:      bp.prix ? Number(bp.prix) : null,
         prix_total:  bp.prix ? Number(bp.prix) * (opt.quantite || 1) : null,
         statut:      opt.statut_client || '',
         date_conf:   opt.date_decision ? new Date(opt.date_decision).toLocaleDateString('fr-CA') : '',
         lien:        bp.url || '',
-        approbation: opt.statut_client === 'approuvé' ? 'Approuvé' :
-                     (opt.statut_client === 'à_revoir' ? 'À revoir' : ''),
+        approbation: opt.statut_client === 'approuvé' ? 'Approuvé' : (opt.statut_client === 'à_revoir' ? 'À revoir' : ''),
+        isApprouved: opt.statut_client === 'approuvé',
       });
     });
   });
 
   const sortedCats = Object.values(catMap)
-    .filter(c => c.rows.length > 0)
     .sort((a, b) => (a.cat.ordre || 0) - (b.cat.ordre || 0));
 
-  if (sortedCats.length === 0) {
-    toast('Aucune donnée à exporter.', 'info'); return;
-  }
+  if (sortedCats.length === 0) { toast('Aucune donnée à exporter.', 'info'); return; }
 
-  // ── Pré-charger images (Client seulement) ──
+  // ── Pré-charger images ──
   const photoMap = {};
   if (mode === 'client') {
-    const urls = [...new Set(sortedCats.flatMap(c => c.rows.map(r => r.photo_url)).filter(Boolean))];
+    const allR = sortedCats.flatMap(({scMap}) => Object.values(scMap).flatMap(s => s.rows));
+    const urls = [...new Set(allR.map(r => r.photo_url).filter(Boolean))];
     await Promise.all(urls.map(async url => { photoMap[url] = await chargerImageProduit(url); }));
   }
 
@@ -1953,426 +2156,441 @@ async function genererExcel_base(mode) {
   const nomClient = projet?.clients?.nom || '';
   const dateStr   = new Date().toLocaleDateString('fr-CA');
 
-  // Couleurs CMPG
-  const C_CHARCOAL = 'FF3A3B3A';
-  const C_CARAMEL  = 'FFCF934F';
-  const C_WHITE    = 'FFFFFFFF';
-  const C_FOND     = 'FFF5F4EE';
-  const C_BORD     = 'FFE3DFD8';
-  const C_TEXTE2   = 'FF706862';
-  const C_SUCCESS  = 'FF4B7A5C';
-  const C_DANGER   = 'FF8B3A3A';
-  const C_WARN_BG  = 'FFFFF8E1';
+  // ── Couleurs exactes du template ──
+  const T_DARK   = 'FF302F24'; // charcoal foncé (col headers, subcats)
+  const T_BEIGE  = 'FFEFEBE6'; // fond info rows 1-6
+  const T_WHITE  = 'FFFFFFFF'; // lignes impaires
+  const T_ALT    = 'FFF7F5F2'; // lignes paires
+  const T_SUBCAT = 'FFACA298'; // fond sous-catégorie
+  const T_INPUT  = 'FFFFFDE7'; // cellules saisie Sommaire
+  const T_BORD   = 'FFC8C2BB'; // bordures
+  const T_TEXT   = 'FF302F24'; // texte principal
+  const T_WARNBG = 'FF302F24'; // fond avertissement Sommaire
+  const T_WARNTX = 'FF7A5C00'; // texte avertissement
+  const T_GREEN  = 'FF1A5C2A'; // prix confirmés
+  const T_CARAMEL= 'FFCF934F'; // accent liens / OUI
+  const FONT     = 'Calibri';
+  const PFMT     = '"$"#,##0.00;\\-"$"#,##0.00;"-"'; // format prix exact du template
 
-  function borderAll(color = C_BORD) {
-    const s = { style: 'thin', color: { argb: color } };
-    return { top: s, bottom: s, left: s, right: s };
+  const FL = (c) => ({ type: 'pattern', pattern: 'solid', fgColor: { argb: c } });
+  const BD = (c = T_BORD) => { const s = { style: 'thin', color: { argb: c } }; return { top:s, bottom:s, left:s, right:s }; };
+  const cl = (n) => n <= 26 ? String.fromCharCode(64 + n) : String.fromCharCode(64 + Math.floor((n-1)/26)) + String.fromCharCode(65 + (n-1)%26);
+
+  function sc(ws, r, c, val, { bg=null, fg=T_TEXT, bold=false, italic=false, sz=9, h='left', v='middle', wrap=true, numFmt=null, bdColor=T_BORD } = {}) {
+    const cell = ws.getCell(r, c);
+    cell.value = val;
+    if (bg) cell.fill = FL(bg);
+    cell.font = { name: FONT, size: sz, bold, italic, color: { argb: fg } };
+    cell.alignment = { horizontal: h, vertical: v, wrapText: wrap };
+    cell.border = BD(bdColor);
+    if (numFmt) cell.numFmt = numFmt;
+    return cell;
   }
 
-  function applyHeader(cell, bg = C_CHARCOAL, fg = C_WHITE, sz = 10, align = 'center') {
-    cell.fill    = { type: 'pattern', pattern: 'solid', fgColor: { argb: bg } };
-    cell.font    = { bold: true, color: { argb: fg }, size: sz, name: 'Calibri' };
-    cell.alignment = { vertical: 'middle', horizontal: align, wrapText: true };
-    cell.border  = borderAll();
-  }
+  // ── Définition colonnes selon mode (largeurs exactes du template) ──
+  // tpl = position dans le template original (1-19 = A-S)
+  // Client exclut tpl 12 (L). Chantier exclut tpl 12-17 (L-Q).
+  const ALL_COLS = [
+    { tpl:1,  key:'ref',         hdr:'Réf.\nPlan',                 w:7,  sz:8, h:'center'  },
+    { tpl:2,  key:'pieces',      hdr:'Pièce(s)',                   w:13, sz:9, h:'left'    },
+    { tpl:3,  key:'nom',         hdr:'Item /\nDescription',        w:24, sz:9, h:'left'    },
+    { tpl:4,  key:'fabricant',   hdr:'Compagnie /\nFournisseur',   w:17, sz:9, h:'left'    },
+    { tpl:5,  key:'modele',      hdr:'Modèle',                     w:14, sz:9, h:'left'    },
+    { tpl:6,  key:'sku',         hdr:'No. série /\nCode produit',  w:13, sz:9, h:'left'    },
+    { tpl:7,  key:'qte',         hdr:'Qté.',                       w:6,  sz:9, h:'left'    },
+    { tpl:8,  key:'couleur',     hdr:'Couleur /\nFinition',        w:13, sz:9, h:'left'    },
+    { tpl:9,  key:'dims',        hdr:'Dimensions',                 w:13, sz:9, h:'left'    },
+    { tpl:10, key:'caract',      hdr:'Caractéristiques\nspécifiques',w:22,sz:9,h:'left'   },
+    { tpl:11, key:'photo',       hdr:'Photo\n(insérer img)',       w:16, sz:9, h:'center'  },
+    // tpl 12 (L) exclu des deux modes
+    { tpl:13, key:'choix_faire', hdr:'⚠ Choix\nà faire',          w:10, sz:8, h:'center'  },
+    { tpl:14, key:'prix_u',      hdr:'Prix\nunitaire ($)',         w:11, sz:9, h:'left', numFmt:PFMT },
+    { tpl:15, key:'prix_total',  hdr:'Prix\ntotal ($)',            w:13, sz:9, h:'left', numFmt:PFMT },
+    { tpl:16, key:'statut',      hdr:'Statut',                     w:13, sz:9, h:'left'    },
+    { tpl:17, key:'date_conf',   hdr:'Date\nconfirmé',             w:11, sz:9, h:'left'    },
+    { tpl:18, key:'lien',        hdr:'Lien',                       w:15, sz:9, h:'center'  },
+    { tpl:19, key:'approbation', hdr:'Approbation\nclient',        w:20, sz:9, h:'left'    },
+  ];
 
-  function applyData(cell, bg = C_WHITE, fg = C_CHARCOAL, sz = 9, align = 'left', bold = false) {
-    cell.fill    = { type: 'pattern', pattern: 'solid', fgColor: { argb: bg } };
-    cell.font    = { bold, color: { argb: fg }, size: sz, name: 'Calibri' };
-    cell.alignment = { vertical: 'middle', horizontal: align, wrapText: true };
-    cell.border  = borderAll();
-  }
+  const excl = mode === 'client' ? new Set([12]) : new Set([12,13,14,15,16,17]);
+  const colDefs   = ALL_COLS.filter(c => !excl.has(c.tpl));
+  const nCols     = colDefs.length;   // 18 (client) ou 13 (chantier)
+  const lastCol   = cl(nCols);
+  const photoColN = colDefs.findIndex(c => c.key === 'photo') + 1; // toujours 11 (col K)
 
   // ────────────────────────────────────────────
-  // SOMMAIRE (Client uniquement)
+  // SOMMAIRE — structure exacte du template
   // ────────────────────────────────────────────
   if (mode === 'client') {
     const ws = wb.addWorksheet('Sommaire');
-    ws.pageSetup.paperSize  = 5; // Legal
-    ws.pageSetup.orientation = 'landscape';
-    ws.pageSetup.fitToPage  = true;
-    ws.pageSetup.fitToWidth = 1;
-    ws.pageSetup.fitToHeight = 0;
-    ws.pageSetup.margins = { left: 0.5, right: 0.5, top: 0.75, bottom: 0.75, header: 0.3, footer: 0.3 };
+    ws.pageSetup.paperSize = 5; ws.pageSetup.orientation = 'landscape';
+    ws.pageSetup.fitToPage = true; ws.pageSetup.fitToWidth = 1; ws.pageSetup.fitToHeight = 0;
+    ws.pageSetup.margins = { left:0.5, right:0.5, top:0.75, bottom:0.75, header:0.3, footer:0.3 };
 
-    [40, 36, 18, 18, 18, 36].forEach((w, i) => { ws.getColumn(i + 1).width = w; });
+    // Largeurs colonnes (exactes du template Sommaire)
+    [8, 30, 18, 13, 13, 28].forEach((w, i) => { ws.getColumn(i+1).width = w; });
 
-    // Titre
-    ws.mergeCells('A1:F1');
-    const t1 = ws.getCell('A1');
-    t1.value = 'DEVIS DE SPÉCIFICATION DESIGN — SOMMAIRE DES COÛTS';
-    applyHeader(t1, C_CHARCOAL, C_WHITE, 14);
-    ws.getRow(1).height = 38;
+    // Hauteurs (exactes du template)
+    [22.15, 22.15, 22.15, 25.9, 22.15, 6, 22.15].forEach((h, i) => { ws.getRow(i+1).height = h; });
 
-    // Infos projet
-    ws.mergeCells('A2:C2');
-    ws.getCell('A2').value = `Projet : ${nomProjet}`;
-    applyData(ws.getCell('A2'), C_FOND, C_CHARCOAL, 10, 'left', true);
-    ws.mergeCells('D2:F2');
-    ws.getCell('D2').value = `Client : ${nomClient}`;
-    applyData(ws.getCell('D2'), C_FOND, C_CHARCOAL, 10, 'left');
-    ws.getRow(2).height = 22;
+    // Row 1-3 : bloc logo à gauche (A1:B3)
+    ws.mergeCells('A1:B3');
+    const logoS = ws.getCell('A1');
+    logoS.value = 'CMPG\nArchitecture & Design';
+    logoS.fill = FL(T_BEIGE); logoS.border = BD();
+    logoS.font = { name:FONT, size:12, bold:true, color:{argb:T_TEXT} };
+    logoS.alignment = { horizontal:'center', vertical:'middle', wrapText:true };
 
-    ws.mergeCells('A3:C3');
-    ws.getCell('A3').value = `Date / Révision : ${dateStr}`;
-    applyData(ws.getCell('A3'), C_FOND, C_TEXTE2, 9, 'left');
-    ws.mergeCells('D3:F3');
-    ws.getCell('D3').value = '450 455-6006  |  info@conceptionmpg.ca';
-    applyData(ws.getCell('D3'), C_FOND, C_TEXTE2, 9, 'right');
-    ws.getRow(3).height = 20;
+    // Row 1 : C1:F1 titre
+    ws.mergeCells('C1:F1');
+    sc(ws,1,3,'SOMMAIRE DES COÛTS ESTIMÉS — SPÉCIFICATIONS DE DESIGN',
+      { bg:T_BEIGE, bold:true, sz:13, h:'center' });
 
-    // Avertissement
-    ws.mergeCells('A4:F4');
-    const warnCell = ws.getCell('A4');
-    warnCell.value = '⚠  Les estimations sont des prix de référence avant taxes. Les coûts finaux peuvent varier selon les fournisseurs et les conditions du marché.';
-    warnCell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: C_WARN_BG } };
-    warnCell.font = { italic: true, size: 8.5, color: { argb: C_TEXTE2 }, name: 'Calibri' };
-    warnCell.alignment = { wrapText: true, vertical: 'middle', horizontal: 'left' };
-    ws.getRow(4).height = 28;
+    // Row 2 : Designer, Client
+    sc(ws,2,3,'Designer :',   { bg:T_BEIGE, bold:true, sz:9, h:'right' });
+    sc(ws,2,4,'',             { bg:T_INPUT, sz:9 }); // designer — info non stockée en DB
+    sc(ws,2,5,'Client :',     { bg:T_BEIGE, bold:true, sz:9, h:'right' });
+    sc(ws,2,6, nomClient,     { bg:T_INPUT, sz:9 });
 
-    ws.getRow(5).height = 8; // espace
+    // Row 3 : No dossier, Date
+    sc(ws,3,3,'No. de dossier :',  { bg:T_BEIGE, bold:true, sz:9, h:'right' });
+    sc(ws,3,4, nomProjet,          { bg:T_INPUT, sz:9 });
+    sc(ws,3,5,'Date / Version :', { bg:T_BEIGE, bold:true, sz:9, h:'right' });
+    sc(ws,3,6, dateStr,            { bg:T_INPUT, sz:9 });
 
-    // En-têtes tableau
-    ['#', 'Domaine', 'Total approuvé ($)', 'Items approuvés', 'Items en attente', 'Notes / Statut'].forEach((h, i) => {
-      const cell = ws.getCell(6, i + 1);
+    // Row 4 : Adresse, Nom projet
+    sc(ws,4,3,'Adresse du projet :', { bg:T_BEIGE, bold:true, sz:9, h:'right' });
+    sc(ws,4,4,'',                    { bg:T_INPUT, sz:9 });
+    sc(ws,4,5,'Nom du projet :',     { bg:T_BEIGE, bold:true, sz:9, h:'right' });
+    sc(ws,4,6, nomProjet,            { bg:T_INPUT, sz:9 });
+
+    // Row 5 : Avertissement (fond foncé, texte doré — exact template)
+    ws.mergeCells('A5:F5');
+    const warn5 = ws.getCell('A5');
+    warn5.value = '⚠  Les estimations sont des prix de référence avant taxes. Les coûts finaux peuvent varier selon les fournisseurs et les conditions du marché.';
+    warn5.fill = FL(T_WARNBG); warn5.border = BD(T_DARK);
+    warn5.font = { name:FONT, size:8, italic:true, color:{argb:T_WARNTX} };
+    warn5.alignment = { horizontal:'left', vertical:'middle', wrapText:true };
+
+    // Row 6 : espace
+    ws.getRow(6).height = 6;
+
+    // Row 7 : en-têtes tableau (fond charcoal)
+    ['#','Domaine','Estimé MIN ($)','Estimé MAX ($)','Écart ($)','Notes / Statut'].forEach((h,i) => {
+      const cell = ws.getCell(7, i+1);
       cell.value = h;
-      applyHeader(cell, C_CARAMEL, C_WHITE, 9.5);
+      cell.fill = FL(T_DARK); cell.border = BD(T_DARK);
+      cell.font = { name:FONT, size:9, bold:true, color:{argb:T_WHITE} };
+      cell.alignment = { horizontal:'center', vertical:'middle', wrapText:true };
     });
-    ws.getRow(6).height = 26;
+    ws.getRow(7).height = 22.15;
 
-    // Lignes par catégorie
-    let rowIdx = 7;
-    let grandTotal = 0;
-    let totalApp = 0;
-    let totalAtt = 0;
+    // Lignes catégories
+    let sR = 8;
+    let grandTotal = 0, totalPend = 0;
 
-    sortedCats.forEach(({ cat, rows }, idx) => {
-      const appRows = rows.filter(r => r.statut === 'approuvé');
-      const attRows = rows.filter(r => !r.statut);
-      const catTotal = appRows.reduce((s, r) => s + (r.prix_total || 0), 0);
-      grandTotal += catTotal;
-      totalApp   += appRows.length;
-      totalAtt   += attRows.length;
+    sortedCats.forEach(({ cat, scMap }, idx) => {
+      const allRows = Object.values(scMap).flatMap(s => s.rows);
+      const appRows = allRows.filter(r => r.isApprouved);
+      const pendRows = allRows.filter(r => !r.statut);
+      const catTot = appRows.reduce((s, r) => s + (r.prix_total || 0), 0);
+      grandTotal += catTot; totalPend += pendRows.length;
 
-      const bg = idx % 2 === 0 ? C_WHITE : C_FOND;
-      const vals = [idx + 1, cat.nom, catTotal || null, appRows.length, attRows.length || null,
-        attRows.length > 0 ? `${attRows.length} item(s) en attente` : '✓ Complété'];
-      vals.forEach((v, i) => {
-        const cell = ws.getCell(rowIdx, i + 1);
+      const bg = idx % 2 === 0 ? T_WHITE : T_ALT;
+      [idx+1, cat.nom, catTot||null, null, null,
+        pendRows.length > 0 ? `${pendRows.length} item(s) en attente` : '—'
+      ].forEach((v, i) => {
+        const cell = ws.getCell(sR, i+1);
         cell.value = v;
-        const align = i === 0 ? 'center' : (i >= 2 && i <= 4 ? 'center' : 'left');
-        applyData(cell, bg, i === 5 && attRows.length === 0 ? C_SUCCESS : C_CHARCOAL, 9, align);
-        if (i === 2 && typeof v === 'number') cell.numFmt = '#,##0.00 $';
+        cell.fill = FL(bg); cell.border = BD();
+        cell.font = { name:FONT, size:9, bold:i===1, color:{argb:T_TEXT} };
+        cell.alignment = { horizontal: i===0 ? 'center' : 'left', vertical:'middle', wrapText:true };
+        if (i===2 && typeof v==='number') cell.numFmt = PFMT;
       });
-      ws.getRow(rowIdx).height = 22;
-      rowIdx++;
+      ws.getRow(sR).height = 22.15;
+      sR++;
     });
 
     // Ligne total
-    ws.mergeCells(`A${rowIdx}:B${rowIdx}`);
-    ws.getCell(`A${rowIdx}`).value = 'TOTAL ESTIMÉ DU PROJET';
-    applyHeader(ws.getCell(`A${rowIdx}`), C_CHARCOAL, C_WHITE, 10, 'right');
-    [null, null, grandTotal || null, totalApp, totalAtt || null, null].forEach((v, i) => {
-      if (i <= 1) return;
-      const cell = ws.getCell(rowIdx, i + 1);
-      cell.value = v;
-      applyHeader(cell, i === 2 ? C_CARAMEL : C_CHARCOAL, C_WHITE, 10, 'center');
-      if (i === 2 && typeof v === 'number') cell.numFmt = '#,##0.00 $';
+    ws.mergeCells(`A${sR}:B${sR}`);
+    const totL = ws.getCell(sR,1);
+    totL.value = 'TOTAL ESTIMÉ DU PROJET'; totL.fill = FL(T_DARK); totL.border = BD(T_DARK);
+    totL.font = { name:FONT, size:9, bold:true, color:{argb:T_WHITE} };
+    totL.alignment = { horizontal:'right', vertical:'middle' };
+    const totV = ws.getCell(sR,3);
+    totV.value = grandTotal||null; totV.numFmt = PFMT; totV.fill = FL(T_DARK); totV.border = BD(T_DARK);
+    totV.font = { name:FONT, size:10, bold:true, color:{argb:T_WHITE} };
+    totV.alignment = { horizontal:'left', vertical:'middle' };
+    [4,5,6].forEach(c => {
+      const cell = ws.getCell(sR,c); cell.fill = FL(T_DARK); cell.border = BD(T_DARK);
+      cell.font = { name:FONT, size:9, color:{argb:T_WHITE} };
+      if (c===6) { cell.value = totalPend>0 ? `${totalPend} item(s) en attente` : '✓ Complété'; cell.alignment={horizontal:'left',vertical:'middle'}; }
     });
-    ws.getRow(rowIdx).height = 28;
-    rowIdx += 2;
+    ws.getRow(sR).height = 25.9;
+    sR += 2;
 
-    // Note de bas de page
-    ws.mergeCells(`A${rowIdx}:F${rowIdx + 1}`);
-    const noteCell = ws.getCell(`A${rowIdx}`);
-    noteCell.value = '* Les prix affichés sont des estimations avant taxes basées sur les sélections confirmées par le client.\n  Les items en attente ne sont pas inclus dans le total estimé.';
-    noteCell.font = { italic: true, size: 8, color: { argb: C_TEXTE2 }, name: 'Calibri' };
-    noteCell.alignment = { wrapText: true, vertical: 'top', horizontal: 'left' };
-    ws.getRow(rowIdx).height = 30;
+    // Mode d'emploi
+    ws.mergeCells(`A${sR}:F${sR+1}`);
+    const modeCell = ws.getCell(`A${sR}`);
+    modeCell.value = "MODE D'EMPLOI — SCÉNARIOS DE COÛT :\n• STANDARD : item inclus dans les deux estimés (min et max)  • MIN SEULEMENT : option économique — incluse dans le MIN seulement  • MAX SEULEMENT : option premium — incluse dans le MAX seulement  • EXCLU : item hors estimation (en attente, annulé, etc.)";
+    modeCell.font = { name:FONT, size:8, color:{argb:T_TEXT} };
+    modeCell.alignment = { wrapText:true, vertical:'top', horizontal:'left' };
+    ws.getRow(sR).height = 48;
   }
 
   // ────────────────────────────────────────────
-  // ONGLETS PAR CATÉGORIE
+  // ONGLETS PAR CATÉGORIE — structure exacte du template
   // ────────────────────────────────────────────
-
-  // Définition colonnes selon mode
-  // Client : A-K, M-S (on exclut L)
-  // Chantier : A-K, R-S (on exclut L-Q)
-  const COL_CLIENT = [
-    { header: 'Réf.\nPlan',              key: 'ref',         width: 10, align: 'center' },
-    { header: 'Pièce(s)',                key: 'pieces',      width: 16, align: 'left'   },
-    { header: 'Item /\nDescription',     key: 'nom',         width: 40, align: 'left'   },
-    { header: 'Compagnie /\nFournisseur',key: 'fabricant',   width: 22, align: 'left'   },
-    { header: 'Modèle',                  key: 'modele',      width: 18, align: 'left'   },
-    { header: 'No. série /\nCode produit',key:'sku',         width: 16, align: 'left'   },
-    { header: 'Qté.',                    key: 'qte',         width: 8,  align: 'center' },
-    { header: 'Couleur /\nFinition',     key: 'couleur',     width: 18, align: 'left'   },
-    { header: 'Dimensions',              key: 'dims',        width: 18, align: 'left'   },
-    { header: 'Caractéristiques\nspéc.', key: 'caract',      width: 30, align: 'left'   },
-    { header: 'Photo',                   key: 'photo',       width: 12, align: 'center' },
-    { header: '⚠ Choix\nà faire',       key: 'choix_faire', width: 10, align: 'center' },
-    { header: 'Prix\nunitaire ($)',       key: 'prix_u',      width: 14, align: 'right'  },
-    { header: 'Prix\ntotal ($)',          key: 'prix_total',  width: 14, align: 'right'  },
-    { header: 'Statut',                  key: 'statut',      width: 16, align: 'center' },
-    { header: 'Date\nconfirmé',          key: 'date_conf',   width: 14, align: 'center' },
-    { header: 'Lien',                    key: 'lien',        width: 14, align: 'center' },
-    { header: 'Approbation\nclient',     key: 'approbation', width: 16, align: 'center' },
-  ];
-
-  const COL_CHANTIER = [
-    { header: 'Réf.\nPlan',              key: 'ref',         width: 10, align: 'center' },
-    { header: 'Pièce(s)',                key: 'pieces',      width: 16, align: 'left'   },
-    { header: 'Item /\nDescription',     key: 'nom',         width: 44, align: 'left'   },
-    { header: 'Compagnie /\nFournisseur',key: 'fabricant',   width: 22, align: 'left'   },
-    { header: 'Modèle',                  key: 'modele',      width: 18, align: 'left'   },
-    { header: 'No. série /\nCode produit',key:'sku',         width: 16, align: 'left'   },
-    { header: 'Qté.',                    key: 'qte',         width: 8,  align: 'center' },
-    { header: 'Couleur /\nFinition',     key: 'couleur',     width: 18, align: 'left'   },
-    { header: 'Dimensions',              key: 'dims',        width: 18, align: 'left'   },
-    { header: 'Caractéristiques\nspéc.', key: 'caract',      width: 30, align: 'left'   },
-    { header: 'Photo',                   key: 'photo',       width: 12, align: 'center' },
-    { header: 'Lien',                    key: 'lien',        width: 16, align: 'center' },
-    { header: 'Approbation\nclient',     key: 'approbation', width: 16, align: 'center' },
-  ];
-
-  const colDefs   = mode === 'client' ? COL_CLIENT : COL_CHANTIER;
-  const nCols     = colDefs.length;
-  const lastLetter = nCols <= 26 ? String.fromCharCode(64 + nCols) : 'Z';
-  const midLetter  = String.fromCharCode(64 + Math.ceil(nCols / 2));
-  const afterMid   = String.fromCharCode(65 + Math.ceil(nCols / 2));
-  const photoColN  = colDefs.findIndex(c => c.key === 'photo') + 1; // 1-based
-  const HEADER_ROW = 5;
-  const DATA_START = 6;
-
-  for (const { cat, rows } of sortedCats) {
-    const sheetName = cat.nom.replace(/[\\\/\*\?\[\]:]/g, '').substring(0, 31);
+  for (const { cat, scMap } of sortedCats) {
+    const sheetName = cat.nom.replace(/[\\\/\*\?\[\]:]/g,'').substring(0,31);
     const ws = wb.addWorksheet(sheetName);
-    ws.pageSetup.paperSize   = 5;
-    ws.pageSetup.orientation = 'landscape';
-    ws.pageSetup.fitToPage   = true;
-    ws.pageSetup.fitToWidth  = 1;
-    ws.pageSetup.fitToHeight = 0;
-    ws.pageSetup.margins = { left: 0.4, right: 0.4, top: 0.6, bottom: 0.6, header: 0.3, footer: 0.3 };
-    ws.pageSetup.printTitlesRow = `${HEADER_ROW}:${HEADER_ROW}`;
+    ws.pageSetup.paperSize = 5; ws.pageSetup.orientation = 'landscape';
+    ws.pageSetup.fitToPage = true; ws.pageSetup.fitToWidth = 1; ws.pageSetup.fitToHeight = 0;
+    ws.pageSetup.margins = { left:0.4, right:0.4, top:0.6, bottom:0.6, header:0.3, footer:0.3 };
+    ws.pageSetup.printTitlesRow = '7:7';
 
-    // Largeurs colonnes
-    colDefs.forEach((col, i) => { ws.getColumn(i + 1).width = col.width; });
+    // Largeurs exactes du template
+    colDefs.forEach((col, i) => { ws.getColumn(i+1).width = col.w; });
 
-    // Ligne 1 : Titre catégorie (barre caramel)
-    ws.mergeCells(`A1:${lastLetter}1`);
-    const catTitle = ws.getCell('A1');
-    catTitle.value = `SÉLECTION — ${cat.nom.toUpperCase()}`;
-    applyHeader(catTitle, C_CHARCOAL, C_WHITE, 13);
-    ws.getRow(1).height = 34;
+    // Hauteurs rows 1-7 exactes du template
+    ws.getRow(1).height = 38.45;
+    ws.getRow(2).height = 38.45;
+    ws.getRow(3).height = 19.9;
+    ws.getRow(4).height = 19.9;
+    ws.getRow(5).height = 22.15;
+    ws.getRow(6).height = 7.9;
+    ws.getRow(7).height = 36.0;
 
-    // Ligne 2 : Infos projet (gauche)
-    ws.mergeCells(`A2:${midLetter}2`);
-    const infoL = ws.getCell('A2');
-    infoL.value = `Projet : ${nomProjet}  |  Client : ${nomClient}`;
-    infoL.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: C_FOND } };
-    infoL.font = { size: 9, color: { argb: C_TEXTE2 }, name: 'Calibri' };
-    infoL.alignment = { vertical: 'middle', horizontal: 'left' };
-    ws.mergeCells(`${afterMid}2:${lastLetter}2`);
-    const infoR = ws.getCell(`${afterMid}2`);
-    infoR.value = `Date : ${dateStr}  |  450 455-6006  |  info@conceptionmpg.ca`;
-    infoR.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: C_FOND } };
-    infoR.font = { size: 9, color: { argb: C_TEXTE2 }, name: 'Calibri' };
-    infoR.alignment = { vertical: 'middle', horizontal: 'right' };
-    ws.getRow(2).height = 20;
+    // ── Rows 1-2 : bande de titre (3 blocs mergés sur 2 lignes) ──
+    ws.mergeCells('A1:D2');
+    const bL = ws.getCell('A1');
+    bL.value = 'CMPG Architecture & Design'; bL.fill = FL(T_BEIGE); bL.border = BD(T_BORD);
+    bL.font = { name:FONT, size:11, bold:true, color:{argb:T_TEXT} };
+    bL.alignment = { horizontal:'center', vertical:'middle', wrapText:true };
 
-    // Ligne 3 : items en attente (Client seulement)
-    if (mode === 'client') {
-      const pendingCount = rows.filter(r => !r.statut).length;
-      ws.mergeCells(`A3:${lastLetter}3`);
-      const pendCell = ws.getCell('A3');
-      if (pendingCount > 0) {
-        pendCell.value = `⚠  ${pendingCount} item(s) en attente de sélection dans cette catégorie`;
-        pendCell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: C_WARN_BG } };
-        pendCell.font = { bold: true, size: 8.5, color: { argb: C_CARAMEL }, name: 'Calibri' };
-      } else {
-        pendCell.value = '✓  Toutes les sélections sont complétées pour cette catégorie';
-        pendCell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFE8F4EC' } };
-        pendCell.font = { bold: true, size: 8.5, color: { argb: C_SUCCESS }, name: 'Calibri' };
-      }
-      pendCell.alignment = { vertical: 'middle', horizontal: 'left' };
-      ws.getRow(3).height = 20;
-    } else {
-      ws.getRow(3).height = 6;
+    ws.mergeCells('E1:K2');
+    const bT = ws.getCell('E1');
+    bT.value = `SÉLECTION — ${cat.nom.toUpperCase()}`;
+    bT.fill = FL(T_BEIGE); bT.border = BD(T_BORD);
+    bT.font = { name:FONT, size:13, bold:true, color:{argb:T_TEXT} };
+    bT.alignment = { horizontal:'center', vertical:'middle', wrapText:true };
+
+    if (nCols > 11) {
+      ws.mergeCells(`L1:${lastCol}2`);
+      const bR = ws.getCell('L1');
+      bR.value = '450 455-6006  |  info@conceptionmpg.ca\n1885B Mnt Labossière, Vaudreuil-Dorion';
+      bR.fill = FL(T_BEIGE); bR.border = BD(T_BORD);
+      bR.font = { name:FONT, size:8, color:{argb:T_TEXT} };
+      bR.alignment = { horizontal:'right', vertical:'middle', wrapText:true };
+    }
+    // Remplir fond beige sur toutes les cellules rows 1-2
+    for (let r=1; r<=2; r++) for (let c=1; c<=nCols; c++) {
+      const cell = ws.getCell(r,c);
+      if (!cell.fill || cell.fill.fgColor?.argb === '00000000') { cell.fill=FL(T_BEIGE); cell.border=BD(T_BORD); }
     }
 
-    // Ligne 4 : espace
-    ws.getRow(4).height = 6;
+    // ── Row 3 : Designer / Client / No. dossier ──
+    ws.mergeCells('A3:B3');
+    sc(ws,3,1,'Designer :',   { bg:T_BEIGE, bold:true, sz:8, h:'right' });
+    ws.mergeCells('C3:F3');
+    sc(ws,3,3,'',             { bg:T_BEIGE, sz:8 });
+    ws.mergeCells('G3:H3');
+    sc(ws,3,7,'Client :',     { bg:T_BEIGE, bold:true, sz:8, h:'right' });
+    if (nCols >= 18) { // Client (18 cols)
+      ws.mergeCells('I3:L3');
+      sc(ws,3,9, nomClient,   { bg:T_BEIGE, sz:8 });
+      ws.mergeCells('M3:N3');
+      sc(ws,3,13,'No. dossier :', { bg:T_BEIGE, bold:true, sz:8, h:'right' });
+      ws.mergeCells('O3:R3');
+      sc(ws,3,15, nomProjet,  { bg:T_BEIGE, sz:8 });
+    } else { // Chantier (13 cols)
+      ws.mergeCells('I3:J3');
+      sc(ws,3,9, nomClient,   { bg:T_BEIGE, sz:8 });
+      ws.mergeCells('K3:L3');
+      sc(ws,3,11,'No. dossier :', { bg:T_BEIGE, bold:true, sz:8, h:'right' });
+      sc(ws,3,13, nomProjet,  { bg:T_BEIGE, sz:8 });
+    }
+    for (let c=1; c<=nCols; c++) {
+      const cell=ws.getCell(3,c);
+      if (!cell.fill||cell.fill.fgColor?.argb==='00000000'){cell.fill=FL(T_BEIGE);cell.border=BD(T_BORD);}
+    }
 
-    // Ligne 5 : En-têtes colonnes (caramel)
-    const headerRow = ws.getRow(HEADER_ROW);
-    headerRow.height = 34;
+    // ── Row 4 : Adresse / Date ──
+    ws.mergeCells('A4:B4');
+    sc(ws,4,1,'Adresse :', { bg:T_BEIGE, bold:true, sz:8, h:'right' });
+    if (nCols >= 18) {
+      ws.mergeCells('C4:N4');
+      sc(ws,4,3,'',         { bg:T_BEIGE, sz:8 });
+      ws.mergeCells('O4:P4');
+      sc(ws,4,15,'Date / Rév. :', { bg:T_BEIGE, bold:true, sz:8, h:'right' });
+      ws.mergeCells('Q4:R4');
+      sc(ws,4,17, dateStr,  { bg:T_BEIGE, sz:8 });
+    } else {
+      ws.mergeCells('C4:I4');
+      sc(ws,4,3,'',         { bg:T_BEIGE, sz:8 });
+      ws.mergeCells('J4:K4');
+      sc(ws,4,10,'Date / Rév. :', { bg:T_BEIGE, bold:true, sz:8, h:'right' });
+      ws.mergeCells('L4:M4');
+      sc(ws,4,12, dateStr,  { bg:T_BEIGE, sz:8 });
+    }
+    for (let c=1; c<=nCols; c++) {
+      const cell=ws.getCell(4,c);
+      if (!cell.fill||cell.fill.fgColor?.argb==='00000000'){cell.fill=FL(T_BEIGE);cell.border=BD(T_BORD);}
+    }
+
+    // ── Row 5 : Estimations (Client) ou espace (Chantier) ──
+    if (mode === 'client') {
+      ws.mergeCells('A5:C5');
+      sc(ws,5,1,'ESTIMATION MIN. (avant taxes) :', { bg:T_BEIGE, bold:true, sz:8 });
+      ws.mergeCells('D5:F5');
+      sc(ws,5,4,null, { bg:T_BEIGE, fg:T_GREEN, bold:true, sz:10, numFmt:PFMT }); // rempli après
+      ws.mergeCells('G5:I5');
+      sc(ws,5,7,'ESTIMATION MAX. (avant taxes) :', { bg:T_BEIGE, bold:true, sz:8 });
+      ws.mergeCells('J5:K5');
+      sc(ws,5,10,null, { bg:T_BEIGE, bold:true, sz:10, numFmt:PFMT });
+      ws.mergeCells('L5:N5');
+      sc(ws,5,12,'⚠  Items en attente de choix :', { bg:T_BEIGE, bold:true, sz:8 });
+      ws.mergeCells('O5:R5');
+      sc(ws,5,15,null, { bg:T_BEIGE, bold:true, sz:10 }); // count rempli après
+    } else {
+      ws.mergeCells(`A5:${lastCol}5`);
+      sc(ws,5,1,'', { bg:T_BEIGE });
+    }
+    for (let c=1; c<=nCols; c++) {
+      const cell=ws.getCell(5,c);
+      if (!cell.fill||cell.fill.fgColor?.argb==='00000000'){cell.fill=FL(T_BEIGE);cell.border=BD(T_BORD);}
+    }
+
+    // ── Row 6 : espace ──
+    for (let c=1; c<=nCols; c++) { const cell=ws.getCell(6,c); cell.fill=FL(T_BEIGE); }
+
+    // ── Row 7 : en-têtes colonnes (fond charcoal foncé) ──
     colDefs.forEach((col, i) => {
-      const cell = headerRow.getCell(i + 1);
-      cell.value = col.header;
-      applyHeader(cell, C_CARAMEL, C_WHITE, 8.5, 'center');
-      cell.alignment = { vertical: 'middle', horizontal: 'center', wrapText: true };
+      const cell = ws.getCell(7, i+1);
+      cell.value = col.hdr;
+      cell.fill = FL(T_DARK); cell.border = BD(T_DARK);
+      cell.font = { name:FONT, size:8, bold:true, color:{argb:T_WHITE} };
+      cell.alignment = { horizontal:'center', vertical:'center', wrapText:true };
     });
 
-    // Lignes de données
-    const IMG_H = 60;
-    const STD_H = 18;
+    // ── Lignes de données avec sous-catégories ──
+    const DATA_START = 8;
+    let rowIdx      = DATA_START;
+    let dataRowN    = 0;   // pour alternance (compte seulement les lignes de données)
+    let catPrixMin  = 0;
+    let catPending  = 0;
 
-    for (let ri = 0; ri < rows.length; ri++) {
-      const row       = rows[ri];
-      const xlRow     = DATA_START + ri;
-      const exRow     = ws.getRow(xlRow);
-      const isAlt     = ri % 2 === 1;
-      const bg        = isAlt ? C_FOND : C_WHITE;
-      const hasPhoto  = mode === 'client' && row.photo_url && photoMap[row.photo_url];
+    const sortedSCs = Object.values(scMap).sort((a,b) => a.scOrdre - b.scOrdre);
 
-      exRow.height = hasPhoto ? IMG_H : STD_H;
+    for (const { scNom, rows } of sortedSCs) {
+      // Ligne sous-catégorie (gris moyen, texte blanc, exact template)
+      if (scNom) {
+        ws.mergeCells(`A${rowIdx}:${lastCol}${rowIdx}`);
+        const scCell = ws.getCell(rowIdx,1);
+        scCell.value = '  ' + scNom.toUpperCase();
+        scCell.fill = FL(T_SUBCAT);
+        scCell.border = { top:{style:'thin',color:{argb:T_DARK}}, bottom:{style:'thin',color:{argb:T_DARK}}, left:{style:'thin',color:{argb:T_DARK}}, right:{style:'thin',color:{argb:T_DARK}} };
+        scCell.font = { name:FONT, size:9, bold:true, color:{argb:T_WHITE} };
+        scCell.alignment = { horizontal:'left', vertical:'middle' };
+        ws.getRow(rowIdx).height = 19.9;
+        rowIdx++;
+      }
 
-      // Valeurs selon mode
-      const vals = mode === 'client'
-        ? [row.ref, row.pieces, row.nom, row.fabricant, row.modele, row.sku,
-           row.qte, row.couleur, row.dims, row.caract,
-           null,             // K: photo (image ajoutée séparément)
-           row.choix_faire,  // M
-           row.prix_u,       // N
-           row.prix_total,   // O
-           row.statut,       // P
-           row.date_conf,    // Q
-           row.lien,         // R
-           row.approbation]  // S
-        : [row.ref, row.pieces, row.nom, row.fabricant, row.modele, row.sku,
-           row.qte, row.couleur, row.dims, row.caract,
-           null,       // K: photo
-           row.lien,   // R
-           row.approbation]; // S
+      // Lignes de données
+      for (const row of rows) {
+        const bg       = dataRowN % 2 === 0 ? T_WHITE : T_ALT;
+        const hasPhoto = mode==='client' && row.photo_url && photoMap[row.photo_url];
+        ws.getRow(rowIdx).height = hasPhoto ? 55.15 : 19.9;
 
-      vals.forEach((val, i) => {
-        const colN = i + 1;
-        const cell = exRow.getCell(colN);
-        const def  = colDefs[i];
+        if (row.isApprouved && row.prix_total) catPrixMin += row.prix_total;
+        if (!row.statut) catPending++;
 
-        if (colN === photoColN) {
-          // Cellule photo — fond uniquement, image ajoutée après
-          applyData(cell, bg, C_CHARCOAL, 9, 'center');
-          return;
-        }
+        colDefs.forEach((col, i) => {
+          const colN = i+1;
+          const cell = ws.getCell(rowIdx, colN);
+          cell.fill = FL(bg); cell.border = BD();
+          const val = row[col.key];
 
-        // Hyperlien pour colonne Lien
-        if (def.key === 'lien') {
-          if (val) {
-            cell.value = { text: 'Voir →', hyperlink: val };
-            cell.fill  = { type: 'pattern', pattern: 'solid', fgColor: { argb: bg } };
-            cell.font  = { color: { argb: C_CARAMEL }, underline: true, size: 9, name: 'Calibri' };
-            cell.alignment = { vertical: 'middle', horizontal: 'center', wrapText: true };
-            cell.border = borderAll();
-          } else {
-            cell.value = '—';
-            applyData(cell, bg, C_TEXTE2, 9, 'center');
+          if (col.key === 'photo') {
+            cell.alignment = { horizontal:'center', vertical:'middle' };
+            return;
           }
-          return;
-        }
 
-        // Prix
-        if (def.key === 'prix_u' || def.key === 'prix_total') {
-          cell.value  = val;
-          cell.numFmt = '#,##0.00 $';
-          applyData(cell, bg, C_CHARCOAL, 9, 'right');
-          return;
-        }
-
-        // Statut & Approbation
-        if (def.key === 'statut' || def.key === 'approbation') {
-          const isApp = val === 'approuvé' || val === 'Approuvé';
-          const isRev = val === 'à_revoir' || val === 'À revoir';
-          const fg = isApp ? C_SUCCESS : (isRev ? C_DANGER : C_TEXTE2);
-          cell.value = isApp ? 'Approuvé' : (isRev ? 'À revoir' : (val || '—'));
-          applyData(cell, bg, fg, 9, 'center', isApp);
-          return;
-        }
-
-        // Choix à faire
-        if (def.key === 'choix_faire') {
-          cell.value = val || '';
-          if (val === 'OUI') {
-            applyData(cell, C_WARN_BG, C_CARAMEL, 9, 'center', true);
-          } else {
-            applyData(cell, bg, C_TEXTE2, 9, 'center');
+          if (col.key === 'lien') {
+            if (val) {
+              cell.value = { text: 'Voir →', hyperlink: val };
+              cell.font = { name:FONT, size:9, color:{argb:T_CARAMEL}, underline:true };
+              cell.alignment = { horizontal:'center', vertical:'middle', wrapText:true };
+            } else {
+              cell.value = '—';
+              cell.font = { name:FONT, size:9, color:{argb:T_TEXT} };
+              cell.alignment = { horizontal:'center', vertical:'middle' };
+            }
+            return;
           }
-          return;
+
+          if (col.numFmt) {
+            cell.value = val; cell.numFmt = col.numFmt;
+            cell.font = { name:FONT, size:col.sz||9, color:{argb:T_TEXT} };
+            cell.alignment = { horizontal:col.h||'left', vertical:'middle', wrapText:true };
+            return;
+          }
+
+          if (col.key === 'choix_faire') {
+            cell.value = val || '';
+            cell.font = { name:FONT, size:col.sz||8, bold:val==='OUI', color:{argb:val==='OUI'?T_CARAMEL:T_TEXT} };
+            cell.alignment = { horizontal:'center', vertical:'middle', wrapText:true };
+            return;
+          }
+
+          cell.value = val ?? '';
+          cell.font = { name:FONT, size:col.sz||9, color:{argb:T_TEXT} };
+          cell.alignment = { horizontal:col.h||'left', vertical:'middle', wrapText:true };
+        });
+
+        // Image produit
+        if (hasPhoto) {
+          const b64r = photoMap[row.photo_url];
+          if (b64r) {
+            const base64 = b64r.includes(',') ? b64r.split(',')[1] : b64r;
+            const ext = (b64r.startsWith('data:image/png')||row.photo_url.match(/\.png$/i)) ? 'png' : 'jpeg';
+            try {
+              const imgId = wb.addImage({ base64, extension: ext });
+              ws.addImage(imgId, {
+                tl: { col: photoColN-1, row: rowIdx-1 },
+                ext: { width: col.w*7.2-4, height: 55.15-4 },
+              });
+            } catch(e) {}
+          }
         }
 
-        // Valeur standard
-        cell.value = val ?? '';
-        applyData(cell, bg, C_CHARCOAL, 9, def.align);
-      });
-
-      // Image produit (Client)
-      if (hasPhoto) {
-        const b64raw = photoMap[row.photo_url];
-        if (b64raw) {
-          const base64 = b64raw.includes(',') ? b64raw.split(',')[1] : b64raw;
-          const ext = (b64raw.startsWith('data:image/png') || row.photo_url.match(/\.png$/i)) ? 'png' : 'jpeg';
-          try {
-            const imgId = wb.addImage({ base64, extension: ext });
-            const pad = 2;
-            ws.addImage(imgId, {
-              tl: { col: photoColN - 1, row: xlRow - 1 },
-              ext: { width: (colDefs[photoColN - 1].width * 7.5) - pad * 2, height: IMG_H - pad * 2 },
-            });
-          } catch(e) { /* image non disponible */ }
-        }
+        dataRowN++;
+        rowIdx++;
       }
     }
 
-    // Ligne totaux (Client seulement)
+    // Mettre à jour row 5 estimations (Client)
     if (mode === 'client') {
-      const totRowIdx   = DATA_START + rows.length;
-      const totRow      = ws.getRow(totRowIdx);
-      totRow.height     = 24;
-      const nIdx        = colDefs.findIndex(c => c.key === 'prix_u')    + 1;
-      const oIdx        = colDefs.findIndex(c => c.key === 'prix_total') + 1;
-      const appTotal    = rows.filter(r => r.statut === 'approuvé').reduce((s, r) => s + (r.prix_total || 0), 0);
-
-      // Fusionner A jusqu'à colonne avant prix_u
-      if (nIdx > 1) ws.mergeCells(totRowIdx, 1, totRowIdx, nIdx - 1);
-      const labelCell = totRow.getCell(1);
-      labelCell.value = 'TOTAL (ITEMS APPROUVÉS)';
-      applyHeader(labelCell, C_CHARCOAL, C_WHITE, 9, 'right');
-
-      colDefs.forEach((col, i) => {
-        const colN = i + 1;
-        if (colN < nIdx) return; // déjà fusionné
-        const cell = totRow.getCell(colN);
-        if (colN === nIdx) {
-          cell.value = null; // pas de total unitaire
-          applyHeader(cell, C_CHARCOAL, C_WHITE, 9, 'right');
-        } else if (colN === oIdx) {
-          cell.value  = appTotal || null;
-          cell.numFmt = '#,##0.00 $';
-          applyHeader(cell, C_CARAMEL, C_WHITE, 10, 'right');
-        } else {
-          applyHeader(cell, C_CHARCOAL, C_WHITE, 9, 'center');
-        }
-      });
+      ws.getCell(5,4).value  = catPrixMin || null;
+      ws.getCell(5,10).value = catPrixMin || null; // même valeur pour min/max (on n'a qu'un total)
+      ws.getCell(5,15).value = catPending || 0;
     }
 
-    // Figer la ligne d'entêtes
-    ws.views = [{ state: 'frozen', ySplit: HEADER_ROW, activeCell: `A${DATA_START}` }];
+    // Figer la ligne d'en-têtes de colonnes
+    ws.views = [{ state:'frozen', ySplit:7, activeCell:'A8' }];
   }
 
   // ── Téléchargement ──
   try {
-    const buffer  = await wb.xlsx.writeBuffer();
-    const blob    = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
-    const url     = URL.createObjectURL(blob);
-    const a       = document.createElement('a');
-    const safe    = nomProjet.replace(/[^a-zA-Z0-9_\-]/g, '_');
-    const label   = mode === 'client' ? 'Client' : 'Chantier';
-    a.href        = url;
-    a.download    = `CMPG_Devis_${label}_${safe}.xlsx`;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    URL.revokeObjectURL(url);
+    const buffer = await wb.xlsx.writeBuffer();
+    const blob   = new Blob([buffer], { type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+    const url    = URL.createObjectURL(blob);
+    const a      = document.createElement('a');
+    const safe   = nomProjet.replace(/[^a-zA-Z0-9_\-]/g,'_');
+    const label  = mode === 'client' ? 'Client' : 'Chantier';
+    a.href = url; a.download = `CMPG_Devis_${label}_${safe}.xlsx`;
+    document.body.appendChild(a); a.click();
+    document.body.removeChild(a); URL.revokeObjectURL(url);
     toast(`Excel ${label} généré avec succès !`, 'success');
   } catch(e) {
     console.error(e);

@@ -5,8 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>CMPG — Portail Administration</title>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.5.25/jspdf.plugin.autotable.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/exceljs@4.4.0/dist/exceljs.min.js"></script>
 <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;500;700&family=Noto+Serif+Display:ital,wght@0,400;0,700;1,400&display=swap" rel="stylesheet">
 <style>
 /* ===== CMPG DESIGN SYSTEM ===== */
@@ -321,8 +320,8 @@ body { font-family: 'Roboto', sans-serif; background: var(--fond); color: var(--
           <div id="detail-projet-client" style="font-size:12px;color:var(--caramel);letter-spacing:1px;text-transform:uppercase;margin-top:2px"></div>
         </div>
         <div style="display:flex;gap:10px">
-          <button class="btn btn-outline btn-sm" onclick="genererPDFClient()">⬇ PDF Client</button>
-          <button class="btn btn-caramel btn-sm" onclick="genererPDFChantier()">⬇ PDF Chantier</button>
+          <button class="btn btn-outline btn-sm" onclick="genererExcelClient()">⬇ Excel Client</button>
+          <button class="btn btn-caramel btn-sm" onclick="genererExcelChantier()">⬇ Excel Chantier</button>
         </div>
       </div>
       <div class="page-body">
@@ -1867,244 +1866,518 @@ async function chargerImageProduit(url) {
   });
 }
 
-function genererPDFClient() { genererPDF_base('client'); }
-function genererPDFChantier() { genererPDF_base('chantier'); }
+function genererExcelClient() { genererExcel_base('client'); }
+function genererExcelChantier() { genererExcel_base('chantier'); }
 
-async function genererPDF_base(mode) {
+async function genererExcel_base(mode) {
   if (!currentProjetId) { toast('Aucun projet sélectionné.', 'error'); return; }
-  if (!window.jspdf) { toast('Bibliothèque PDF non chargée. Rechargez la page.', 'error'); return; }
+  if (typeof ExcelJS === 'undefined') { toast('Bibliothèque Excel non chargée. Rechargez la page.', 'error'); return; }
 
-  toast('Génération du PDF…', 'info');
+  toast('Génération du fichier Excel…', 'info');
 
-  // Récupérer données du projet
+  // ── Données Supabase ──
   const { data: projet } = await db.from('projets')
-    .select('nom, clients(nom)').eq('id', currentProjetId).single();
+    .select('nom, clients(nom, email)').eq('id', currentProjetId).single();
 
-  const { data: postes } = await db.from('postes')
+  const { data: postesAll } = await db.from('postes')
     .select(`
       id, reference, pieces, piece, ordre,
       categories(id, nom, ordre),
       sous_categories(id, nom, ordre),
       options_produits(
-        id, statut_client, quantite, note_client, commentaire_client, lettre_option,
+        id, statut_client, quantite, note_client, commentaire_client, lettre_option, date_decision,
         banque_produits(id, nom, fabricant, modele, sku, couleur, dimensions, caracteristiques, prix, photo_url, url)
       )
     `)
     .eq('projet_id', currentProjetId)
     .order('ordre');
 
-  // Regrouper par catégorie, garder seulement les options approuvées par le client
+  // ── Regrouper par catégorie ──
   const catMap = {};
-  (postes || []).forEach(poste => {
+  (postesAll || []).forEach(poste => {
     const cat = poste.categories;
     if (!cat) return;
-    const opts = (poste.options_produits || []).filter(o => o.statut_client === 'approuvé');
+    let opts = poste.options_produits || [];
+    if (mode === 'chantier') opts = opts.filter(o => o.statut_client === 'approuvé');
     if (opts.length === 0) return;
     if (!catMap[cat.id]) catMap[cat.id] = { cat, rows: [] };
     opts.forEach(opt => {
       const bp = opt.banque_produits;
       if (!bp) return;
+      const isPending = !opt.statut_client;
       catMap[cat.id].rows.push({
-        ref:      poste.reference || '',
-        pieces:   (poste.pieces || []).join(', ') || poste.piece || '',
-        nom:      bp.nom || '',
-        fabricant:bp.fabricant || '',
-        modele:   bp.modele || '',
-        sku:      bp.sku || '',
-        qte:      String(opt.quantite || 1),
-        couleur:  bp.couleur || '',
-        dims:     bp.dimensions || '',
-        caract:   bp.caracteristiques || '',
-        prix:     bp.prix ? Number(bp.prix).toLocaleString('fr-CA',{style:'currency',currency:'CAD'}) : '—',
-        total:    bp.prix ? Number(bp.prix * (opt.quantite||1)).toLocaleString('fr-CA',{style:'currency',currency:'CAD'}) : '—',
-        url:      bp.url || '',
-        photo_url:bp.photo_url || '',
+        ref:         poste.reference || '',
+        pieces:      (poste.pieces || []).join(', ') || poste.piece || '',
+        nom:         bp.nom || '',
+        fabricant:   bp.fabricant || '',
+        modele:      bp.modele || '',
+        sku:         bp.sku || '',
+        qte:         opt.quantite || 1,
+        couleur:     bp.couleur || '',
+        dims:        bp.dimensions || '',
+        caract:      bp.caracteristiques || '',
+        photo_url:   bp.photo_url || '',
+        choix_faire: isPending ? 'OUI' : '',
+        prix_u:      bp.prix ? Number(bp.prix) : null,
+        prix_total:  bp.prix ? Number(bp.prix) * (opt.quantite || 1) : null,
+        statut:      opt.statut_client || '',
+        date_conf:   opt.date_decision ? new Date(opt.date_decision).toLocaleDateString('fr-CA') : '',
+        lien:        bp.url || '',
+        approbation: opt.statut_client === 'approuvé' ? 'Approuvé' :
+                     (opt.statut_client === 'à_revoir' ? 'À revoir' : ''),
       });
     });
   });
 
   const sortedCats = Object.values(catMap)
     .filter(c => c.rows.length > 0)
-    .sort((a, b) => (a.cat.ordre||0) - (b.cat.ordre||0));
+    .sort((a, b) => (a.cat.ordre || 0) - (b.cat.ordre || 0));
 
   if (sortedCats.length === 0) {
-    toast('Aucune sélection approuvée à exporter.', 'info'); return;
+    toast('Aucune donnée à exporter.', 'info'); return;
   }
 
-  // Pré-charger les images produits
+  // ── Pré-charger images (Client seulement) ──
   const photoMap = {};
   if (mode === 'client') {
     const urls = [...new Set(sortedCats.flatMap(c => c.rows.map(r => r.photo_url)).filter(Boolean))];
     await Promise.all(urls.map(async url => { photoMap[url] = await chargerImageProduit(url); }));
   }
 
-  // Créer le PDF (A4 paysage)
-  const { jsPDF } = window.jspdf;
-  const doc = new jsPDF({ orientation: 'landscape', unit: 'mm', format: 'a4' });
-  const W = 297, H = 210;
-  const CHARCOAL = [58, 59, 58];
-  const CARAMEL  = [207, 147, 79];
-  const WHITE    = [255, 255, 255];
-  const FOND     = [245, 244, 238];
-  const BORD     = [227, 223, 216];
-  const TEXTE2   = [112, 104, 98];
+  // ── Workbook ──
+  const wb = new ExcelJS.Workbook();
+  wb.creator = 'CMPG Architecture & Design';
+  wb.created = new Date();
 
   const nomProjet = projet?.nom || 'Projet';
+  const nomClient = projet?.clients?.nom || '';
   const dateStr   = new Date().toLocaleDateString('fr-CA');
 
-  const logoData = await getLogoDataUrl();
+  // Couleurs CMPG
+  const C_CHARCOAL = 'FF3A3B3A';
+  const C_CARAMEL  = 'FFCF934F';
+  const C_WHITE    = 'FFFFFFFF';
+  const C_FOND     = 'FFF5F4EE';
+  const C_BORD     = 'FFE3DFD8';
+  const C_TEXTE2   = 'FF706862';
+  const C_SUCCESS  = 'FF4B7A5C';
+  const C_DANGER   = 'FF8B3A3A';
+  const C_WARN_BG  = 'FFFFF8E1';
 
-  // ── Fonction d'en-tête de page ──
-  function dessinerEntete(doc) {
-    doc.setFillColor(...CHARCOAL);
-    doc.rect(0, 0, W, 28, 'F');
-    if (logoData) {
-      doc.addImage(logoData, 'PNG', 8, 3, 44, 19);
-    }
-    doc.setFont('helvetica', 'bold');
-    doc.setFontSize(13);
-    doc.setTextColor(...WHITE);
-    doc.text('DEVIS DE SPÉCIFICATION DESIGN', W / 2, 12, { align: 'center' });
-    doc.setFont('helvetica', 'normal');
-    doc.setFontSize(8.5);
-    doc.setTextColor(...CARAMEL);
-    doc.text(`${nomProjet}  ·  ${dateStr}`, W / 2, 20, { align: 'center' });
+  function borderAll(color = C_BORD) {
+    const s = { style: 'thin', color: { argb: color } };
+    return { top: s, bottom: s, left: s, right: s };
   }
 
-  // ── Colonnes selon le mode ──
-  let columns;
-  const PHOTO_COL_W = mode === 'client' ? 16 : 0;
+  function applyHeader(cell, bg = C_CHARCOAL, fg = C_WHITE, sz = 10, align = 'center') {
+    cell.fill    = { type: 'pattern', pattern: 'solid', fgColor: { argb: bg } };
+    cell.font    = { bold: true, color: { argb: fg }, size: sz, name: 'Calibri' };
+    cell.alignment = { vertical: 'middle', horizontal: align, wrapText: true };
+    cell.border  = borderAll();
+  }
 
+  function applyData(cell, bg = C_WHITE, fg = C_CHARCOAL, sz = 9, align = 'left', bold = false) {
+    cell.fill    = { type: 'pattern', pattern: 'solid', fgColor: { argb: bg } };
+    cell.font    = { bold, color: { argb: fg }, size: sz, name: 'Calibri' };
+    cell.alignment = { vertical: 'middle', horizontal: align, wrapText: true };
+    cell.border  = borderAll();
+  }
+
+  // ────────────────────────────────────────────
+  // SOMMAIRE (Client uniquement)
+  // ────────────────────────────────────────────
   if (mode === 'client') {
-    columns = [
-      { header: 'Photo',    dataKey: '_photo', styles: { cellWidth: 16 } },
-      { header: 'Réf.',     dataKey: 'ref',    styles: { cellWidth: 20 } },
-      { header: 'Pièce(s)', dataKey: 'pieces', styles: { cellWidth: 28 } },
-      { header: 'Produit',  dataKey: 'nom',    styles: { cellWidth: 50 } },
-      { header: 'Fabricant',dataKey: 'fabricant' },
-      { header: 'Modèle',   dataKey: 'modele' },
-      { header: 'Qté',      dataKey: 'qte',    styles: { cellWidth: 10, halign: 'center' } },
-      { header: 'Prix u.',  dataKey: 'prix',   styles: { cellWidth: 22, halign: 'right' } },
-      { header: 'Total',    dataKey: 'total',  styles: { cellWidth: 22, halign: 'right' } },
-    ];
-  } else {
-    columns = [
-      { header: 'Réf.',     dataKey: 'ref',    styles: { cellWidth: 18 } },
-      { header: 'Pièce(s)', dataKey: 'pieces', styles: { cellWidth: 26 } },
-      { header: 'Produit',  dataKey: 'nom',    styles: { cellWidth: 48 } },
-      { header: 'Fabricant',dataKey: 'fabricant', styles: { cellWidth: 28 } },
-      { header: 'Modèle',   dataKey: 'modele', styles: { cellWidth: 28 } },
-      { header: 'SKU',      dataKey: 'sku',    styles: { cellWidth: 22 } },
-      { header: 'Qté',      dataKey: 'qte',    styles: { cellWidth: 10, halign: 'center' } },
-      { header: 'Couleur',  dataKey: 'couleur',styles: { cellWidth: 24 } },
-      { header: 'Dimensions',dataKey: 'dims',  styles: { cellWidth: 28 } },
-      { header: 'Lien',     dataKey: '_lien',  styles: { cellWidth: 22 } },
-    ];
-  }
+    const ws = wb.addWorksheet('Sommaire');
+    ws.pageSetup.paperSize  = 5; // Legal
+    ws.pageSetup.orientation = 'landscape';
+    ws.pageSetup.fitToPage  = true;
+    ws.pageSetup.fitToWidth = 1;
+    ws.pageSetup.fitToHeight = 0;
+    ws.pageSetup.margins = { left: 0.5, right: 0.5, top: 0.75, bottom: 0.75, header: 0.3, footer: 0.3 };
 
-  // ── Première page ──
-  dessinerEntete(doc);
-  let yPos = 34;
+    [40, 36, 18, 18, 18, 36].forEach((w, i) => { ws.getColumn(i + 1).width = w; });
 
-  sortedCats.forEach(({ cat, rows }, catIdx) => {
-    if (yPos > H - 35) {
-      doc.addPage();
-      dessinerEntete(doc);
-      yPos = 34;
-    }
+    // Titre
+    ws.mergeCells('A1:F1');
+    const t1 = ws.getCell('A1');
+    t1.value = 'DEVIS DE SPÉCIFICATION DESIGN — SOMMAIRE DES COÛTS';
+    applyHeader(t1, C_CHARCOAL, C_WHITE, 14);
+    ws.getRow(1).height = 38;
 
-    // En-tête catégorie
-    doc.setFillColor(...CARAMEL);
-    doc.rect(10, yPos, W - 20, 7, 'F');
-    doc.setFont('helvetica', 'bold');
-    doc.setFontSize(8.5);
-    doc.setTextColor(...WHITE);
-    doc.text(cat.nom.toUpperCase(), 14, yPos + 4.6);
-    yPos += 9;
+    // Infos projet
+    ws.mergeCells('A2:C2');
+    ws.getCell('A2').value = `Projet : ${nomProjet}`;
+    applyData(ws.getCell('A2'), C_FOND, C_CHARCOAL, 10, 'left', true);
+    ws.mergeCells('D2:F2');
+    ws.getCell('D2').value = `Client : ${nomClient}`;
+    applyData(ws.getCell('D2'), C_FOND, C_CHARCOAL, 10, 'left');
+    ws.getRow(2).height = 22;
 
-    // Préparer les données de lignes
-    const tableRows = rows.map(r => ({
-      ...r,
-      _photo: '',   // contenu vide, on dessine l'image dans didDrawCell
-      _lien:  r.url ? 'Voir →' : '—',
-    }));
+    ws.mergeCells('A3:C3');
+    ws.getCell('A3').value = `Date / Révision : ${dateStr}`;
+    applyData(ws.getCell('A3'), C_FOND, C_TEXTE2, 9, 'left');
+    ws.mergeCells('D3:F3');
+    ws.getCell('D3').value = '450 455-6006  |  info@conceptionmpg.ca';
+    applyData(ws.getCell('D3'), C_FOND, C_TEXTE2, 9, 'right');
+    ws.getRow(3).height = 20;
 
-    const ROW_H = mode === 'client' ? 14 : 7;
+    // Avertissement
+    ws.mergeCells('A4:F4');
+    const warnCell = ws.getCell('A4');
+    warnCell.value = '⚠  Les estimations sont des prix de référence avant taxes. Les coûts finaux peuvent varier selon les fournisseurs et les conditions du marché.';
+    warnCell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: C_WARN_BG } };
+    warnCell.font = { italic: true, size: 8.5, color: { argb: C_TEXTE2 }, name: 'Calibri' };
+    warnCell.alignment = { wrapText: true, vertical: 'middle', horizontal: 'left' };
+    ws.getRow(4).height = 28;
 
-    doc.autoTable({
-      startY: yPos,
-      columns: columns,
-      body: tableRows,
-      styles: {
-        font: 'helvetica',
-        fontSize: 7.5,
-        cellPadding: 2,
-        textColor: CHARCOAL,
-        lineColor: BORD,
-        lineWidth: 0.1,
-        minCellHeight: ROW_H,
-        valign: 'middle',
-      },
-      headStyles: {
-        fillColor: FOND,
-        textColor: TEXTE2,
-        fontStyle: 'bold',
-        fontSize: 7,
-        lineColor: BORD,
-        lineWidth: 0.1,
-      },
-      alternateRowStyles: { fillColor: [252, 251, 248] },
-      margin: { left: 10, right: 10 },
-      didDrawCell: (data) => {
-        // Photo dans la colonne _photo (PDF Client seulement)
-        if (mode === 'client' && data.column.dataKey === '_photo' && data.cell.section === 'body') {
-          const row = rows[data.row.index];
-          const b64 = row && row.photo_url ? photoMap[row.photo_url] : null;
-          if (b64) {
-            const pad = 1.5;
-            doc.addImage(b64, 'JPEG',
-              data.cell.x + pad, data.cell.y + pad,
-              data.cell.width - pad*2, data.cell.height - pad*2);
-          }
-        }
-        // Lien cliquable dans la colonne _lien (PDF Chantier)
-        if (mode === 'chantier' && data.column.dataKey === '_lien' && data.cell.section === 'body') {
-          const row = rows[data.row.index];
-          if (row && row.url) {
-            doc.link(data.cell.x, data.cell.y, data.cell.width, data.cell.height, { url: row.url });
-            // Re-colorier le texte en caramel
-            doc.setFontSize(7.5);
-            doc.setTextColor(...CARAMEL);
-            doc.text('Voir →', data.cell.x + 1, data.cell.y + data.cell.height / 2 + 0.5);
-          }
-        }
-      },
-      didParseCell: (data) => {
-        // Supprimer le texte de la cellule photo (on dessine l'image nous-même)
-        if (mode === 'client' && data.column.dataKey === '_photo') {
-          data.cell.text = [];
-        }
-      },
+    ws.getRow(5).height = 8; // espace
+
+    // En-têtes tableau
+    ['#', 'Domaine', 'Total approuvé ($)', 'Items approuvés', 'Items en attente', 'Notes / Statut'].forEach((h, i) => {
+      const cell = ws.getCell(6, i + 1);
+      cell.value = h;
+      applyHeader(cell, C_CARAMEL, C_WHITE, 9.5);
+    });
+    ws.getRow(6).height = 26;
+
+    // Lignes par catégorie
+    let rowIdx = 7;
+    let grandTotal = 0;
+    let totalApp = 0;
+    let totalAtt = 0;
+
+    sortedCats.forEach(({ cat, rows }, idx) => {
+      const appRows = rows.filter(r => r.statut === 'approuvé');
+      const attRows = rows.filter(r => !r.statut);
+      const catTotal = appRows.reduce((s, r) => s + (r.prix_total || 0), 0);
+      grandTotal += catTotal;
+      totalApp   += appRows.length;
+      totalAtt   += attRows.length;
+
+      const bg = idx % 2 === 0 ? C_WHITE : C_FOND;
+      const vals = [idx + 1, cat.nom, catTotal || null, appRows.length, attRows.length || null,
+        attRows.length > 0 ? `${attRows.length} item(s) en attente` : '✓ Complété'];
+      vals.forEach((v, i) => {
+        const cell = ws.getCell(rowIdx, i + 1);
+        cell.value = v;
+        const align = i === 0 ? 'center' : (i >= 2 && i <= 4 ? 'center' : 'left');
+        applyData(cell, bg, i === 5 && attRows.length === 0 ? C_SUCCESS : C_CHARCOAL, 9, align);
+        if (i === 2 && typeof v === 'number') cell.numFmt = '#,##0.00 $';
+      });
+      ws.getRow(rowIdx).height = 22;
+      rowIdx++;
     });
 
-    yPos = doc.lastAutoTable.finalY + 6;
-  });
+    // Ligne total
+    ws.mergeCells(`A${rowIdx}:B${rowIdx}`);
+    ws.getCell(`A${rowIdx}`).value = 'TOTAL ESTIMÉ DU PROJET';
+    applyHeader(ws.getCell(`A${rowIdx}`), C_CHARCOAL, C_WHITE, 10, 'right');
+    [null, null, grandTotal || null, totalApp, totalAtt || null, null].forEach((v, i) => {
+      if (i <= 1) return;
+      const cell = ws.getCell(rowIdx, i + 1);
+      cell.value = v;
+      applyHeader(cell, i === 2 ? C_CARAMEL : C_CHARCOAL, C_WHITE, 10, 'center');
+      if (i === 2 && typeof v === 'number') cell.numFmt = '#,##0.00 $';
+    });
+    ws.getRow(rowIdx).height = 28;
+    rowIdx += 2;
 
-  // Numéros de page
-  const totalPages = doc.internal.getNumberOfPages();
-  for (let i = 1; i <= totalPages; i++) {
-    doc.setPage(i);
-    doc.setFont('helvetica', 'normal');
-    doc.setFontSize(7.5);
-    doc.setTextColor(180, 180, 180);
-    doc.text('© CMPG Architecture & Design — Document confidentiel', 10, H - 4);
-    doc.text(`Page ${i} / ${totalPages}`, W - 10, H - 4, { align: 'right' });
+    // Note de bas de page
+    ws.mergeCells(`A${rowIdx}:F${rowIdx + 1}`);
+    const noteCell = ws.getCell(`A${rowIdx}`);
+    noteCell.value = '* Les prix affichés sont des estimations avant taxes basées sur les sélections confirmées par le client.\n  Les items en attente ne sont pas inclus dans le total estimé.';
+    noteCell.font = { italic: true, size: 8, color: { argb: C_TEXTE2 }, name: 'Calibri' };
+    noteCell.alignment = { wrapText: true, vertical: 'top', horizontal: 'left' };
+    ws.getRow(rowIdx).height = 30;
   }
 
-  const safeName = nomProjet.replace(/[^a-zA-Z0-9_\-]/g, '_');
-  const label = mode === 'client' ? 'Client' : 'Chantier';
-  doc.save(`CMPG_Devis_${label}_${safeName}.pdf`);
-  toast(`PDF ${label} généré avec succès !`, 'success');
+  // ────────────────────────────────────────────
+  // ONGLETS PAR CATÉGORIE
+  // ────────────────────────────────────────────
+
+  // Définition colonnes selon mode
+  // Client : A-K, M-S (on exclut L)
+  // Chantier : A-K, R-S (on exclut L-Q)
+  const COL_CLIENT = [
+    { header: 'Réf.\nPlan',              key: 'ref',         width: 10, align: 'center' },
+    { header: 'Pièce(s)',                key: 'pieces',      width: 16, align: 'left'   },
+    { header: 'Item /\nDescription',     key: 'nom',         width: 40, align: 'left'   },
+    { header: 'Compagnie /\nFournisseur',key: 'fabricant',   width: 22, align: 'left'   },
+    { header: 'Modèle',                  key: 'modele',      width: 18, align: 'left'   },
+    { header: 'No. série /\nCode produit',key:'sku',         width: 16, align: 'left'   },
+    { header: 'Qté.',                    key: 'qte',         width: 8,  align: 'center' },
+    { header: 'Couleur /\nFinition',     key: 'couleur',     width: 18, align: 'left'   },
+    { header: 'Dimensions',              key: 'dims',        width: 18, align: 'left'   },
+    { header: 'Caractéristiques\nspéc.', key: 'caract',      width: 30, align: 'left'   },
+    { header: 'Photo',                   key: 'photo',       width: 12, align: 'center' },
+    { header: '⚠ Choix\nà faire',       key: 'choix_faire', width: 10, align: 'center' },
+    { header: 'Prix\nunitaire ($)',       key: 'prix_u',      width: 14, align: 'right'  },
+    { header: 'Prix\ntotal ($)',          key: 'prix_total',  width: 14, align: 'right'  },
+    { header: 'Statut',                  key: 'statut',      width: 16, align: 'center' },
+    { header: 'Date\nconfirmé',          key: 'date_conf',   width: 14, align: 'center' },
+    { header: 'Lien',                    key: 'lien',        width: 14, align: 'center' },
+    { header: 'Approbation\nclient',     key: 'approbation', width: 16, align: 'center' },
+  ];
+
+  const COL_CHANTIER = [
+    { header: 'Réf.\nPlan',              key: 'ref',         width: 10, align: 'center' },
+    { header: 'Pièce(s)',                key: 'pieces',      width: 16, align: 'left'   },
+    { header: 'Item /\nDescription',     key: 'nom',         width: 44, align: 'left'   },
+    { header: 'Compagnie /\nFournisseur',key: 'fabricant',   width: 22, align: 'left'   },
+    { header: 'Modèle',                  key: 'modele',      width: 18, align: 'left'   },
+    { header: 'No. série /\nCode produit',key:'sku',         width: 16, align: 'left'   },
+    { header: 'Qté.',                    key: 'qte',         width: 8,  align: 'center' },
+    { header: 'Couleur /\nFinition',     key: 'couleur',     width: 18, align: 'left'   },
+    { header: 'Dimensions',              key: 'dims',        width: 18, align: 'left'   },
+    { header: 'Caractéristiques\nspéc.', key: 'caract',      width: 30, align: 'left'   },
+    { header: 'Photo',                   key: 'photo',       width: 12, align: 'center' },
+    { header: 'Lien',                    key: 'lien',        width: 16, align: 'center' },
+    { header: 'Approbation\nclient',     key: 'approbation', width: 16, align: 'center' },
+  ];
+
+  const colDefs   = mode === 'client' ? COL_CLIENT : COL_CHANTIER;
+  const nCols     = colDefs.length;
+  const lastLetter = nCols <= 26 ? String.fromCharCode(64 + nCols) : 'Z';
+  const midLetter  = String.fromCharCode(64 + Math.ceil(nCols / 2));
+  const afterMid   = String.fromCharCode(65 + Math.ceil(nCols / 2));
+  const photoColN  = colDefs.findIndex(c => c.key === 'photo') + 1; // 1-based
+  const HEADER_ROW = 5;
+  const DATA_START = 6;
+
+  for (const { cat, rows } of sortedCats) {
+    const sheetName = cat.nom.replace(/[\\\/\*\?\[\]:]/g, '').substring(0, 31);
+    const ws = wb.addWorksheet(sheetName);
+    ws.pageSetup.paperSize   = 5;
+    ws.pageSetup.orientation = 'landscape';
+    ws.pageSetup.fitToPage   = true;
+    ws.pageSetup.fitToWidth  = 1;
+    ws.pageSetup.fitToHeight = 0;
+    ws.pageSetup.margins = { left: 0.4, right: 0.4, top: 0.6, bottom: 0.6, header: 0.3, footer: 0.3 };
+    ws.pageSetup.printTitlesRow = `${HEADER_ROW}:${HEADER_ROW}`;
+
+    // Largeurs colonnes
+    colDefs.forEach((col, i) => { ws.getColumn(i + 1).width = col.width; });
+
+    // Ligne 1 : Titre catégorie (barre caramel)
+    ws.mergeCells(`A1:${lastLetter}1`);
+    const catTitle = ws.getCell('A1');
+    catTitle.value = `SÉLECTION — ${cat.nom.toUpperCase()}`;
+    applyHeader(catTitle, C_CHARCOAL, C_WHITE, 13);
+    ws.getRow(1).height = 34;
+
+    // Ligne 2 : Infos projet (gauche)
+    ws.mergeCells(`A2:${midLetter}2`);
+    const infoL = ws.getCell('A2');
+    infoL.value = `Projet : ${nomProjet}  |  Client : ${nomClient}`;
+    infoL.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: C_FOND } };
+    infoL.font = { size: 9, color: { argb: C_TEXTE2 }, name: 'Calibri' };
+    infoL.alignment = { vertical: 'middle', horizontal: 'left' };
+    ws.mergeCells(`${afterMid}2:${lastLetter}2`);
+    const infoR = ws.getCell(`${afterMid}2`);
+    infoR.value = `Date : ${dateStr}  |  450 455-6006  |  info@conceptionmpg.ca`;
+    infoR.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: C_FOND } };
+    infoR.font = { size: 9, color: { argb: C_TEXTE2 }, name: 'Calibri' };
+    infoR.alignment = { vertical: 'middle', horizontal: 'right' };
+    ws.getRow(2).height = 20;
+
+    // Ligne 3 : items en attente (Client seulement)
+    if (mode === 'client') {
+      const pendingCount = rows.filter(r => !r.statut).length;
+      ws.mergeCells(`A3:${lastLetter}3`);
+      const pendCell = ws.getCell('A3');
+      if (pendingCount > 0) {
+        pendCell.value = `⚠  ${pendingCount} item(s) en attente de sélection dans cette catégorie`;
+        pendCell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: C_WARN_BG } };
+        pendCell.font = { bold: true, size: 8.5, color: { argb: C_CARAMEL }, name: 'Calibri' };
+      } else {
+        pendCell.value = '✓  Toutes les sélections sont complétées pour cette catégorie';
+        pendCell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFE8F4EC' } };
+        pendCell.font = { bold: true, size: 8.5, color: { argb: C_SUCCESS }, name: 'Calibri' };
+      }
+      pendCell.alignment = { vertical: 'middle', horizontal: 'left' };
+      ws.getRow(3).height = 20;
+    } else {
+      ws.getRow(3).height = 6;
+    }
+
+    // Ligne 4 : espace
+    ws.getRow(4).height = 6;
+
+    // Ligne 5 : En-têtes colonnes (caramel)
+    const headerRow = ws.getRow(HEADER_ROW);
+    headerRow.height = 34;
+    colDefs.forEach((col, i) => {
+      const cell = headerRow.getCell(i + 1);
+      cell.value = col.header;
+      applyHeader(cell, C_CARAMEL, C_WHITE, 8.5, 'center');
+      cell.alignment = { vertical: 'middle', horizontal: 'center', wrapText: true };
+    });
+
+    // Lignes de données
+    const IMG_H = 60;
+    const STD_H = 18;
+
+    for (let ri = 0; ri < rows.length; ri++) {
+      const row       = rows[ri];
+      const xlRow     = DATA_START + ri;
+      const exRow     = ws.getRow(xlRow);
+      const isAlt     = ri % 2 === 1;
+      const bg        = isAlt ? C_FOND : C_WHITE;
+      const hasPhoto  = mode === 'client' && row.photo_url && photoMap[row.photo_url];
+
+      exRow.height = hasPhoto ? IMG_H : STD_H;
+
+      // Valeurs selon mode
+      const vals = mode === 'client'
+        ? [row.ref, row.pieces, row.nom, row.fabricant, row.modele, row.sku,
+           row.qte, row.couleur, row.dims, row.caract,
+           null,             // K: photo (image ajoutée séparément)
+           row.choix_faire,  // M
+           row.prix_u,       // N
+           row.prix_total,   // O
+           row.statut,       // P
+           row.date_conf,    // Q
+           row.lien,         // R
+           row.approbation]  // S
+        : [row.ref, row.pieces, row.nom, row.fabricant, row.modele, row.sku,
+           row.qte, row.couleur, row.dims, row.caract,
+           null,       // K: photo
+           row.lien,   // R
+           row.approbation]; // S
+
+      vals.forEach((val, i) => {
+        const colN = i + 1;
+        const cell = exRow.getCell(colN);
+        const def  = colDefs[i];
+
+        if (colN === photoColN) {
+          // Cellule photo — fond uniquement, image ajoutée après
+          applyData(cell, bg, C_CHARCOAL, 9, 'center');
+          return;
+        }
+
+        // Hyperlien pour colonne Lien
+        if (def.key === 'lien') {
+          if (val) {
+            cell.value = { text: 'Voir →', hyperlink: val };
+            cell.fill  = { type: 'pattern', pattern: 'solid', fgColor: { argb: bg } };
+            cell.font  = { color: { argb: C_CARAMEL }, underline: true, size: 9, name: 'Calibri' };
+            cell.alignment = { vertical: 'middle', horizontal: 'center', wrapText: true };
+            cell.border = borderAll();
+          } else {
+            cell.value = '—';
+            applyData(cell, bg, C_TEXTE2, 9, 'center');
+          }
+          return;
+        }
+
+        // Prix
+        if (def.key === 'prix_u' || def.key === 'prix_total') {
+          cell.value  = val;
+          cell.numFmt = '#,##0.00 $';
+          applyData(cell, bg, C_CHARCOAL, 9, 'right');
+          return;
+        }
+
+        // Statut & Approbation
+        if (def.key === 'statut' || def.key === 'approbation') {
+          const isApp = val === 'approuvé' || val === 'Approuvé';
+          const isRev = val === 'à_revoir' || val === 'À revoir';
+          const fg = isApp ? C_SUCCESS : (isRev ? C_DANGER : C_TEXTE2);
+          cell.value = isApp ? 'Approuvé' : (isRev ? 'À revoir' : (val || '—'));
+          applyData(cell, bg, fg, 9, 'center', isApp);
+          return;
+        }
+
+        // Choix à faire
+        if (def.key === 'choix_faire') {
+          cell.value = val || '';
+          if (val === 'OUI') {
+            applyData(cell, C_WARN_BG, C_CARAMEL, 9, 'center', true);
+          } else {
+            applyData(cell, bg, C_TEXTE2, 9, 'center');
+          }
+          return;
+        }
+
+        // Valeur standard
+        cell.value = val ?? '';
+        applyData(cell, bg, C_CHARCOAL, 9, def.align);
+      });
+
+      // Image produit (Client)
+      if (hasPhoto) {
+        const b64raw = photoMap[row.photo_url];
+        if (b64raw) {
+          const base64 = b64raw.includes(',') ? b64raw.split(',')[1] : b64raw;
+          const ext = (b64raw.startsWith('data:image/png') || row.photo_url.match(/\.png$/i)) ? 'png' : 'jpeg';
+          try {
+            const imgId = wb.addImage({ base64, extension: ext });
+            const pad = 2;
+            ws.addImage(imgId, {
+              tl: { col: photoColN - 1, row: xlRow - 1 },
+              ext: { width: (colDefs[photoColN - 1].width * 7.5) - pad * 2, height: IMG_H - pad * 2 },
+            });
+          } catch(e) { /* image non disponible */ }
+        }
+      }
+    }
+
+    // Ligne totaux (Client seulement)
+    if (mode === 'client') {
+      const totRowIdx   = DATA_START + rows.length;
+      const totRow      = ws.getRow(totRowIdx);
+      totRow.height     = 24;
+      const nIdx        = colDefs.findIndex(c => c.key === 'prix_u')    + 1;
+      const oIdx        = colDefs.findIndex(c => c.key === 'prix_total') + 1;
+      const appTotal    = rows.filter(r => r.statut === 'approuvé').reduce((s, r) => s + (r.prix_total || 0), 0);
+
+      // Fusionner A jusqu'à colonne avant prix_u
+      if (nIdx > 1) ws.mergeCells(totRowIdx, 1, totRowIdx, nIdx - 1);
+      const labelCell = totRow.getCell(1);
+      labelCell.value = 'TOTAL (ITEMS APPROUVÉS)';
+      applyHeader(labelCell, C_CHARCOAL, C_WHITE, 9, 'right');
+
+      colDefs.forEach((col, i) => {
+        const colN = i + 1;
+        if (colN < nIdx) return; // déjà fusionné
+        const cell = totRow.getCell(colN);
+        if (colN === nIdx) {
+          cell.value = null; // pas de total unitaire
+          applyHeader(cell, C_CHARCOAL, C_WHITE, 9, 'right');
+        } else if (colN === oIdx) {
+          cell.value  = appTotal || null;
+          cell.numFmt = '#,##0.00 $';
+          applyHeader(cell, C_CARAMEL, C_WHITE, 10, 'right');
+        } else {
+          applyHeader(cell, C_CHARCOAL, C_WHITE, 9, 'center');
+        }
+      });
+    }
+
+    // Figer la ligne d'entêtes
+    ws.views = [{ state: 'frozen', ySplit: HEADER_ROW, activeCell: `A${DATA_START}` }];
+  }
+
+  // ── Téléchargement ──
+  try {
+    const buffer  = await wb.xlsx.writeBuffer();
+    const blob    = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+    const url     = URL.createObjectURL(blob);
+    const a       = document.createElement('a');
+    const safe    = nomProjet.replace(/[^a-zA-Z0-9_\-]/g, '_');
+    const label   = mode === 'client' ? 'Client' : 'Chantier';
+    a.href        = url;
+    a.download    = `CMPG_Devis_${label}_${safe}.xlsx`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+    toast(`Excel ${label} généré avec succès !`, 'success');
+  } catch(e) {
+    console.error(e);
+    toast('Erreur lors de la génération Excel.', 'error');
+  }
 }
 
 // ============================================================

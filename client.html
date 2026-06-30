@@ -213,6 +213,21 @@ body { font-family: 'Roboto', sans-serif; background: var(--fond); color: var(--
 .dot-approuve { background: #4B7A5C; }
 .dot-revoir { background: var(--danger); }
 
+/* ===== FILTRE PIÈCES ===== */
+.pieces-filter-row {
+  display: flex; flex-wrap: wrap; gap: 6px;
+  padding: 12px 20px; background: var(--blanc); border-bottom: 1px solid var(--bord);
+  align-items: center;
+}
+.pieces-filter-label { font-size: 10px; letter-spacing: 1.5px; text-transform: uppercase; color: var(--texte-2); margin-right: 6px; flex-shrink: 0; }
+.piece-filtre-btn {
+  padding: 4px 12px; font-size: 11px; cursor: pointer;
+  border: 1px solid var(--bord); background: var(--blanc); color: var(--texte-2);
+  transition: all .15s; letter-spacing: .5px;
+}
+.piece-filtre-btn:hover { border-color: var(--caramel); color: var(--caramel); }
+.piece-filtre-btn.active { background: var(--caramel); color: var(--blanc); border-color: var(--caramel); }
+
 /* ===== EMPTY ===== */
 .empty-state { text-align: center; padding: 60px 20px; color: var(--texte-2); }
 .empty-state h3 { font-family: 'Noto Serif Display', serif; font-size: 20px; color: var(--charcoal); margin-bottom: 8px; }
@@ -391,6 +406,7 @@ const db = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 let currentProjetId = null;
 let allPostes = [];
 let currentCategorie = null;
+let currentPieceFilter = null;
 let commentaireOptionId = null;
 let clientRecord = null;
 
@@ -522,17 +538,53 @@ function filtrerCategorie(catId, el) {
   document.querySelectorAll('.cat-tab').forEach(t => t.classList.remove('active'));
   el.classList.add('active');
   currentCategorie = catId;
+  currentPieceFilter = null; // Réinitialiser filtre pièce lors du changement de catégorie
+  renderPostes();
+}
+
+function filtrerParPiece(piece, el) {
+  currentPieceFilter = piece;
+  document.querySelectorAll('.piece-filtre-btn').forEach(b => b.classList.remove('active'));
+  if (el) el.classList.add('active');
   renderPostes();
 }
 
 function renderPostes() {
-  const filtered = allPostes.filter(p => p.categories && p.categories.id === currentCategorie);
+  const parCategorie = allPostes.filter(p => p.categories && p.categories.id === currentCategorie);
   const content = document.getElementById('content');
 
-  if (filtered.length === 0) {
+  if (parCategorie.length === 0) {
     content.innerHTML = `<div class="empty-state"><h3>Aucune sélection</h3><p>Aucun poste dans cette catégorie pour l'instant.</p></div>`;
     return;
   }
+
+  // Construire la liste des pièces disponibles dans cette catégorie
+  const piecesDispos = new Set();
+  parCategorie.forEach(p => {
+    if (p.pieces && p.pieces.length) p.pieces.forEach(pc => piecesDispos.add(pc));
+    else if (p.piece) piecesDispos.add(p.piece);
+  });
+
+  // Barre de filtre par pièce (uniquement si > 1 pièce)
+  let filtreHtml = '';
+  if (piecesDispos.size > 1) {
+    filtreHtml = `<div class="pieces-filter-row">
+      <span class="pieces-filter-label">Pièce :</span>
+      <div class="piece-filtre-btn ${!currentPieceFilter ? 'active' : ''}" onclick="filtrerParPiece(null, this)">Tout</div>
+      ${[...piecesDispos].map(p => {
+        const esc = p.replace(/'/g, "\\'");
+        return `<div class="piece-filtre-btn ${currentPieceFilter === p ? 'active' : ''}" onclick="filtrerParPiece('${esc}', this)">${p}</div>`;
+      }).join('')}
+    </div>`;
+  }
+
+  // Appliquer le filtre pièce
+  const filtered = currentPieceFilter
+    ? parCategorie.filter(p => {
+        if (p.pieces && p.pieces.length) return p.pieces.includes(currentPieceFilter);
+        return p.piece === currentPieceFilter;
+      })
+    : parCategorie;
 
   // Regrouper par sous-catégorie
   const groupes = {};
@@ -546,13 +598,17 @@ function renderPostes() {
 
   const sortedGroupes = Object.entries(groupes).sort((a,b) => a[1].ordre - b[1].ordre);
 
-  content.innerHTML = sortedGroupes.map(([scNom, g]) => {
-    const header = scNom !== SANS_GROUPE
-      ? `<div style="font-size:11px;letter-spacing:2px;text-transform:uppercase;color:var(--caramel);
-                     padding:20px 0 10px;border-bottom:1px solid var(--bord);margin-bottom:16px">${scNom}</div>`
-      : '';
-    return header + g.postes.map(poste => buildPosteHTML(poste)).join('');
-  }).join('');
+  const postesHtml = filtered.length === 0
+    ? `<div class="empty-state"><h3>Aucun résultat</h3><p>Aucun poste pour la pièce sélectionnée.</p></div>`
+    : sortedGroupes.map(([scNom, g]) => {
+        const header = scNom !== SANS_GROUPE
+          ? `<div style="font-size:11px;letter-spacing:2px;text-transform:uppercase;color:var(--caramel);
+                       padding:20px 0 10px;border-bottom:1px solid var(--bord);margin-bottom:16px">${scNom}</div>`
+          : '';
+        return header + g.postes.map(poste => buildPosteHTML(poste)).join('');
+      }).join('');
+
+  content.innerHTML = filtreHtml + `<div style="padding-top:${piecesDispos.size > 1 ? '20px' : '0'}">${postesHtml}</div>`;
 }
 
 function buildPosteHTML(poste) {
@@ -564,13 +620,13 @@ function buildPosteHTML(poste) {
 
   if (!isMultiple && options.length === 1) {
     const opt = options[0];
-    optionsHTML = `<div class="option-simple">${buildOptionContent(opt)}</div>`;
+    optionsHTML = `<div class="option-simple">${buildOptionContent(opt, false, poste.id)}</div>`;
   } else if (isMultiple) {
     const tabs = options.map((opt, i) =>
       `<div class="option-tab ${i === 0 ? 'active' : ''}" onclick="switchOptionTab('${poste.id}', ${i})">${opt.lettre_option ? 'Option ' + opt.lettre_option : 'Option ' + (i + 1)}</div>`
     ).join('');
     const contents = options.map((opt, i) =>
-      `<div class="option-tab-content ${i === 0 ? 'active' : ''}" id="opt-content-${poste.id}-${i}">${buildOptionContent(opt)}</div>`
+      `<div class="option-tab-content ${i === 0 ? 'active' : ''}" id="opt-content-${poste.id}-${i}">${buildOptionContent(opt, true, poste.id)}</div>`
     ).join('');
     optionsHTML = `<div class="options-multiple"><div class="option-tab-nav">${tabs}</div>${contents}</div>`;
   } else {
@@ -596,18 +652,42 @@ function buildPosteHTML(poste) {
   `;
 }
 
-function buildOptionContent(opt) {
+function buildOptionContent(opt, isMultiple, posteId) {
   const bp = opt.banque_produits;
   if (!bp) return '<div style="color:var(--texte-2);font-size:13px">Produit non disponible.</div>';
 
   const isApprouve = opt.statut_client === 'approuvé';
   const isRevoir = opt.statut_client === 'à_revoir';
+  const nomEsc = bp.nom ? bp.nom.replace(/'/g, "\\'") : 'ce produit';
 
   const specsArr = [];
   if (bp.couleur) specsArr.push('Couleur : ' + bp.couleur);
   if (bp.dimensions) specsArr.push('Dimensions : ' + bp.dimensions);
   if (bp.sku) specsArr.push('SKU : ' + bp.sku);
   if (bp.caracteristiques) specsArr.push(bp.caracteristiques);
+
+  // Boutons selon le mode
+  let btnApprouver, btnRejeter;
+  if (isMultiple) {
+    // Choix exclusif : sélectionner une option rejette automatiquement les autres
+    btnApprouver = `<button class="btn-decision btn-approuver ${isApprouve ? 'actif' : ''}"
+        onclick="choisirOption('${opt.id}', '${posteId}')">
+        ✓ Choisir cette option
+      </button>`;
+    btnRejeter = `<button class="btn-decision btn-revoir ${isRevoir && !isApprouve ? 'actif' : ''}"
+        onclick="rejeterOption('${opt.id}')">
+        ✗ Ne pas retenir
+      </button>`;
+  } else {
+    btnApprouver = `<button class="btn-decision btn-approuver ${isApprouve ? 'actif' : ''}"
+        onclick="decider('${opt.id}', 'approuvé', this)">
+        ✓ Approuver
+      </button>`;
+    btnRejeter = `<button class="btn-decision btn-revoir ${isRevoir ? 'actif' : ''}"
+        onclick="ouvrirCommentaire('${opt.id}', '${nomEsc}')">
+        ↩ Demander révision
+      </button>`;
+  }
 
   return `
     ${bp.photo_url
@@ -624,14 +704,8 @@ function buildOptionContent(opt) {
       ${opt.commentaire_client ? `<div style="font-size:12px;color:var(--caramel);margin-top:8px;font-style:italic">Votre commentaire : "${opt.commentaire_client}"</div>` : ''}
     </div>
     <div class="option-actions">
-      <button class="btn-decision btn-approuver ${isApprouve ? 'actif' : ''}"
-        onclick="decider('${opt.id}', 'approuvé', this)">
-        ✓ Approuver
-      </button>
-      <button class="btn-decision btn-revoir ${isRevoir ? 'actif' : ''}"
-        onclick="ouvrirCommentaire('${opt.id}', '${bp.nom ? bp.nom.replace(/'/g, "\\'") : 'ce produit'}')">
-        ↩ Demander révision
-      </button>
+      ${btnApprouver}
+      ${btnRejeter}
     </div>
   `;
 }
@@ -670,6 +744,61 @@ async function decider(optionId, statut, btn) {
   });
 
   toast(statut === 'approuvé' ? '✓ Sélection approuvée !' : 'Demande de révision envoyée.', 'success');
+  mettreAJourProgression();
+  renderPostes();
+}
+
+// Choix multiple : sélectionner une option et rejeter les autres automatiquement
+async function choisirOption(optionId, posteId) {
+  // Approuver l'option choisie
+  const { error: e1 } = await db.from('options_produits').update({
+    statut_client: 'approuvé',
+    date_decision: new Date().toISOString()
+  }).eq('id', optionId);
+
+  if (e1) { toast('Erreur lors de la mise à jour.', 'error'); return; }
+
+  // Rejeter toutes les autres options du même poste
+  await db.from('options_produits').update({
+    statut_client: 'à_revoir',
+    commentaire_client: 'Option non retenue',
+    date_decision: new Date().toISOString()
+  }).eq('poste_id', posteId).neq('id', optionId);
+
+  // Mise à jour locale
+  allPostes.forEach(p => {
+    if (p.id === posteId) {
+      (p.options_produits || []).forEach(opt => {
+        if (opt.id === optionId) {
+          opt.statut_client = 'approuvé';
+        } else {
+          opt.statut_client = 'à_revoir';
+          opt.commentaire_client = 'Option non retenue';
+        }
+      });
+    }
+  });
+
+  toast('✓ Option retenue !', 'success');
+  mettreAJourProgression();
+  renderPostes();
+}
+
+// Choix multiple : rejeter une option sans commenter
+async function rejeterOption(optionId) {
+  const { error } = await db.from('options_produits').update({
+    statut_client: 'à_revoir',
+    date_decision: new Date().toISOString()
+  }).eq('id', optionId);
+
+  if (error) { toast('Erreur lors de la mise à jour.', 'error'); return; }
+
+  allPostes.forEach(p => {
+    const opt = (p.options_produits || []).find(o => o.id === optionId);
+    if (opt) opt.statut_client = 'à_revoir';
+  });
+
+  toast('Option non retenue.', 'info');
   mettreAJourProgression();
   renderPostes();
 }

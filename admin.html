@@ -672,13 +672,13 @@ body { font-family: 'Roboto', sans-serif; background: var(--fond); color: var(--
         </div>
         <div class="form-group">
           <label>Catégorie *</label>
-          <select id="poste-categorie" onchange="mettreAJourSousCatsPoste(this.value,'')">
+          <select id="poste-categorie" onchange="mettreAJourSousCatsPoste(this.value,'');filtrerProduitsBanqueSelect()">
             <option value="">-- Sélectionner --</option>
           </select>
         </div>
         <div class="form-group">
           <label>Sous-catégorie</label>
-          <select id="poste-sous-cat">
+          <select id="poste-sous-cat" onchange="filtrerProduitsBanqueSelect()">
             <option value="">-- Aucune --</option>
           </select>
         </div>
@@ -704,9 +704,10 @@ body { font-family: 'Roboto', sans-serif; background: var(--fond); color: var(--
         <div style="font-size:11px;letter-spacing:1.5px;text-transform:uppercase;color:var(--texte-2);margin-bottom:10px">Option A — Produit</div>
         <div class="form-group">
           <label>Produit (banque)</label>
-          <select id="poste-produit-a">
+          <select id="poste-produit-a" onchange="mettreAJourApercuProduit(this.value)">
             <option value="">-- Choisir dans la banque --</option>
           </select>
+          <div id="produit-apercu-a" style="display:none;margin-top:10px;display:none;align-items:center;gap:12px;padding:10px;background:var(--fond);border:1px solid var(--bord)"></div>
         </div>
         <div class="form-group">
           <label>Quantité</label>
@@ -1165,30 +1166,28 @@ function renderPiecesChecklist(toutesLesPieces, selectionnees) {
   const container = document.getElementById('pieces-checklist');
   container.innerHTML = [...toutesLesPieces].map(piece => {
     const checked = selectionnees.includes(piece);
-    return `<label class="piece-chip ${checked ? 'checked' : ''}" onclick="this.classList.toggle('checked');this.querySelector('input').checked=!this.querySelector('input').checked">
-      <input type="checkbox" value="${piece.replace(/"/g,'&quot;')}" ${checked ? 'checked' : ''} style="display:none" />
-      ${piece}
-    </label>`;
+    const esc = piece.replace(/"/g, '&quot;');
+    return `<div class="piece-chip ${checked ? 'checked' : ''}" onclick="this.classList.toggle('checked')" data-piece="${esc}">${piece}</div>`;
   }).join('');
 }
 
 function getPiecesSelectionnees() {
-  return [...document.querySelectorAll('#pieces-checklist .piece-chip.checked input')]
-    .map(cb => cb.value);
+  return [...document.querySelectorAll('#pieces-checklist .piece-chip.checked')].map(el => el.dataset.piece);
 }
 
 function ajouterPiece() {
   const input = document.getElementById('nouvelle-piece');
   const nom = input.value.trim();
   if (!nom) return;
-  const existing = [...document.querySelectorAll('#pieces-checklist input')].find(cb => cb.value === nom);
+  const existing = [...document.querySelectorAll('#pieces-checklist .piece-chip')].find(el => el.dataset.piece === nom);
   if (!existing) {
     const container = document.getElementById('pieces-checklist');
-    const label = document.createElement('label');
-    label.className = 'piece-chip checked';
-    label.onclick = function() { this.classList.toggle('checked'); this.querySelector('input').checked = !this.querySelector('input').checked; };
-    label.innerHTML = `<input type="checkbox" value="${nom}" checked style="display:none" />${nom}`;
-    container.appendChild(label);
+    const div = document.createElement('div');
+    div.className = 'piece-chip checked';
+    div.dataset.piece = nom;
+    div.textContent = nom;
+    div.onclick = function() { this.classList.toggle('checked'); };
+    container.appendChild(div);
   }
   input.value = '';
 }
@@ -1222,18 +1221,57 @@ async function openModalPoste() {
 }
 
 async function chargerProduitsBanqueSelect() {
-  const { data } = await db.from('banque_produits').select('id, nom, fabricant, modele, prix').order('nom');
+  // Charge (ou recharge) la cache complète avec photo + catégories
+  const { data } = await db.from('banque_produits')
+    .select('id, nom, fabricant, modele, prix, photo_url, categorie_id, sous_categorie_id')
+    .order('nom');
   produitsCache = data || [];
+  filtrerProduitsBanqueSelect();
+}
+
+function filtrerProduitsBanqueSelect() {
+  const catId    = document.getElementById('poste-categorie')?.value || '';
+  const sousCatId = document.getElementById('poste-sous-cat')?.value || '';
+
+  let filtered = produitsCache;
+  if (catId)     filtered = filtered.filter(p => p.categorie_id === catId);
+  if (sousCatId) filtered = filtered.filter(p => p.sous_categorie_id === sousCatId);
+
   const sel = document.getElementById('poste-produit-a');
-  const first = sel.options[0];
-  sel.innerHTML = '';
-  sel.appendChild(first);
-  produitsCache.forEach(p => {
+  if (!sel) return;
+  const valeurActuelle = sel.value;
+  sel.innerHTML = '<option value="">-- Choisir dans la banque --</option>';
+  filtered.forEach(p => {
     const opt = document.createElement('option');
     opt.value = p.id;
     opt.textContent = (p.fabricant ? p.fabricant + ' — ' : '') + (p.nom || '') + (p.prix ? ' ($' + p.prix + ')' : '');
     sel.appendChild(opt);
   });
+  // Restaurer la valeur si encore disponible
+  if (valeurActuelle && filtered.some(p => p.id === valeurActuelle)) {
+    sel.value = valeurActuelle;
+  }
+  mettreAJourApercuProduit(sel.value);
+}
+
+function mettreAJourApercuProduit(produitId) {
+  const preview = document.getElementById('produit-apercu-a');
+  if (!preview) return;
+  if (!produitId) { preview.style.display = 'none'; return; }
+  const p = produitsCache.find(x => x.id === produitId);
+  if (!p) { preview.style.display = 'none'; return; }
+  preview.style.display = 'flex';
+  preview.innerHTML = `
+    ${p.photo_url
+      ? `<img src="${p.photo_url}" style="width:64px;height:64px;object-fit:contain;border:1px solid var(--bord);flex-shrink:0" onerror="this.replaceWith(Object.assign(document.createElement('div'),{style:'width:64px;height:64px;background:var(--fond);border:1px solid var(--bord);display:flex;align-items:center;justify-content:center;font-size:22px',textContent:'📦'}))" />`
+      : `<div style="width:64px;height:64px;background:var(--fond);border:1px solid var(--bord);display:flex;align-items:center;justify-content:center;font-size:22px;flex-shrink:0">📦</div>`
+    }
+    <div>
+      <div style="font-weight:500;font-size:13px">${p.nom || '—'}</div>
+      <div style="font-size:11px;color:var(--texte-2);margin-top:2px">${[p.fabricant, p.modele].filter(Boolean).join(' · ')}</div>
+      ${p.prix ? `<div style="font-size:13px;color:var(--caramel);font-weight:500;margin-top:6px">${Number(p.prix).toLocaleString('fr-CA',{style:'currency',currency:'CAD'})}</div>` : ''}
+    </div>
+  `;
 }
 
 async function sauvegarderPoste() {

@@ -265,14 +265,17 @@ body { font-family: 'Roboto', sans-serif; background: var(--fond); color: var(--
   padding: 0 4px; line-height: 16px; text-align: center; margin-left: auto;
 }
 .notif-badge.visible { display: inline-block; }
+.notif-backdrop {
+  display: none; position: fixed; inset: 0; background: rgba(0,0,0,.25); z-index: 499;
+}
+.notif-backdrop.open { display: block; }
 .notif-panel {
   position: fixed; top: 0; left: 220px; width: 360px; height: 100vh;
   background: var(--blanc); border-right: 1px solid var(--bord);
   box-shadow: 4px 0 24px rgba(0,0,0,.14); z-index: 500;
-  display: flex; flex-direction: column;
-  transform: translateX(-110%); transition: transform .25s ease;
+  display: none; flex-direction: column;
 }
-.notif-panel.open { transform: translateX(0); }
+.notif-panel.open { display: flex; }
 .notif-panel-header {
   padding: 20px 20px 14px; border-bottom: 1px solid var(--bord);
   display: flex; align-items: center; justify-content: space-between;
@@ -341,13 +344,16 @@ body { font-family: 'Roboto', sans-serif; background: var(--fond); color: var(--
     </div>
   </aside>
 
+  <!-- FOND GRISÉ NOTIFICATIONS -->
+  <div id="notif-backdrop" class="notif-backdrop" onclick="fermerNotifPanel()"></div>
+
   <!-- PANNEAU NOTIFICATIONS -->
   <div id="notif-panel" class="notif-panel">
     <div class="notif-panel-header">
       <h3>🔔 Notifications</h3>
       <div style="display:flex;align-items:center;gap:12px">
         <button class="btn-tout-lu" onclick="marquerToutLu()">Tout marquer lu</button>
-        <button class="notif-close" onclick="toggleNotifPanel()">×</button>
+        <button class="notif-close" onclick="fermerNotifPanel()">×</button>
       </div>
     </div>
     <div class="notif-list" id="notif-list">
@@ -3052,14 +3058,18 @@ function _renderNotifList(data, lastSeen) {
 }
 
 async function toggleNotifPanel() {
-  _notifPanelOpen = !_notifPanelOpen;
-  const panel = document.getElementById('notif-panel');
-  if (!panel) return;
-  panel.classList.toggle('open', _notifPanelOpen);
-  if (_notifPanelOpen) {
-    const { data } = await db.from('notifications_log').select('*').order('created_at', { ascending: false }).limit(50);
-    _renderNotifList(data, getLastSeenNotif());
-  }
+  if (_notifPanelOpen) { fermerNotifPanel(); return; }
+  _notifPanelOpen = true;
+  document.getElementById('notif-panel')?.classList.add('open');
+  document.getElementById('notif-backdrop')?.classList.add('open');
+  const { data } = await db.from('notifications_log').select('*').order('created_at', { ascending: false }).limit(50);
+  _renderNotifList(data, getLastSeenNotif());
+}
+
+function fermerNotifPanel() {
+  _notifPanelOpen = false;
+  document.getElementById('notif-panel')?.classList.remove('open');
+  document.getElementById('notif-backdrop')?.classList.remove('open');
 }
 
 function marquerToutLu() {

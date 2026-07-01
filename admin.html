@@ -1229,7 +1229,8 @@ async function chargerPostes() {
               const statusClass = 'status-' + sc.replace('é', 'e').replace('_', '');
               const statusLabel = { 'en_attente': 'En attente', 'approuvé': 'Approuvé', 'à_revoir': 'À revoir' }[sc] || sc;
               const canDelete = sc !== 'approuvé';
-              return `<div class="option-row">
+              const isARevoir = sc === 'à_revoir';
+              return `<div class="option-row" style="${isARevoir ? 'border-left:3px solid var(--caramel)' : ''}">
                 <div class="option-letter">Opt. ${opt.lettre_option}</div>
                 <div class="option-status ${statusClass}">${statusLabel}</div>
                 <div style="flex:1">
@@ -1240,10 +1241,9 @@ async function chargerPostes() {
                 <div style="text-align:right;display:flex;flex-direction:column;align-items:flex-end;gap:4px">
                   ${bp && bp.prix ? `<div style="font-size:13px;font-weight:500">$${Number(bp.prix * opt.quantite).toLocaleString('fr-CA')}</div>` : ''}
                   <div style="font-size:11px;color:var(--texte-2)">Qté: ${opt.quantite}</div>
-                  ${opt.pre_approuve_cmpg
-                    ? `<span style="font-size:9px;background:var(--charcoal);color:var(--caramel);padding:2px 7px;letter-spacing:.5px">✓ Pré-approuvé CMPG</span>`
-                    : `<button class="btn btn-outline btn-sm" style="font-size:10px;padding:2px 8px;color:var(--caramel);border-color:var(--caramel)" onclick="event.stopPropagation();preApprouverOption('${opt.id}')">✓ Pré-approuver</button>`
-                  }
+                  ${isARevoir ? `<button class="btn btn-outline btn-sm" style="font-size:10px;padding:2px 8px;color:#1a5c2a;border-color:#1a5c2a" onclick="event.stopPropagation();remplacerOption('${opt.id}','${opt.lettre_option}',${opt.quantite})">↻ Proposer un remplacement</button>` : ''}
+                  ${!isARevoir && !opt.pre_approuve_cmpg ? `<button class="btn btn-outline btn-sm" style="font-size:10px;padding:2px 8px;color:var(--caramel);border-color:var(--caramel)" onclick="event.stopPropagation();preApprouverOption('${opt.id}')">✓ Pré-approuver</button>` : ''}
+                  ${opt.pre_approuve_cmpg ? `<span style="font-size:9px;background:var(--charcoal);color:var(--caramel);padding:2px 7px;letter-spacing:.5px">✓ Pré-approuvé CMPG</span>` : ''}
                   ${canDelete ? `<button class="btn btn-outline btn-sm" style="font-size:10px;padding:2px 8px;color:var(--danger);border-color:var(--danger)" onclick="event.stopPropagation();supprimerOption('${opt.id}','${(bp?.nom||'ce produit').replace(/'/g,"\\'")}')">✕</button>` : ''}
                 </div>
               </div>`;
@@ -1579,6 +1579,7 @@ let _aoPosteId   = null;
 let _aoLettre    = 'B';
 
 async function ouvrirModalAjoutOption(posteId, lettre) {
+  _aoRemplaceOptionId = null; // s'assurer d'être en mode ajout
   _aoPosteId = posteId;
   _aoLettre  = lettre || 'B';
 
@@ -1626,18 +1627,69 @@ function mettreAJourApercuAO(produitId) {
 async function sauvegarderNouvelleOption() {
   const produitId = document.getElementById('ao-produit')?.value;
   if (!produitId) { toast('Veuillez choisir un produit.', 'error'); return; }
+
+  // MODE REMPLACEMENT — on met à jour l'option existante
+  if (_aoRemplaceOptionId) {
+    const { error } = await db.from('options_produits').update({
+      banque_produit_id:  produitId,
+      quantite:           parseInt(document.getElementById('ao-qty')?.value) || 1,
+      note_client:        document.getElementById('ao-note')?.value?.trim() || null,
+      statut_client:      'en_attente',   // remet en attente pour que le client revoie
+      commentaire_client: null,           // efface l'ancien commentaire de révision
+      pre_approuve_cmpg:  false,
+    }).eq('id', _aoRemplaceOptionId);
+    if (error) { toast('Erreur : ' + error.message, 'error'); return; }
+    closeModal('modal-ajout-option');
+    toast(`Option ${_aoLettre} remplacée — le client peut maintenant revoir.`, 'success');
+    _aoRemplaceOptionId = null;
+    chargerPostes();
+    return;
+  }
+
+  // MODE AJOUT NORMAL
   if (!_aoPosteId) return;
   const { error } = await db.from('options_produits').insert({
-    poste_id:        _aoPosteId,
+    poste_id:          _aoPosteId,
     banque_produit_id: produitId,
-    lettre_option:   _aoLettre,
-    quantite:        parseInt(document.getElementById('ao-qty')?.value) || 1,
-    note_client:     document.getElementById('ao-note')?.value?.trim() || null
+    lettre_option:     _aoLettre,
+    quantite:          parseInt(document.getElementById('ao-qty')?.value) || 1,
+    note_client:       document.getElementById('ao-note')?.value?.trim() || null
   });
   if (error) { toast('Erreur : ' + error.message, 'error'); return; }
   closeModal('modal-ajout-option');
   toast(`Option ${_aoLettre} ajoutée avec succès.`, 'success');
   chargerPostes();
+}
+
+// ── Remplacement d'une option "à revoir" ────────────────────
+let _aoRemplaceOptionId = null;
+
+async function remplacerOption(optionId, lettre, quantiteActuelle) {
+  _aoRemplaceOptionId = optionId;
+  _aoPosteId         = null;
+  _aoLettre          = lettre;
+
+  const titreEl = document.getElementById('ajout-option-titre');
+  if (titreEl) titreEl.textContent = `Remplacer option ${lettre}`;
+  const infoEl = document.getElementById('ajout-option-info');
+  if (infoEl) infoEl.textContent = `Choisissez le nouveau produit à proposer au client pour l'option ${lettre}. Le statut sera remis en attente.`;
+
+  const sel = document.getElementById('ao-produit');
+  if (sel) {
+    sel.innerHTML = '-- Choisir dans la banque --\n' +
+      (produitsCache || []).map(p =>
+        `<option value="${p.id}">${p.fabricant ? p.fabricant + ' — ' : ''}${p.nom || ''}${p.prix ? ' ($' + p.prix + ')' : ''}</option>`
+      ).join('');
+    sel.value = '';
+  }
+  const ap = document.getElementById('ao-apercu');
+  if (ap) ap.style.display = 'none';
+  const qtyEl = document.getElementById('ao-qty');
+  if (qtyEl) qtyEl.value = quantiteActuelle || 1;
+  const noteEl = document.getElementById('ao-note');
+  if (noteEl) noteEl.value = '';
+
+  openModal('modal-ajout-option');
 }
 
 async function supprimerOption(optionId, nomProduit) {

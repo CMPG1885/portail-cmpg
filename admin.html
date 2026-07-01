@@ -249,6 +249,49 @@ body { font-family: 'Roboto', sans-serif; background: var(--fond); color: var(--
   .form-grid { grid-template-columns: 1fr; }
   .page-body { padding: 20px 16px; }
 }
+
+/* ===== NOTIFICATIONS IN-APP ===== */
+.notif-bell-wrap { margin-bottom: 10px; }
+.btn-notif-bell {
+  width: 100%; background: none; border: 1px solid rgba(255,255,255,.2);
+  color: rgba(255,255,255,.7); padding: 7px 14px; font-size: 11px;
+  letter-spacing: 1px; text-transform: uppercase; cursor: pointer;
+  display: flex; align-items: center; gap: 8px;
+}
+.btn-notif-bell:hover { border-color: rgba(255,255,255,.5); color: var(--blanc); }
+.notif-badge {
+  display: none; background: #e05252; color: white; font-size: 9px;
+  font-weight: bold; min-width: 16px; height: 16px; border-radius: 8px;
+  padding: 0 4px; line-height: 16px; text-align: center; margin-left: auto;
+}
+.notif-badge.visible { display: inline-block; }
+.notif-panel {
+  position: fixed; top: 0; left: 220px; width: 360px; height: 100vh;
+  background: var(--blanc); border-right: 1px solid var(--bord);
+  box-shadow: 4px 0 24px rgba(0,0,0,.14); z-index: 500;
+  display: flex; flex-direction: column;
+  transform: translateX(-110%); transition: transform .25s ease;
+}
+.notif-panel.open { transform: translateX(0); }
+.notif-panel-header {
+  padding: 20px 20px 14px; border-bottom: 1px solid var(--bord);
+  display: flex; align-items: center; justify-content: space-between;
+}
+.notif-panel-header h3 { font-family: 'Noto Serif Display', serif; font-size: 16px; color: var(--charcoal); }
+.btn-tout-lu { font-size: 10px; letter-spacing: .5px; color: var(--caramel); background: none; border: none; cursor: pointer; text-transform: uppercase; }
+.notif-close { background: none; border: none; font-size: 20px; cursor: pointer; color: var(--texte-2); line-height: 1; }
+.notif-list { flex: 1; overflow-y: auto; }
+.notif-item { padding: 14px 20px; border-bottom: 1px solid var(--fond); transition: background .1s; }
+.notif-item:hover { background: var(--fond); }
+.notif-item.unread { border-left: 3px solid var(--caramel); }
+.notif-item.read { border-left: 3px solid transparent; }
+.notif-type { font-size: 10px; font-weight: bold; letter-spacing: .5px; text-transform: uppercase; margin-bottom: 4px; }
+.notif-type.revision { color: #b86c00; }
+.notif-type.rejet    { color: #8B3A3A; }
+.notif-type.annule   { color: #706862; }
+.notif-desc  { font-size: 12px; color: var(--charcoal); line-height: 1.4; margin-bottom: 3px; }
+.notif-meta  { font-size: 10px; color: var(--texte-2); }
+.notif-empty { padding: 48px 20px; text-align: center; color: var(--texte-2); font-size: 13px; }
 </style>
 </head>
 <body>
@@ -288,9 +331,29 @@ body { font-family: 'Roboto', sans-serif; background: var(--fond); color: var(--
     </nav>
     <div class="sidebar-bottom">
       <div class="user-email" id="user-email-display"></div>
+      <div class="notif-bell-wrap">
+        <button class="btn-notif-bell" onclick="toggleNotifPanel()">
+          🔔 Notifications
+          <span class="notif-badge" id="notif-badge">0</span>
+        </button>
+      </div>
       <button class="btn-signout" onclick="logout()">Déconnexion</button>
     </div>
   </aside>
+
+  <!-- PANNEAU NOTIFICATIONS -->
+  <div id="notif-panel" class="notif-panel">
+    <div class="notif-panel-header">
+      <h3>🔔 Notifications</h3>
+      <div style="display:flex;align-items:center;gap:12px">
+        <button class="btn-tout-lu" onclick="marquerToutLu()">Tout marquer lu</button>
+        <button class="notif-close" onclick="toggleNotifPanel()">×</button>
+      </div>
+    </div>
+    <div class="notif-list" id="notif-list">
+      <div class="notif-empty">Aucune notification pour l'instant.</div>
+    </div>
+  </div>
 
   <!-- Main -->
   <div class="main-content">
@@ -831,6 +894,7 @@ async function initApp(user) {
 
   await chargerCategories();
   await chargerProjets();
+  initNotifications();
 }
 
 // ============================================================
@@ -2914,6 +2978,87 @@ async function supprimerFacture(id) {
 
 // ============================================================
 checkAuth();
+
+// ============================================================
+// NOTIFICATIONS IN-APP
+// ============================================================
+let _notifPanelOpen = false;
+
+function getLastSeenNotif() {
+  return localStorage.getItem('cmpg_notif_last_seen') || '1970-01-01T00:00:00Z';
+}
+
+async function initNotifications() {
+  await rafraichirNotifications();
+  // Supabase Realtime — mise à jour instantanée quand un client agit
+  db.channel('notif_realtime')
+    .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'notifications_log' }, () => {
+      rafraichirNotifications();
+    })
+    .subscribe();
+}
+
+async function rafraichirNotifications() {
+  const { data } = await db
+    .from('notifications_log')
+    .select('*')
+    .order('created_at', { ascending: false })
+    .limit(50);
+  if (!data) return;
+  const lastSeen = getLastSeenNotif();
+  const nonLus = data.filter(n => n.created_at > lastSeen).length;
+  const badge = document.getElementById('notif-badge');
+  if (badge) {
+    badge.textContent = nonLus > 9 ? '9+' : String(nonLus);
+    badge.classList.toggle('visible', nonLus > 0);
+  }
+  if (_notifPanelOpen) _renderNotifList(data, lastSeen);
+}
+
+function _renderNotifList(data, lastSeen) {
+  const list = document.getElementById('notif-list');
+  if (!list) return;
+  if (!data || data.length === 0) {
+    list.innerHTML = '<div class="notif-empty">Aucune notification pour l\'instant.</div>';
+    return;
+  }
+  const TYPES = {
+    revision: { label: 'Demande de révision', cls: 'revision' },
+    rejet:    { label: 'Rejet de produit',    cls: 'rejet'    },
+    annule:   { label: 'Article non nécessaire', cls: 'annule' },
+  };
+  list.innerHTML = data.map(n => {
+    const isNew = n.created_at > lastSeen;
+    const t = TYPES[n.type] || { label: n.type, cls: '' };
+    const c = n.contenu || {};
+    const date = new Date(n.created_at).toLocaleString('fr-CA', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+    return `<div class="notif-item ${isNew ? 'unread' : 'read'}">
+      <div class="notif-type ${t.cls}">${t.label}</div>
+      <div class="notif-desc">${c.produit_nom ? `<strong>${c.produit_nom}</strong> — ` : ''}${c.projet_nom || ''}</div>
+      ${c.commentaire ? `<div class="notif-desc" style="color:var(--texte-2);font-style:italic">"${c.commentaire}"</div>` : ''}
+      <div class="notif-meta">${date}</div>
+    </div>`;
+  }).join('');
+}
+
+async function toggleNotifPanel() {
+  _notifPanelOpen = !_notifPanelOpen;
+  const panel = document.getElementById('notif-panel');
+  if (!panel) return;
+  panel.classList.toggle('open', _notifPanelOpen);
+  if (_notifPanelOpen) {
+    const { data } = await db.from('notifications_log').select('*').order('created_at', { ascending: false }).limit(50);
+    _renderNotifList(data, getLastSeenNotif());
+  }
+}
+
+function marquerToutLu() {
+  localStorage.setItem('cmpg_notif_last_seen', new Date().toISOString());
+  const badge = document.getElementById('notif-badge');
+  if (badge) { badge.textContent = '0'; badge.classList.remove('visible'); }
+  db.from('notifications_log').select('*').order('created_at', { ascending: false }).limit(50)
+    .then(({ data }) => _renderNotifList(data, getLastSeenNotif()));
+}
 </script>
 
 <!-- Modal Ajout Facture -->

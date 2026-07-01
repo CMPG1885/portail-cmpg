@@ -534,6 +534,17 @@ body { font-family: 'Roboto', sans-serif; background: var(--fond); color: var(--
             <option value="archivé">Archivé</option>
           </select>
         </div>
+        <div class="form-group" style="border-top:1px solid var(--bord);padding-top:16px;margin-top:4px">
+          <label>Personne-ressource interne (nom)</label>
+          <input type="text" id="mp-responsable-nom" placeholder="Ex : Maya Tremblay" />
+        </div>
+        <div class="form-group">
+          <label>Courriel de la personne-ressource</label>
+          <input type="email" id="mp-responsable-email" placeholder="maya@conceptionmpg.ca" />
+        </div>
+        <div style="grid-column:1/-1;font-size:11px;color:var(--texte-2);margin-top:-8px">
+          📬 Cette personne recevra un courriel automatique lorsqu'un client fait une demande de révision ou un rejet.
+        </div>
       </div>
     </div>
     <div class="modal-footer">
@@ -1018,13 +1029,15 @@ async function ouvrirModalModifierProjet(projetId) {
   const { data: p } = await db.from('projets').select('*').eq('id', projetId).single();
   if (!p) return;
 
-  document.getElementById('mp-id').value         = p.id;
-  document.getElementById('mp-nom').value        = p.nom || '';
-  document.getElementById('mp-adresse').value    = p.adresse || '';
-  document.getElementById('mp-client').value     = p.client_id || '';
-  document.getElementById('mp-budget-min').value = p.budget_min || '';
-  document.getElementById('mp-budget-max').value = p.budget_max || '';
-  document.getElementById('mp-statut').value     = p.statut || 'actif';
+  document.getElementById('mp-id').value                = p.id;
+  document.getElementById('mp-nom').value               = p.nom || '';
+  document.getElementById('mp-adresse').value           = p.adresse || '';
+  document.getElementById('mp-client').value            = p.client_id || '';
+  document.getElementById('mp-budget-min').value        = p.budget_min || '';
+  document.getElementById('mp-budget-max').value        = p.budget_max || '';
+  document.getElementById('mp-statut').value            = p.statut || 'actif';
+  document.getElementById('mp-responsable-nom').value   = p.responsable_nom || '';
+  document.getElementById('mp-responsable-email').value = p.responsable_email || '';
   openModal('modal-modifier-projet');
 }
 
@@ -1035,12 +1048,14 @@ async function sauvegarderProjet() {
 
   const { error } = await db.from('projets').update({
     nom,
-    adresse:    document.getElementById('mp-adresse').value.trim() || null,
-    client_id:  document.getElementById('mp-client').value || null,
-    budget_min: parseFloat(document.getElementById('mp-budget-min').value) || null,
-    budget_max: parseFloat(document.getElementById('mp-budget-max').value) || null,
-    statut:     document.getElementById('mp-statut').value,
-    updated_at: new Date().toISOString(),
+    adresse:             document.getElementById('mp-adresse').value.trim() || null,
+    client_id:           document.getElementById('mp-client').value || null,
+    budget_min:          parseFloat(document.getElementById('mp-budget-min').value) || null,
+    budget_max:          parseFloat(document.getElementById('mp-budget-max').value) || null,
+    statut:              document.getElementById('mp-statut').value,
+    responsable_nom:     document.getElementById('mp-responsable-nom').value.trim() || null,
+    responsable_email:   document.getElementById('mp-responsable-email').value.trim() || null,
+    updated_at:          new Date().toISOString(),
   }).eq('id', id);
 
   if (error) { toast('Erreur : ' + error.message, 'error'); return; }
@@ -1145,6 +1160,10 @@ async function chargerPostes() {
                 <div style="text-align:right;display:flex;flex-direction:column;align-items:flex-end;gap:4px">
                   ${bp && bp.prix ? `<div style="font-size:13px;font-weight:500">$${Number(bp.prix * opt.quantite).toLocaleString('fr-CA')}</div>` : ''}
                   <div style="font-size:11px;color:var(--texte-2)">Qté: ${opt.quantite}</div>
+                  ${opt.pre_approuve_cmpg
+                    ? `<span style="font-size:9px;background:var(--charcoal);color:var(--caramel);padding:2px 7px;letter-spacing:.5px">✓ Pré-approuvé CMPG</span>`
+                    : `<button class="btn btn-outline btn-sm" style="font-size:10px;padding:2px 8px;color:var(--caramel);border-color:var(--caramel)" onclick="event.stopPropagation();preApprouverOption('${opt.id}')">✓ Pré-approuver</button>`
+                  }
                   ${canDelete ? `<button class="btn btn-outline btn-sm" style="font-size:10px;padding:2px 8px;color:var(--danger);border-color:var(--danger)" onclick="event.stopPropagation();supprimerOption('${opt.id}','${(bp?.nom||'ce produit').replace(/'/g,"\\'")}')">✕</button>` : ''}
                 </div>
               </div>`;
@@ -1546,6 +1565,17 @@ async function supprimerOption(optionId, nomProduit) {
   const { error } = await db.from('options_produits').delete().eq('id', optionId);
   if (error) { toast('Erreur : ' + error.message, 'error'); return; }
   toast('Option supprimée.', 'success');
+  chargerPostes();
+}
+
+async function preApprouverOption(optionId) {
+  const { error } = await db.from('options_produits').update({
+    statut_client:    'approuvé',
+    pre_approuve_cmpg: true,
+    date_decision:    new Date().toISOString()
+  }).eq('id', optionId);
+  if (error) { toast('Erreur : ' + error.message, 'error'); return; }
+  toast('Pré-approbation CMPG enregistrée.', 'success');
   chargerPostes();
 }
 

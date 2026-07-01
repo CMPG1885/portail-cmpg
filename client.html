@@ -265,6 +265,40 @@ body { font-family: 'Roboto', sans-serif; background: var(--fond); color: var(--
 @keyframes slideIn { from { transform: translateX(100%); opacity: 0; } to { transform: translateX(0); opacity: 1; } }
 
 /* ===== RESPONSIVE ===== */
+/* ===== VUE TOUT — FILTRES ===== */
+.tout-filter-row {
+  display: flex; align-items: center;
+  background: var(--blanc); border-bottom: 1px solid var(--bord);
+}
+.tout-filter-btn {
+  padding: 10px 20px; font-size: 11px; letter-spacing: 1px; text-transform: uppercase;
+  cursor: pointer; background: none; border: none; border-bottom: 2px solid transparent;
+  color: var(--texte-2); font-family: 'Roboto', sans-serif; transition: all .15s;
+}
+.tout-filter-btn:hover { color: var(--charcoal); }
+.tout-filter-btn.active { color: var(--charcoal); border-bottom-color: var(--caramel); font-weight: 500; }
+
+/* En-tête catégorie dans vue Tout */
+.tout-cat-header {
+  font-family: 'Noto Serif Display', serif; font-size: 17px; color: var(--charcoal);
+  padding: 28px 0 12px; border-bottom: 2px solid var(--caramel); margin-bottom: 12px;
+  display: flex; align-items: baseline; gap: 12px;
+}
+.tout-cat-count { font-family: 'Roboto', sans-serif; font-size: 11px; color: var(--texte-2); letter-spacing: 1px; }
+
+/* Badge Approbation CMPG */
+.badge-cmpg {
+  display: inline-block; padding: 2px 8px; margin-right: 6px;
+  background: var(--charcoal); color: var(--caramel);
+  font-size: 9px; letter-spacing: 1.5px; text-transform: uppercase;
+}
+
+/* Date d'approbation */
+.date-approbation { font-size: 11px; color: var(--texte-2); margin-top: 6px; }
+
+/* Dot annulé */
+.dot-annule { background: #ccc; }
+
 @media (max-width: 768px) {
   /* Header */
   .client-header { padding: 0 16px; }
@@ -423,8 +457,8 @@ body { font-family: 'Roboto', sans-serif; background: var(--fond); color: var(--
       <div class="label" style="color:var(--success)">Approuvés</div>
     </div>
     <div class="prog-stat">
-      <div class="value" id="prog-revoir" style="color:var(--danger)">—</div>
-      <div class="label" style="color:var(--danger)">Rejetés</div>
+      <div class="value" id="prog-revoir" style="color:var(--caramel)">—</div>
+      <div class="label" style="color:var(--caramel)">En attente</div>
     </div>
     <div class="prog-stat">
       <div class="value" id="prog-budget" style="color:var(--caramel);font-size:18px">—</div>
@@ -452,6 +486,34 @@ body { font-family: 'Roboto', sans-serif; background: var(--fond); color: var(--
   © CMPG Architecture &amp; Design — Vos données sont confidentielles et hébergées de façon sécurisée.
   Pour toute question : <a href="mailto:info@conceptionmpg.ca" style="color:#b89c6e">info@conceptionmpg.ca</a>
 </footer>
+
+<!-- Modal rejet — choix de la raison -->
+<div id="modal-rejet-choix" class="modal-overlay">
+  <div class="modal">
+    <div class="modal-header">
+      <h3>Refuser ce produit</h3>
+      <button class="modal-close" onclick="closeModal('modal-rejet-choix')">×</button>
+    </div>
+    <div class="modal-body">
+      <div id="rejet-choix-info" style="font-size:13px;color:var(--texte-2);margin-bottom:20px;padding:12px;background:var(--fond);border-left:3px solid var(--caramel)"></div>
+      <div style="display:flex;flex-direction:column;gap:12px">
+        <button onclick="confirmerAnnule()"
+          style="padding:18px 20px;text-align:left;background:var(--fond);border:1px solid var(--bord);cursor:pointer;font-family:'Roboto',sans-serif">
+          <div style="font-size:14px;font-weight:500;color:var(--charcoal);margin-bottom:4px">🚫 Cet article n'est pas nécessaire</div>
+          <div style="font-size:12px;color:var(--texte-2)">L'item sera retiré du devis. Aucune autre action requise de votre part.</div>
+        </button>
+        <button onclick="continuerRejetAvecAlternative()"
+          style="padding:18px 20px;text-align:left;background:var(--fond);border:1px solid var(--bord);cursor:pointer;font-family:'Roboto',sans-serif">
+          <div style="font-size:14px;font-weight:500;color:var(--charcoal);margin-bottom:4px">↩ Je souhaite une alternative</div>
+          <div style="font-size:12px;color:var(--texte-2)">Laissez un commentaire — CMPG vous proposera un autre produit.</div>
+        </button>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-outline" onclick="closeModal('modal-rejet-choix')">Annuler</button>
+    </div>
+  </div>
+</div>
 
 <!-- Modal commentaire -->
 <div id="modal-commentaire" class="modal-overlay">
@@ -488,11 +550,18 @@ const db = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 // ============================================================
 let currentProjetId = null;
 let allPostes = [];
-let currentCategorie = null;
+let currentCategorie = '__tout__';
 let currentPieceFilter = null;
 let filtreMode = 'sous-cat'; // 'sous-cat' | 'piece'
+let currentToutFilter = 'tout'; // 'tout' | 'approuve' | 'attente'
 let commentaireOptionId = null;
 let clientRecord = null;
+let currentProjetResponsable = null; // { nom, email } pour notifications
+
+// État du modal de rejet
+let rejetOptionId = null;
+let rejetNomProduit = '';
+let rejetPosteId = null;
 
 // ============================================================
 // AUTH
@@ -604,12 +673,22 @@ async function chargerProjet() {
 
   const sortedCats = Object.values(cats).sort((a, b) => a.ordre - b.ordre);
 
-  const catNav = document.getElementById('cat-nav');
-  catNav.innerHTML = sortedCats.map((c, i) =>
-    `<div class="cat-tab ${i === 0 ? 'active' : ''}" onclick="filtrerCategorie('${c.id}', this)">${c.nom}</div>`
-  ).join('');
+  // Charger le responsable du projet pour les notifications
+  const { data: projResp } = await db.from('projets')
+    .select('responsable_nom, responsable_email, clients(nom)')
+    .eq('id', currentProjetId).single();
+  currentProjetResponsable = projResp
+    ? { nom: projResp.responsable_nom, email: projResp.responsable_email, client_nom: projResp.clients?.nom || '' }
+    : null;
 
-  currentCategorie = sortedCats.length > 0 ? sortedCats[0].id : null;
+  const catNav = document.getElementById('cat-nav');
+  catNav.innerHTML =
+    `<div class="cat-tab active" onclick="filtrerCategorie('__tout__', this)">Tout</div>` +
+    sortedCats.map(c =>
+      `<div class="cat-tab" onclick="filtrerCategorie('${c.id}', this)">${c.nom}</div>`
+    ).join('');
+
+  currentCategorie = '__tout__';
 
   // Progression
   mettreAJourProgression();
@@ -624,6 +703,13 @@ function filtrerCategorie(catId, el) {
   currentCategorie = catId;
   currentPieceFilter = null;
   filtreMode = 'sous-cat';
+  currentToutFilter = 'tout';
+  mettreAJourProgression();
+  renderPostes();
+}
+
+function setToutFilter(filter) {
+  currentToutFilter = filter;
   renderPostes();
 }
 
@@ -662,9 +748,73 @@ function renderGroupesSousCat(postes) {
     }).join('');
 }
 
+// Retourne true si un poste a au moins une option valide (non annulée, non discontinue)
+function posteADesOptionsValides(p) {
+  return (p.options_produits || []).some(o =>
+    o.statut_client !== 'annulé' &&
+    (!o.banque_produits || o.banque_produits.statut !== 'discontinue')
+  );
+}
+
 function renderPostes() {
-  const parCategorie = allPostes.filter(p => p.categories && p.categories.id === currentCategorie);
   const content = document.getElementById('content');
+
+  // ── MODE TOUT ──────────────────────────────────────────────────
+  if (currentCategorie === '__tout__') {
+    // Tous les postes ayant au moins une option valide
+    let postes = allPostes.filter(posteADesOptionsValides);
+
+    if (currentToutFilter === 'approuve') {
+      postes = postes.filter(p => (p.options_produits||[]).some(o => o.statut_client === 'approuvé'));
+    } else if (currentToutFilter === 'attente') {
+      postes = postes.filter(p => {
+        const validOpts = (p.options_produits||[]).filter(o => o.statut_client !== 'annulé');
+        return validOpts.length > 0 && validOpts.every(o => !o.statut_client);
+      });
+    }
+
+    // Grouper par catégorie
+    const catGroups = {};
+    postes.forEach(p => {
+      if (!p.categories) return;
+      const cid = p.categories.id;
+      if (!catGroups[cid]) catGroups[cid] = { cat: p.categories, postes: [] };
+      catGroups[cid].postes.push(p);
+    });
+    const sortedGroups = Object.values(catGroups)
+      .sort((a, b) => (a.cat.ordre||0) - (b.cat.ordre||0));
+
+    const filterBar = `<div class="tout-filter-row">
+      <button class="tout-filter-btn ${currentToutFilter==='tout'   ?'active':''}" onclick="setToutFilter('tout')">Tout</button>
+      <button class="tout-filter-btn ${currentToutFilter==='approuve'?'active':''}" onclick="setToutFilter('approuve')">✓ Approuvés</button>
+      <button class="tout-filter-btn ${currentToutFilter==='attente' ?'active':''}" onclick="setToutFilter('attente')">⏳ Reste à approuver</button>
+    </div>`;
+
+    if (sortedGroups.length === 0) {
+      const vide = {
+        approuve: 'Aucun produit approuvé pour l\'instant.',
+        attente:  'Bravo ! Toutes les sélections ont été complétées.',
+        tout:     'Aucune sélection disponible pour ce projet.'
+      };
+      content.innerHTML = filterBar +
+        `<div style="padding:20px 0"><div class="empty-state"><h3>Aucun résultat</h3><p>${vide[currentToutFilter]}</p></div></div>`;
+      return;
+    }
+
+    const postesHtml = sortedGroups.map(({ cat, postes: ps }) => {
+      const nApp = ps.filter(p => (p.options_produits||[]).some(o => o.statut_client==='approuvé')).length;
+      const header = `<div class="tout-cat-header">${cat.nom}
+        <span class="tout-cat-count">${nApp} / ${ps.length} approuvé${nApp!==1?'s':''}</span>
+      </div>`;
+      return header + ps.map(p => buildPosteHTML(p)).join('');
+    }).join('');
+
+    content.innerHTML = filterBar + `<div style="padding:0 0 20px">${postesHtml}</div>`;
+    return;
+  }
+
+  // ── MODE CATÉGORIE NORMALE ─────────────────────────────────────
+  const parCategorie = allPostes.filter(p => p.categories && p.categories.id === currentCategorie);
 
   if (parCategorie.length === 0) {
     content.innerHTML = `<div class="empty-state"><h3>Aucune sélection</h3><p>Aucun poste dans cette catégorie pour l'instant.</p></div>`;
@@ -680,42 +830,33 @@ function renderPostes() {
   const hasPieces   = piecesDispos.size > 0;
   const hasSousCats = parCategorie.some(p => p.sous_categories);
 
-  // Corriger le mode si le mode actuel n'a pas de données
   if (filtreMode === 'sous-cat' && !hasSousCats && hasPieces)  filtreMode = 'piece';
   if (filtreMode === 'piece'    && !hasPieces    && hasSousCats) filtreMode = 'sous-cat';
 
-  // Toggle de mode (seulement si les deux modes sont disponibles)
   let modeToggleHtml = '';
   if (hasPieces && hasSousCats) {
     modeToggleHtml = `<div class="filtre-mode-row">
-      <button class="filtre-mode-btn ${filtreMode === 'sous-cat' ? 'active' : ''}" onclick="setFiltreMode('sous-cat')">📁 Sous-catégorie</button>
+      <button class="filtre-mode-btn ${filtreMode==='sous-cat'?'active':''}" onclick="setFiltreMode('sous-cat')">📁 Sous-catégorie</button>
       <span style="color:var(--bord);padding:0 4px;line-height:1">|</span>
-      <button class="filtre-mode-btn ${filtreMode === 'piece' ? 'active' : ''}" onclick="setFiltreMode('piece')">🏠 Par pièce</button>
+      <button class="filtre-mode-btn ${filtreMode==='piece'?'active':''}" onclick="setFiltreMode('piece')">🏠 Par pièce</button>
     </div>`;
-  } else if (hasPieces && !hasSousCats) {
-    // Seulement "par pièce" disponible → pas de toggle, mode forcé
-    filtreMode = 'piece';
-  } else if (hasSousCats && !hasPieces) {
-    // Seulement "sous-catégorie" disponible → pas de toggle, mode forcé
-    filtreMode = 'sous-cat';
-  }
+  } else if (hasPieces  && !hasSousCats) { filtreMode = 'piece';    }
+    else if (hasSousCats && !hasPieces)  { filtreMode = 'sous-cat'; }
 
   let filtreHtml = '';
   let postesHtml = '';
 
   if (filtreMode === 'piece' && hasPieces) {
-    // Barre de filtre par pièce
     filtreHtml = `<div class="pieces-filter-row">
       <span class="pieces-filter-label">Pièce :</span>
-      <div class="piece-filtre-btn ${!currentPieceFilter ? 'active' : ''}" onclick="filtrerParPiece(null, this)">Tout</div>
+      <div class="piece-filtre-btn ${!currentPieceFilter?'active':''}" onclick="filtrerParPiece(null, this)">Tout</div>
       ${[...piecesDispos].map(p => {
         const esc = p.replace(/'/g, "\\'");
-        return `<div class="piece-filtre-btn ${currentPieceFilter === p ? 'active' : ''}" onclick="filtrerParPiece('${esc}', this)">${p}</div>`;
+        return `<div class="piece-filtre-btn ${currentPieceFilter===p?'active':''}" onclick="filtrerParPiece('${esc}', this)">${p}</div>`;
       }).join('')}
     </div>`;
 
     if (currentPieceFilter) {
-      // Filtré sur une pièce → grouper par sous-cat
       const filtered = parCategorie.filter(p => {
         if (p.pieces && p.pieces.length) return p.pieces.includes(currentPieceFilter);
         return p.piece === currentPieceFilter;
@@ -724,11 +865,10 @@ function renderPostes() {
         ? `<div class="empty-state"><h3>Aucun résultat</h3><p>Aucun poste pour cette pièce.</p></div>`
         : renderGroupesSousCat(filtered);
     } else {
-      // Tout → grouper par pièce
       const byPiece = {};
       const SANS_PIECE = '__sans__';
       parCategorie.forEach(poste => {
-        const pcs = (poste.pieces && poste.pieces.length) ? poste.pieces : (poste.piece ? [poste.piece] : [SANS_PIECE]);
+        const pcs = (poste.pieces&&poste.pieces.length) ? poste.pieces : (poste.piece ? [poste.piece] : [SANS_PIECE]);
         pcs.forEach(pc => {
           if (!byPiece[pc]) byPiece[pc] = [];
           if (!byPiece[pc].find(x => x.id === poste.id)) byPiece[pc].push(poste);
@@ -742,7 +882,6 @@ function renderPostes() {
       }).join('');
     }
   } else {
-    // Mode sous-catégorie (défaut)
     postesHtml = renderGroupesSousCat(parCategorie);
   }
 
@@ -750,8 +889,12 @@ function renderPostes() {
 }
 
 function buildPosteHTML(poste) {
-  // Exclure les options dont le produit est discontinué
-  const options = (poste.options_produits || []).filter(o => !o.banque_produits || o.banque_produits.statut !== 'discontinue');
+  // Exclure options annulées et produits discontinués
+  const options = (poste.options_produits || []).filter(o =>
+    o.statut_client !== 'annulé' &&
+    (!o.banque_produits || o.banque_produits.statut !== 'discontinue')
+  );
+  if (options.length === 0) return ''; // poste entièrement annulé → invisible
   const isMultiple = options.length > 1;
 
   let optionsHTML = '';
@@ -802,37 +945,44 @@ function buildOptionContent(opt, isMultiple, posteId) {
   const isRejete    = opt.statut_client === 'à_revoir'
                       && (!opt.commentaire_client || opt.commentaire_client === MARKER_REJETE);
   const isNonRetenu = opt.statut_client === 'à_revoir' && opt.commentaire_client === 'Option non retenue';
+  const isCmpg      = !!opt.pre_approuve_cmpg;
 
-  const nomEsc = bp.nom ? bp.nom.replace(/'/g, "\\'") : 'ce produit';
+  const nomEsc = (bp.nom || 'ce produit').replace(/'/g, "\\'");
 
   const specsArr = [];
-  if (bp.couleur) specsArr.push('Couleur : ' + bp.couleur);
-  if (bp.dimensions) specsArr.push('Dimensions : ' + bp.dimensions);
-  if (bp.sku) specsArr.push('SKU : ' + bp.sku);
+  if (bp.couleur)       specsArr.push('Couleur : ' + bp.couleur);
+  if (bp.dimensions)    specsArr.push('Dimensions : ' + bp.dimensions);
+  if (bp.sku)           specsArr.push('SKU : ' + bp.sku);
   if (bp.caracteristiques) specsArr.push(bp.caracteristiques);
 
-  // Commentaire visible (masquer les marqueurs internes)
   const commentAffiche = opt.commentaire_client
     && opt.commentaire_client !== MARKER_REJETE
     && opt.commentaire_client !== 'Option non retenue'
     ? opt.commentaire_client : null;
 
+  // Badge CMPG + date d'approbation
+  const cmpgBadge = isCmpg
+    ? `<span class="badge-cmpg">✓ Approbation CMPG</span>` : '';
+  const dateAppHtml = (isApprouve && opt.date_decision)
+    ? `<div class="date-approbation">📅 Approuvé le ${new Date(opt.date_decision).toLocaleDateString('fr-CA')}</div>`
+    : '';
+
   // 3 boutons selon le mode
   let btnApprouver, btnRevision, btnRejeter;
   if (isMultiple) {
-    btnApprouver = `<button class="btn-decision btn-approuver ${isApprouve ? 'actif' : ''}"
-        onclick="choisirOption('${opt.id}', '${posteId}')">✓ Choisir</button>`;
-    btnRevision  = `<button class="btn-decision btn-revision ${isRevision ? 'actif' : ''}"
-        onclick="ouvrirCommentaire('${opt.id}', '${nomEsc}')">↩ Révision</button>`;
-    btnRejeter   = `<button class="btn-decision btn-revoir ${isNonRetenu ? 'actif' : ''}"
-        onclick="rejeterOption('${opt.id}')">✗ Ne pas retenir</button>`;
+    btnApprouver = `<button class="btn-decision btn-approuver ${isApprouve?'actif':''}"
+        onclick="choisirOption('${opt.id}','${posteId}')">✓ Choisir</button>`;
+    btnRevision  = `<button class="btn-decision btn-revision ${isRevision?'actif':''}"
+        onclick="ouvrirCommentaire('${opt.id}','${nomEsc}')">↩ Révision</button>`;
+    btnRejeter   = `<button class="btn-decision btn-revoir ${isNonRetenu?'actif':''}"
+        onclick="rejeterOption('${opt.id}','${nomEsc}')">✗ Ne pas retenir</button>`;
   } else {
-    btnApprouver = `<button class="btn-decision btn-approuver ${isApprouve ? 'actif' : ''}"
-        onclick="decider('${opt.id}', 'approuvé', this)">✓ Approuver</button>`;
-    btnRevision  = `<button class="btn-decision btn-revision ${isRevision ? 'actif' : ''}"
-        onclick="ouvrirCommentaire('${opt.id}', '${nomEsc}')">↩ Demande de révision</button>`;
-    btnRejeter   = `<button class="btn-decision btn-rejeter ${isRejete ? 'actif' : ''}"
-        onclick="rejeterDirectement('${opt.id}')">✗ Rejeter</button>`;
+    btnApprouver = `<button class="btn-decision btn-approuver ${isApprouve?'actif':''}"
+        onclick="decider('${opt.id}','approuvé',this)">✓ Approuver</button>`;
+    btnRevision  = `<button class="btn-decision btn-revision ${isRevision?'actif':''}"
+        onclick="ouvrirCommentaire('${opt.id}','${nomEsc}')">↩ Demande de révision</button>`;
+    btnRejeter   = `<button class="btn-decision btn-rejeter ${isRejete?'actif':''}"
+        onclick="rejeterDirectement('${opt.id}','${nomEsc}','${posteId}')">✗ Rejeter</button>`;
   }
 
   return `
@@ -841,13 +991,15 @@ function buildOptionContent(opt, isMultiple, posteId) {
       : '<div class="option-photo-placeholder">📦</div>'
     }
     <div class="option-details">
+      <div style="margin-bottom:4px">${cmpgBadge}</div>
       <div class="fabricant">${bp.fabricant || ''} ${bp.modele ? '· ' + bp.modele : ''}</div>
       <h4>${bp.nom || '—'}</h4>
       ${specsArr.length ? `<div class="specs">${specsArr.join('<br>')}</div>` : ''}
       ${opt.note_client ? `<div class="note-cmpg">💡 ${opt.note_client}</div>` : ''}
-      ${bp.prix ? `<div class="prix">${Number(bp.prix * opt.quantite).toLocaleString('fr-CA', {style:'currency',currency:'CAD'})}<span style="font-size:11px;font-weight:400;color:var(--texte-2)"> (qté: ${opt.quantite})</span></div>` : ''}
+      ${bp.prix ? `<div class="prix">${Number(bp.prix * (opt.quantite||1)).toLocaleString('fr-CA',{style:'currency',currency:'CAD'})}<span style="font-size:11px;font-weight:400;color:var(--texte-2)"> (qté: ${opt.quantite||1})</span></div>` : ''}
       ${bp.url ? `<a href="${bp.url}" target="_blank" style="font-size:12px;color:var(--caramel);display:inline-block;margin-top:8px">↗ Voir le produit en ligne</a>` : ''}
       ${commentAffiche ? `<div style="font-size:12px;color:var(--caramel);margin-top:8px;font-style:italic">Votre note : "${commentAffiche}"</div>` : ''}
+      ${dateAppHtml}
     </div>
     <div class="option-actions">
       ${btnApprouver}
@@ -858,15 +1010,20 @@ function buildOptionContent(opt, isMultiple, posteId) {
 }
 
 function getPosteStatus(options) {
-  if (options.length === 0) return { dotClass: 'dot-attente', label: 'En attente' };
-  const allApprouves = options.every(o => o.statut_client === 'approuvé');
-  const anyApprouve  = options.some(o => o.statut_client === 'approuvé');
-  const anyRevision  = options.some(o => o.statut_client === 'à_revoir'
-                        && o.commentaire_client && o.commentaire_client !== '__rejete__'
-                        && o.commentaire_client !== 'Option non retenue');
-  const anyRejete    = options.some(o => o.statut_client === 'à_revoir'
-                        && (!o.commentaire_client || o.commentaire_client === '__rejete__'
-                            || o.commentaire_client === 'Option non retenue'));
+  // Exclure les annulés et "Option non retenue" du calcul de statut
+  const active = options.filter(o =>
+    o.statut_client !== 'annulé' &&
+    !(o.statut_client === 'à_revoir' && o.commentaire_client === 'Option non retenue')
+  );
+  if (active.length === 0) return { dotClass: 'dot-annule', label: 'Retiré du devis' };
+
+  const allApprouves = active.every(o => o.statut_client === 'approuvé');
+  const anyApprouve  = active.some(o => o.statut_client === 'approuvé');
+  const anyRevision  = active.some(o => o.statut_client === 'à_revoir'
+                        && o.commentaire_client && o.commentaire_client !== '__rejete__');
+  const anyRejete    = active.some(o => o.statut_client === 'à_revoir'
+                        && (!o.commentaire_client || o.commentaire_client === '__rejete__'));
+
   if (allApprouves) return { dotClass: 'dot-approuve', label: 'Approuvé' };
   if (anyApprouve)  return { dotClass: 'dot-approuve', label: 'Partiellement approuvé' };
   if (anyRevision)  return { dotClass: 'dot-revoir',   label: 'Révision demandée' };
@@ -938,8 +1095,8 @@ async function choisirOption(optionId, posteId) {
   renderPostes();
 }
 
-// Choix multiple : rejeter une option sans commenter
-async function rejeterOption(optionId) {
+// Choix multiple : ne pas retenir une option
+async function rejeterOption(optionId, nomProduit) {
   const { error } = await db.from('options_produits').update({
     statut_client: 'à_revoir',
     commentaire_client: 'Option non retenue',
@@ -953,29 +1110,49 @@ async function rejeterOption(optionId) {
     if (opt) { opt.statut_client = 'à_revoir'; opt.commentaire_client = 'Option non retenue'; }
   });
 
+  await envoyerNotification('rejet', optionId, nomProduit);
   toast('Option non retenue.', 'info');
   mettreAJourProgression();
   renderPostes();
 }
 
-// Option unique : rejet direct, sans commentaire
-async function rejeterDirectement(optionId) {
+// Option unique : ouvrir le pop-up de choix (non nécessaire vs alternative)
+function rejeterDirectement(optionId, nomProduit, posteId) {
+  rejetOptionId    = optionId;
+  rejetNomProduit  = nomProduit || 'ce produit';
+  rejetPosteId     = posteId;
+  document.getElementById('rejet-choix-info').innerHTML =
+    `<strong>Produit :</strong> ${rejetNomProduit}`;
+  openModal('modal-rejet-choix');
+}
+
+// Pop-up rejet : branche "article non nécessaire"
+async function confirmerAnnule() {
+  closeModal('modal-rejet-choix');
+
   const { error } = await db.from('options_produits').update({
-    statut_client: 'à_revoir',
-    commentaire_client: '__rejete__',
-    date_decision: new Date().toISOString()
-  }).eq('id', optionId);
+    statut_client:      'annulé',
+    commentaire_client: 'Article non nécessaire',
+    date_decision:      new Date().toISOString()
+  }).eq('id', rejetOptionId);
 
   if (error) { toast('Erreur lors de la mise à jour.', 'error'); return; }
 
   allPostes.forEach(p => {
-    const opt = (p.options_produits || []).find(o => o.id === optionId);
-    if (opt) { opt.statut_client = 'à_revoir'; opt.commentaire_client = '__rejete__'; }
+    const opt = (p.options_produits || []).find(o => o.id === rejetOptionId);
+    if (opt) { opt.statut_client = 'annulé'; opt.commentaire_client = 'Article non nécessaire'; }
   });
 
-  toast('Produit rejeté.', 'info');
+  await envoyerNotification('annule', rejetOptionId, rejetNomProduit);
+  toast('Article retiré du devis.', 'info');
   mettreAJourProgression();
   renderPostes();
+}
+
+// Pop-up rejet : branche "je veux une alternative"
+function continuerRejetAvecAlternative() {
+  closeModal('modal-rejet-choix');
+  ouvrirCommentaire(rejetOptionId, rejetNomProduit);
 }
 
 // Ouvrir le modal de rejet (option unique) — avec message contextuel
@@ -1011,9 +1188,9 @@ async function envoyerCommentaire() {
   if (!commentaire) { toast('Veuillez entrer un commentaire.', 'error'); return; }
 
   const { error } = await db.from('options_produits').update({
-    statut_client: 'à_revoir',
+    statut_client:      'à_revoir',
     commentaire_client: commentaire,
-    date_decision: new Date().toISOString()
+    date_decision:      new Date().toISOString()
   }).eq('id', commentaireOptionId);
 
   if (error) { toast('Erreur lors de l\'envoi.', 'error'); return; }
@@ -1024,38 +1201,93 @@ async function envoyerCommentaire() {
   });
 
   closeModal('modal-commentaire');
+  await envoyerNotification('revision', commentaireOptionId, null, commentaire);
   toast('Commentaire envoyé à CMPG.', 'success');
   mettreAJourProgression();
   renderPostes();
 }
 
 // ============================================================
-// PROGRESSION
+// NOTIFICATION — appel silencieux à l'Edge Function
+// ============================================================
+async function envoyerNotification(type, optionId, nomProduit, commentaire) {
+  try {
+    if (!currentProjetResponsable?.email) return; // Pas de responsable configuré
+
+    // Logger dans la DB (résistant à l'absence de l'edge function)
+    await db.from('notifications_log').insert({
+      projet_id:          currentProjetId,
+      option_id:          optionId,
+      type,
+      destinataire_email: currentProjetResponsable.email,
+      contenu: {
+        nom_produit:   nomProduit || null,
+        commentaire:   commentaire || null,
+        client_nom:    currentProjetResponsable.client_nom || ''
+      },
+      statut: 'pending'
+    });
+
+    // Appeler l'Edge Function Supabase (courriel automatique)
+    await db.functions.invoke('notifier-designer', {
+      body: {
+        to:               currentProjetResponsable.email,
+        nom_responsable:  currentProjetResponsable.nom || '',
+        type,
+        projet_nom:       document.getElementById('projet-select')?.selectedOptions[0]?.text || '',
+        client_nom:       currentProjetResponsable.client_nom || '',
+        produit_nom:      nomProduit || null,
+        commentaire:      commentaire || null
+      }
+    });
+  } catch(e) {
+    console.warn('[notif] Notification non envoyée (silencieux) :', e);
+    // Fail silencieux — ne bloque pas l'action du client
+  }
+}
+
+// ============================================================
+// PROGRESSION — comptée au niveau POSTE (pas option individuelle)
 // ============================================================
 function mettreAJourProgression() {
-  let total = 0, approuves = 0, revoir = 0, budgetConfirme = 0;
+  // Périmètre : tout ou la catégorie active
+  const postesScope = (currentCategorie === '__tout__' || !currentCategorie)
+    ? allPostes
+    : allPostes.filter(p => p.categories && p.categories.id === currentCategorie);
 
-  allPostes.forEach(p => {
-    (p.options_produits || []).forEach(opt => {
-      total++;
-      if (opt.statut_client === 'approuvé') {
-        approuves++;
-        const bp = opt.banque_produits;
-        if (bp && bp.prix) budgetConfirme += bp.prix * opt.quantite;
-      }
-      if (opt.statut_client === 'à_revoir') revoir++;
-    });
+  let totalPostes = 0, approuves = 0, enAttente = 0, budget = 0;
+
+  postesScope.forEach(p => {
+    // Options valides : exclure annulé + "Option non retenue" (choix multiple écarté)
+    const validOpts = (p.options_produits || []).filter(o =>
+      o.statut_client !== 'annulé' &&
+      !(o.statut_client === 'à_revoir' && o.commentaire_client === 'Option non retenue')
+    );
+    if (validOpts.length === 0) return; // poste entièrement annulé → ne compte pas
+
+    totalPostes++;
+
+    const anyApprouve  = validOpts.some(o => o.statut_client === 'approuvé');
+    const anyDecision  = validOpts.some(o => !!o.statut_client);
+
+    if (anyApprouve) {
+      approuves++;
+      const appOpt = validOpts.find(o => o.statut_client === 'approuvé');
+      const bp = appOpt?.banque_produits;
+      if (bp?.prix) budget += Number(bp.prix) * (appOpt.quantite || 1);
+    }
+    if (!anyDecision) enAttente++; // aucune action client pour ce poste
   });
 
-  const pct = total > 0 ? Math.round(approuves / total * 100) : 0;
+  const pct = totalPostes > 0 ? Math.round(approuves / totalPostes * 100) : 0;
 
-  document.getElementById('prog-total').textContent = total;
+  document.getElementById('prog-total').textContent     = totalPostes;
   document.getElementById('prog-approuves').textContent = approuves;
-  document.getElementById('prog-revoir').textContent = revoir;
-  document.getElementById('prog-pct').textContent = pct + '%';
-  document.getElementById('prog-fill').style.width = pct + '%';
-  document.getElementById('prog-budget').textContent = budgetConfirme > 0
-    ? budgetConfirme.toLocaleString('fr-CA', { style: 'currency', currency: 'CAD' })
+  document.getElementById('prog-revoir').textContent    = enAttente;
+  document.getElementById('prog-pct').textContent       = pct + '%';
+  document.getElementById('prog-fill').style.width      = pct + '%';
+  document.getElementById('prog-budget').textContent    = budget > 0
+    ? budget.toLocaleString('fr-CA', { style: 'currency', currency: 'CAD' })
     : '—';
 }
 

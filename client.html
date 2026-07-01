@@ -633,6 +633,45 @@ async function chargerProjetsClient(email) {
 }
 
 // ============================================================
+// VOLETS (onglets modulaires par projet)
+// ============================================================
+async function chargerVoletsClient() {
+  const container = document.getElementById('volet-autre');
+  if (!container) return;
+  try {
+    const { data: volets, error } = await db
+      .from('volets_projet')
+      .select('*')
+      .eq('projet_id', currentProjetId)
+      .eq('actif', true)
+      .order('ordre');
+
+    if (error || !volets || volets.length === 0) {
+      container.innerHTML = '';
+      return;
+    }
+
+    const VOLET_LABELS = {
+      tableau_ambiance:   "Tableau d'ambiance",
+      approbation_plans:  "Approbation des plans",
+      approbation_budget: "Approbation du budget",
+      plans_finals:       "Plans finaux",
+      procuration:        "Procuration",
+      offre_service:      "Offre de service",
+      factures:           "Factures",
+    };
+
+    container.innerHTML = volets.map(v => `
+      <div style="padding:20px;border:1px solid var(--bord);border-radius:4px;margin-bottom:12px">
+        <h3 style="font-size:15px;margin:0 0 8px">${VOLET_LABELS[v.type_volet] || v.type_volet}</h3>
+        <p style="font-size:13px;color:var(--texte-2);margin:0">Documents et informations à venir.</p>
+      </div>`).join('');
+  } catch(e) {
+    // Table volets_projet non encore créée — silencieux
+  }
+}
+
+// ============================================================
 // PROJET
 // ============================================================
 async function chargerProjet() {

@@ -552,6 +552,7 @@ let currentProjetId = null;
 let allPostes = [];
 let currentCategorie = '__tout__';
 let currentPieceFilter = null;
+let currentSousCatFilter = null;
 let filtreMode = 'sous-cat'; // 'sous-cat' | 'piece'
 let currentToutFilter = 'tout'; // 'tout' | 'approuve' | 'attente'
 let commentaireOptionId = null;
@@ -702,6 +703,7 @@ function filtrerCategorie(catId, el) {
   el.classList.add('active');
   currentCategorie = catId;
   currentPieceFilter = null;
+  currentSousCatFilter = null;
   filtreMode = 'sous-cat';
   currentToutFilter = 'tout';
   mettreAJourProgression();
@@ -723,6 +725,12 @@ function filtrerParPiece(piece, el) {
 function setFiltreMode(mode) {
   filtreMode = mode;
   currentPieceFilter = null;
+  currentSousCatFilter = null;
+  renderPostes();
+}
+
+function filtrerParSousCat(nom) {
+  currentSousCatFilter = nom;
   renderPostes();
 }
 
@@ -845,6 +853,35 @@ function renderPostes() {
 
   let filtreHtml = '';
   let postesHtml = '';
+
+  // Boutons de filtre sous-catégorie
+  if (filtreMode === 'sous-cat' && hasSousCats) {
+    const sousCatsDispos = [];
+    parCategorie.forEach(p => {
+      if (p.sous_categories && !sousCatsDispos.find(s => s.nom === p.sous_categories.nom)) {
+        sousCatsDispos.push(p.sous_categories);
+      }
+    });
+    sousCatsDispos.sort((a, b) => (a.ordre||0) - (b.ordre||0));
+
+    if (sousCatsDispos.length > 1) {
+      filtreHtml = `<div class="pieces-filter-row">
+        <span class="pieces-filter-label">Catégorie :</span>
+        <div class="piece-filtre-btn ${!currentSousCatFilter?'active':''}" onclick="filtrerParSousCat(null)">Tout</div>
+        ${sousCatsDispos.map(s => {
+          const esc = s.nom.replace(/'/g,"\\'");
+          return `<div class="piece-filtre-btn ${currentSousCatFilter===s.nom?'active':''}" onclick="filtrerParSousCat('${esc}')">${s.nom}</div>`;
+        }).join('')}
+      </div>`;
+    }
+
+    const postesFiltrés = currentSousCatFilter
+      ? parCategorie.filter(p => p.sous_categories && p.sous_categories.nom === currentSousCatFilter)
+      : parCategorie;
+    postesHtml = renderGroupesSousCat(postesFiltrés);
+    content.innerHTML = modeToggleHtml + filtreHtml + `<div style="padding:20px 0">${postesHtml}</div>`;
+    return;
+  }
 
   if (filtreMode === 'piece' && hasPieces) {
     filtreHtml = `<div class="pieces-filter-row">
@@ -1026,8 +1063,8 @@ function getPosteStatus(options) {
 
   if (allApprouves) return { dotClass: 'dot-approuve', label: 'Approuvé' };
   if (anyApprouve)  return { dotClass: 'dot-approuve', label: 'Partiellement approuvé' };
-  if (anyRevision)  return { dotClass: 'dot-revoir',   label: 'Révision demandée' };
-  if (anyRejete)    return { dotClass: 'dot-revoir',   label: 'Rejeté' };
+  if (anyRevision)  return { dotClass: 'dot-attente',  label: 'En attente d\'une proposition' };
+  if (anyRejete)    return { dotClass: 'dot-attente',  label: 'En attente d\'une proposition' };
   return { dotClass: 'dot-attente', label: 'En attente' };
 }
 
@@ -1042,8 +1079,7 @@ function switchOptionTab(posteId, idx) {
 // ============================================================
 async function decider(optionId, statut, btn) {
   const { error } = await db.from('options_produits').update({
-    statut_client: statut,
-    date_decision: new Date().toISOString()
+    statut_client: statut
   }).eq('id', optionId);
 
   if (error) { toast('Erreur lors de la mise à jour.', 'error'); return; }
@@ -1132,8 +1168,7 @@ async function confirmerAnnule() {
 
   const { error } = await db.from('options_produits').update({
     statut_client:      'annulé',
-    commentaire_client: 'Article non nécessaire',
-    date_decision:      new Date().toISOString()
+    commentaire_client: 'Article non nécessaire'
   }).eq('id', rejetOptionId);
 
   if (error) { toast('Erreur lors de la mise à jour.', 'error'); return; }

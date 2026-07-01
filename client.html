@@ -965,9 +965,10 @@ function renderPostes() {
 }
 
 function buildPosteHTML(poste) {
-  // Exclure options annulées et produits discontinués
+  // Exclure options annulées (ou marquées "Article non nécessaire") et produits discontinués
   const options = (poste.options_produits || []).filter(o =>
     o.statut_client !== 'annulé' &&
+    !(o.statut_client === 'à_revoir' && o.commentaire_client === 'Article non nécessaire') &&
     (!o.banque_produits || o.banque_produits.statut !== 'discontinue')
   );
   if (options.length === 0) return ''; // poste entièrement annulé → invisible
@@ -1086,10 +1087,11 @@ function buildOptionContent(opt, isMultiple, posteId) {
 }
 
 function getPosteStatus(options) {
-  // Exclure les annulés et "Option non retenue" du calcul de statut
+  // Exclure les annulés, "Option non retenue" et "Article non nécessaire" du calcul de statut
   const active = options.filter(o =>
     o.statut_client !== 'annulé' &&
-    !(o.statut_client === 'à_revoir' && o.commentaire_client === 'Option non retenue')
+    !(o.statut_client === 'à_revoir' && o.commentaire_client === 'Option non retenue') &&
+    !(o.statut_client === 'à_revoir' && o.commentaire_client === 'Article non nécessaire')
   );
   if (active.length === 0) return { dotClass: 'dot-annule', label: 'Retiré du devis' };
 
@@ -1295,12 +1297,11 @@ async function envoyerNotification(type, optionId, nomProduit, commentaire) {
       type,
       destinataire_email: currentProjetResponsable.email,
       contenu: {
-        nom_produit:    nomProduit  || '',
-        commentaire: commentaire || '',
-        projet_nom:  currentProjetResponsable?.client_nom || '',
+        nom_produit:  nomProduit  || '',
+        commentaire:  commentaire || '',
+        projet_nom:   currentProjetResponsable?.client_nom || '',
+        description:  `${nomProduit ? nomProduit + ' — ' : ''}${commentaire || ''}`.trim(),
       },
-      description:   `${nomProduit ? nomProduit + ' — ' : ''}${commentaire || ''}`.trim(),
-      projet_nom:    currentProjetResponsable?.client_nom || '',
     });
 
     // ── Appel Edge Function (silencieux si RESEND_API_KEY absente) ──
@@ -1330,24 +1331,43 @@ async function envoyerNotification(type, optionId, nomProduit, commentaire) {
 // PROGRESSION
 // ============================================================
 function mettreAJourProgression() {
-  const opts = allPostes.flatMap(p => (p.options_produits || []).filter(o =>
-    o.statut_client !== 'annulé' && o.statut_client !== '__rejete__'
+  // Filtrer les postes selon la catégorie active
+  const isTout = currentCategorie === '__tout__';
+  const postesScope = isTout
+    ? allPostes
+    : allPostes.filter(p => p.categories && p.categories.id === currentCategorie);
+
+  const opts = postesScope.flatMap(p => (p.options_produits || []).filter(o =>
+    o.statut_client !== 'annulé' &&
+    o.statut_client !== '__rejete__' &&
+    !(o.statut_client === 'à_revoir' && o.commentaire_client === 'Article non nécessaire')
   ));
   const total     = opts.length;
   const approuves = opts.filter(o => o.statut_client === 'approuvé').length;
   const aRevoir   = opts.filter(o => o.statut_client === 'à_revoir').length;
   const pct       = total > 0 ? Math.round(approuves / total * 100) : 0;
 
-  const budget = allPostes
+  const budget = postesScope
     .flatMap(p => (p.options_produits || []).filter(o => o.statut_client === 'approuvé'))
     .reduce((sum, o) => sum + (o.banque_produits?.prix ? Number(o.banque_produits.prix) * (o.quantite || 1) : 0), 0);
 
+  // Mettre à jour le label de progression
+  const labelEl = document.getElementById('prog-label-left');
+  if (labelEl) {
+    if (isTout) {
+      labelEl.textContent = 'Progression globale';
+    } else {
+      const catPoste = postesScope.find(p => p.categories);
+      labelEl.textContent = catPoste?.categories?.nom || 'Catégorie';
+    }
+  }
+
   const set = (id, val) => { const el = document.getElementById(id); if (el) el.textContent = val; };
-  set('prog-total',    total);
-  set('prog-pct',      pct + ' %');
+  set('prog-total',     total);
+  set('prog-pct',       pct + ' %');
   set('prog-approuves', approuves);
-  set('prog-revoir',   aRevoir);
-  set('prog-budget',   budget > 0 ? budget.toLocaleString('fr-CA', { style: 'currency', currency: 'CAD' }) : '—');
+  set('prog-revoir',    aRevoir);
+  set('prog-budget',    budget > 0 ? budget.toLocaleString('fr-CA', { style: 'currency', currency: 'CAD' }) : '—');
 
   const fill = document.getElementById('prog-fill');
   if (fill) fill.style.width = pct + '%';

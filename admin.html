@@ -2312,4 +2312,248 @@ async function genererExcel_base(mode) {
     { tpl:9,  key:'dims',        hdr:'Dimensions',                 w:13, sz:9, h:'left'    },
     { tpl:10, key:'caract',      hdr:'Caractéristiques\nspécifiques',w:22,sz:9,h:'left'   },
     { tpl:11, key:'photo',       hdr:'Photo\n(insérer img)',       w:16, sz:9, h:'center'  },
-    // tpl 12 (L) excl
+    // tpl 12 (L) excl    { tpl:13, key:'choix_faire',  hdr:'⚠ Choix\nà faire',           w:10, sz:9, h:'center'  },
+    { tpl:14, key:'prix_u',       hdr:'Prix\nunitaire ($)',          w:13, sz:9, h:'right'   },
+    { tpl:15, key:'prix_total',   hdr:'Prix\ntotal ($)',             w:13, sz:9, h:'right'   },
+    { tpl:16, key:'statut',       hdr:'Statut',                      w:13, sz:9, h:'center'  },
+    { tpl:17, key:'date_conf',    hdr:'Date\nconfirmé',              w:11, sz:9, h:'center'  },
+    { tpl:18, key:'lien',         hdr:'Lien',                        w:22, sz:9, h:'left'    },
+    { tpl:19, key:'approbation',  hdr:'Approbation\nclient',         w:14, sz:9, h:'center'  },
+  ];
+
+  // Colonnes selon mode
+  // Client : tout (tpl 12 déjà exclu du tableau)
+  // Chantier : tpl 1-11 et 18-19 seulement
+  const COLS = mode === 'chantier'
+    ? ALL_COLS.filter(c => c.tpl <= 11 || c.tpl >= 18)
+    : ALL_COLS;
+  const NC = COLS.length;
+
+  // ── Utilitaire merge ──
+  function merge(ws, r1, c1, r2, c2, val, opts) {
+    if (r1 === r2 && c1 === c2) { sc(ws, r1, c1, val, opts); return; }
+    try { ws.mergeCells(r1, c1, r2, c2); } catch(e) {}
+    sc(ws, r1, c1, val, opts);
+  }
+
+  // ── Une feuille par catégorie ──
+  for (const { cat, scMap } of sortedCats.map(([, v]) => v)) {
+    const catNom = cat.nom || 'Général';
+    const ws = wb.addWorksheet(catNom.substring(0, 31), {
+      pageSetup: { orientation: 'landscape', paperSize: 9, fitToPage: true, fitToWidth: 1, fitToHeight: 0 }
+    });
+    ws.columns = COLS.map(c => ({ width: c.w }));
+
+    // ── Ligne 1 : Titre + contact CMPG ──
+    const lastInfoCol = Math.max(NC - 3, 1);
+    merge(ws, 1, 1, 1, lastInfoCol, `SÉLECTION — ${catNom.toUpperCase()}`, {
+      bg: T_BEIGE, fg: T_TEXT, bold: true, sz: 11, h: 'left', wrap: false, bdColor: T_BORD
+    });
+    if (NC > 3) {
+      merge(ws, 1, lastInfoCol + 1, 1, NC, '450 455-6006  |  info@conceptionmpg.ca', {
+        bg: T_DARK, fg: T_CARAMEL, sz: 9, h: 'right', wrap: false, bdColor: T_BORD
+      });
+    }
+    ws.getRow(1).height = 26;
+
+    // ── Lignes 2-4 : Info projet ──
+    const c3 = Math.max(1, Math.floor(NC / 3));
+    const c23 = Math.max(c3 + 1, Math.floor(NC * 2 / 3));
+    merge(ws, 2, 1, 2, c3, `Designer :  ${projet?.responsable_nom || '—'}`, { bg: T_BEIGE, sz: 9, bdColor: T_BORD });
+    if (c3 < c23 - 1) merge(ws, 2, c3 + 1, 2, c23, `Client :  ${nomClient || '—'}`, { bg: T_BEIGE, sz: 9, bdColor: T_BORD });
+    if (c23 < NC) merge(ws, 2, c23 + 1, 2, NC, `No. dossier :  —`, { bg: T_BEIGE, sz: 9, h: 'right', bdColor: T_BORD });
+    ws.getRow(2).height = 16;
+
+    merge(ws, 3, 1, 3, c23, `Adresse :  ${projet?.adresse || '—'}`, { bg: T_BEIGE, sz: 9, bdColor: T_BORD });
+    if (c23 < NC) merge(ws, 3, c23 + 1, 3, NC, `Date / Rév. :  ${dateStr}`, { bg: T_BEIGE, sz: 9, h: 'right', bdColor: T_BORD });
+    ws.getRow(3).height = 16;
+
+    merge(ws, 4, 1, 4, NC, `Projet :  ${nomProjet}`, { bg: T_BEIGE, sz: 9, bdColor: T_BORD });
+    ws.getRow(4).height = 16;
+
+    // ── Ligne 5 : Estimation ──
+    const allRows = Object.values(scMap).flatMap(s => s.rows);
+    const estimTotal = allRows.reduce((sum, r) => sum + (r.prix_total || 0), 0);
+    const nbAttente  = allRows.filter(r => !r.isApprouved).length;
+    const estimFmt   = estimTotal.toLocaleString('fr-CA', { style: 'currency', currency: 'CAD' });
+    if (mode === 'client') {
+      merge(ws, 5, 1, 5, c3, `ESTIMATION (avant taxes) :  ${estimFmt}`, { bg: T_BEIGE, bold: true, sz: 9, bdColor: T_BORD });
+      if (c3 < c23 - 1) merge(ws, 5, c3 + 1, 5, c23, '', { bg: T_BEIGE, sz: 9, bdColor: T_BORD });
+      if (c23 < NC) merge(ws, 5, c23 + 1, 5, NC, `⚠  Items en attente : ${nbAttente}`, { bg: T_BEIGE, fg: T_WARNTX, bold: true, sz: 9, h: 'right', bdColor: T_BORD });
+    } else {
+      merge(ws, 5, 1, 5, NC, '', { bg: T_BEIGE, bdColor: T_BORD });
+    }
+    ws.getRow(5).height = 16;
+
+    // ── Ligne 6 : Avertissement ──
+    merge(ws, 6, 1, 6, NC,
+      '⚠  Les estimations sont des prix de référence avant taxes. Les coûts finaux peuvent varier selon les fournisseurs et les conditions du marché.',
+      { bg: T_WARNBG, fg: 'FFEFEBE6', sz: 8, italic: true, h: 'left', bdColor: T_BORD });
+    ws.getRow(6).height = 16;
+
+    // ── Ligne 7 : En-têtes colonnes ──
+    COLS.forEach((col, ci) => sc(ws, 7, ci + 1, col.hdr, {
+      bg: T_DARK, fg: 'FFFFFFFF', bold: true, sz: col.sz || 9, h: col.h || 'left', wrap: true, bdColor: T_BORD
+    }));
+    ws.getRow(7).height = 32;
+    ws.views = [{ state: 'frozen', ySplit: 7, xSplit: 2 }];
+
+    // ── Données par sous-catégorie ──
+    let cr = 8;
+    let altBg = false;
+    const scEntries = Object.values(scMap).sort((a, b) => (a.scOrdre || 0) - (b.scOrdre || 0));
+
+    for (const { scNom, rows } of scEntries) {
+      if (scNom) {
+        ws.mergeCells(cr, 1, cr, NC);
+        sc(ws, cr, 1, `  ${scNom.toUpperCase()}`, {
+          bg: T_SUBCAT, fg: 'FFFFFFFF', bold: true, sz: 9, h: 'left', bdColor: T_BORD
+        });
+        ws.getRow(cr).height = 18;
+        cr++;
+      }
+      for (const row of rows) {
+        const bg = altBg ? T_ALT : T_WHITE;
+        COLS.forEach((col, ci) => {
+          let val;
+          if (col.key === 'photo') {
+            val = row.photo_url ? 'Voir lien' : '';
+          } else {
+            val = row[col.key] ?? '';
+          }
+          const opts = { bg, fg: T_TEXT, sz: col.sz || 9, h: col.h || 'left', wrap: true, bdColor: T_BORD };
+          if (col.key === 'choix_faire' && val) { opts.fg = T_WARNTX; opts.bold = true; }
+          if (col.key === 'approbation' && val === 'Approuvé') { opts.fg = T_GREEN; opts.bold = true; }
+          if (col.key === 'lien' && val) opts.fg = T_CARAMEL;
+          sc(ws, cr, ci + 1, val, opts);
+          if ((col.key === 'prix_u' || col.key === 'prix_total') && val) {
+            ws.getCell(cr, ci + 1).numFmt = PFMT;
+          }
+        });
+        ws.getRow(cr).height = 18;
+        altBg = !altBg;
+        cr++;
+      }
+    }
+  }
+
+  // ── Téléchargement ──
+  const modeLabel = mode === 'client' ? 'Client' : 'Chantier';
+  const safeName  = nomProjet.replace(/[^a-zA-Z0-9_\-]/g, '_');
+  const buf  = await wb.xlsx.writeBuffer();
+  const blob = new Blob([buf], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+  const dlUrl = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = dlUrl;
+  a.download = `CMPG_${modeLabel}_${safeName}_${dateStr.replace(/\//g, '-')}.xlsx`;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  setTimeout(() => URL.revokeObjectURL(dlUrl), 10000);
+  toast(`Excel ${modeLabel} généré avec succès !`, 'success');
+}
+
+// ============================================================
+// NOTIFICATIONS EN TEMPS RÉEL
+// ============================================================
+let _notifPanelOpen = false;
+
+function getLastSeenNotif() {
+  return localStorage.getItem('cmpg_notif_last_seen') || '1970-01-01T00:00:00Z';
+}
+
+async function initNotifications() {
+  await rafraichirNotifications();
+  db.channel('notif_realtime')
+    .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'notifications_log' },
+      () => { rafraichirNotifications(); })
+    .subscribe();
+}
+
+async function rafraichirNotifications() {
+  const { data } = await db.from('notifications_log')
+    .select('*').order('created_at', { ascending: false }).limit(50);
+  if (!data) return;
+  const lastSeen = getLastSeenNotif();
+  const nonLus   = data.filter(n => n.created_at > lastSeen).length;
+  const badge    = document.getElementById('notif-badge');
+  if (badge) {
+    badge.textContent = nonLus > 9 ? '9+' : String(nonLus);
+    badge.classList.toggle('visible', nonLus > 0);
+  }
+  if (_notifPanelOpen) _renderNotifList(data, lastSeen);
+}
+
+async function toggleNotifPanel() {
+  if (_notifPanelOpen) { fermerNotifPanel(); return; }
+  _notifPanelOpen = true;
+  document.getElementById('notif-panel')?.classList.add('open');
+  document.getElementById('notif-backdrop')?.classList.add('open');
+  const { data } = await db.from('notifications_log')
+    .select('*').order('created_at', { ascending: false }).limit(50);
+  _renderNotifList(data || [], getLastSeenNotif());
+}
+
+function fermerNotifPanel() {
+  _notifPanelOpen = false;
+  document.getElementById('notif-panel')?.classList.remove('open');
+  document.getElementById('notif-backdrop')?.classList.remove('open');
+}
+
+function marquerToutLu() {
+  localStorage.setItem('cmpg_notif_last_seen', new Date().toISOString());
+  const badge = document.getElementById('notif-badge');
+  if (badge) { badge.textContent = '0'; badge.classList.remove('visible'); }
+  db.from('notifications_log').select('*').order('created_at', { ascending: false }).limit(50)
+    .then(({ data }) => _renderNotifList(data || [], getLastSeenNotif()));
+}
+
+function _renderNotifList(data, lastSeen) {
+  const list = document.getElementById('notif-list');
+  if (!list) return;
+  if (!data || data.length === 0) {
+    list.innerHTML = '<div class="notif-empty">Aucune notification pour l\'instant.</div>';
+    return;
+  }
+  const TYPE_LABELS = {
+    revision: { label: 'Révision demandée',     cls: 'revision' },
+    rejet:    { label: "Rejet d'un produit",     cls: 'rejet'    },
+    annule:   { label: 'Article non nécessaire', cls: 'annule'   },
+  };
+  list.innerHTML = data.map(n => {
+    const unread = n.created_at > lastSeen;
+    const tl   = TYPE_LABELS[n.type] || { label: n.type || 'Notification', cls: '' };
+    const date = new Date(n.created_at).toLocaleString('fr-CA', { dateStyle: 'short', timeStyle: 'short' });
+    return `<div class="notif-item ${unread ? 'unread' : 'read'}">
+      <div class="notif-type ${tl.cls}">${tl.label}</div>
+      <div class="notif-desc">${n.description || ''}</div>
+      <div class="notif-meta">${n.projet_nom || ''} · ${date}</div>
+    </div>`;
+  }).join('');
+}
+
+// ============================================================
+// UTILITAIRES — Toast / Modals
+// ============================================================
+function toast(msg, type = 'info') {
+  const t = document.createElement('div');
+  t.className = 'toast toast-' + type;
+  t.textContent = msg;
+  document.body.appendChild(t);
+  setTimeout(() => t.classList.add('show'), 10);
+  setTimeout(() => { t.classList.remove('show'); setTimeout(() => t.remove(), 300); }, 3500);
+}
+
+function openModal(id) {
+  document.getElementById(id)?.classList.add('open');
+}
+
+function closeModal(id) {
+  document.getElementById(id)?.classList.remove('open');
+}
+
+// ── Démarrage ─────────────────────────────────────────────
+checkAuth();
+</script>
+</body>
+</html>

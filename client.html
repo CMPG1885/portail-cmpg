@@ -1256,4 +1256,92 @@ async function envoyerNotification(type, optionId, nomProduit, commentaire) {
       type,
       destinataire_email: currentProjetResponsable.email,
       contenu: {
-        nom_p
+        nom_produit:    nomProduit  || '',
+        commentaire: commentaire || '',
+        projet_nom:  currentProjetResponsable?.client_nom || '',
+      },
+      description:   `${nomProduit ? nomProduit + ' — ' : ''}${commentaire || ''}`.trim(),
+      projet_nom:    currentProjetResponsable?.client_nom || '',
+    });
+
+    // ── Appel Edge Function (silencieux si RESEND_API_KEY absente) ──
+    fetch(`${SUPABASE_URL}/functions/v1/notifier-designer`, {
+      method:  'POST',
+      headers: {
+        'Content-Type':  'application/json',
+        'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
+        'apikey':        SUPABASE_ANON_KEY,
+      },
+      body: JSON.stringify({
+        to:              currentProjetResponsable.email,
+        nom_responsable: currentProjetResponsable.nom || '',
+        type,
+        projet_nom:      currentProjetResponsable.client_nom || '',
+        client_nom:      currentUser?.email || '',
+        produit_nom:     nomProduit || '',
+        commentaire:     commentaire || '',
+      }),
+    }).catch(() => {}); // Erreur silencieuse
+  } catch(e) {
+    console.warn('Notification silencieuse :', e);
+  }
+}
+
+// ============================================================
+// PROGRESSION
+// ============================================================
+function mettreAJourProgression() {
+  const opts = allPostes.flatMap(p => (p.options_produits || []).filter(o =>
+    o.statut_client !== 'annulé' && o.statut_client !== '__rejete__'
+  ));
+  const total     = opts.length;
+  const approuves = opts.filter(o => o.statut_client === 'approuvé').length;
+  const aRevoir   = opts.filter(o => o.statut_client === 'à_revoir').length;
+  const pct       = total > 0 ? Math.round(approuves / total * 100) : 0;
+
+  const budget = allPostes
+    .flatMap(p => (p.options_produits || []).filter(o => o.statut_client === 'approuvé'))
+    .reduce((sum, o) => sum + (o.banque_produits?.prix ? Number(o.banque_produits.prix) * (o.quantite || 1) : 0), 0);
+
+  const set = (id, val) => { const el = document.getElementById(id); if (el) el.textContent = val; };
+  set('prog-total',    total);
+  set('prog-pct',      pct + ' %');
+  set('prog-approuves', approuves);
+  set('prog-revoir',   aRevoir);
+  set('prog-budget',   budget > 0 ? budget.toLocaleString('fr-CA', { style: 'currency', currency: 'CAD' }) : '—');
+
+  const fill = document.getElementById('prog-fill');
+  if (fill) fill.style.width = pct + '%';
+}
+
+// ============================================================
+// UTILITAIRES — Toast / Modals
+// ============================================================
+function toast(msg, type = 'info') {
+  let container = document.getElementById('toast-container');
+  if (!container) {
+    container = document.createElement('div');
+    container.id = 'toast-container';
+    document.body.appendChild(container);
+  }
+  const t = document.createElement('div');
+  t.className = 'toast toast-' + type;
+  t.textContent = msg;
+  container.appendChild(t);
+  setTimeout(() => t.classList.add('show'), 10);
+  setTimeout(() => { t.classList.remove('show'); setTimeout(() => t.remove(), 300); }, 3500);
+}
+
+function openModal(id) {
+  document.getElementById(id)?.classList.add('open');
+}
+
+function closeModal(id) {
+  document.getElementById(id)?.classList.remove('open');
+}
+
+// ── Démarrage ─────────────────────────────────────────────
+checkAuth();
+</script>
+</body>
+</html>

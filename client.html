@@ -873,8 +873,11 @@ function renderPostes() {
       postes = postes.filter(p => (p.options_produits||[]).some(o => o.statut_client === 'approuvé'));
     } else if (currentToutFilter === 'attente') {
       postes = postes.filter(p => {
-        const validOpts = (p.options_produits||[]).filter(o => o.statut_client !== 'annulé');
-        return validOpts.length > 0 && validOpts.every(o => !o.statut_client);
+        const validOpts = (p.options_produits||[]).filter(o =>
+          o.statut_client !== 'annulé' &&
+          !(o.statut_client === 'à_revoir' && o.commentaire_client === 'Article non nécessaire')
+        );
+        return validOpts.some(o => o.statut_client === 'en_attente');
       });
     }
 
@@ -926,14 +929,35 @@ function renderPostes() {
     return;
   }
 
+  // Filtre "Reste à approuver" catégorie
+  const parCatActive = currentToutFilter === 'attente'
+    ? parCategorie.filter(p => {
+        const opts = (p.options_produits||[]).filter(o =>
+          o.statut_client !== 'annulé' &&
+          !(o.statut_client === 'à_revoir' && o.commentaire_client === 'Article non nécessaire')
+        );
+        return opts.some(o => o.statut_client === 'en_attente');
+      })
+    : parCategorie;
+
+  const catFilterBar = `<div class="tout-filter-row">
+    <button class="tout-filter-btn ${currentToutFilter!=='attente'?'active':''}" onclick="setToutFilter('tout')">Tout</button>
+    <button class="tout-filter-btn ${currentToutFilter==='attente'?'active':''}" onclick="setToutFilter('attente')">⏳ Reste à approuver</button>
+  </div>`;
+
+  if (parCatActive.length === 0) {
+    content.innerHTML = catFilterBar + `<div style="padding:20px 0"><div class="empty-state"><h3>Aucun résultat</h3><p>Bravo ! Toutes les sélections de cette catégorie ont été complétées.</p></div></div>`;
+    return;
+  }
+
   // Pièces disponibles dans cette catégorie
   const piecesDispos = new Set();
-  parCategorie.forEach(p => {
+  parCatActive.forEach(p => {
     if (p.pieces && p.pieces.length) p.pieces.forEach(pc => piecesDispos.add(pc));
     else if (p.piece) piecesDispos.add(p.piece);
   });
   const hasPieces   = piecesDispos.size > 0;
-  const hasSousCats = parCategorie.some(p => p.sous_categories);
+  const hasSousCats = parCatActive.some(p => p.sous_categories);
 
   if (filtreMode === 'sous-cat' && !hasSousCats && hasPieces)  filtreMode = 'piece';
   if (filtreMode === 'piece'    && !hasPieces    && hasSousCats) filtreMode = 'sous-cat';
@@ -954,7 +978,7 @@ function renderPostes() {
   // Boutons de filtre sous-catégorie
   if (filtreMode === 'sous-cat' && hasSousCats) {
     const sousCatsDispos = [];
-    parCategorie.forEach(p => {
+    parCatActive.forEach(p => {
       if (p.sous_categories && !sousCatsDispos.find(s => s.nom === p.sous_categories.nom)) {
         sousCatsDispos.push(p.sous_categories);
       }
@@ -973,10 +997,10 @@ function renderPostes() {
     }
 
     const postesFiltrés = currentSousCatFilter
-      ? parCategorie.filter(p => p.sous_categories && p.sous_categories.nom === currentSousCatFilter)
-      : parCategorie;
+      ? parCatActive.filter(p => p.sous_categories && p.sous_categories.nom === currentSousCatFilter)
+      : parCatActive;
     postesHtml = renderGroupesSousCat(postesFiltrés);
-    content.innerHTML = modeToggleHtml + filtreHtml + `<div style="padding:20px 0">${postesHtml}</div>`;
+    content.innerHTML = modeToggleHtml + catFilterBar + filtreHtml + `<div style="padding:20px 0">${postesHtml}</div>`;
     return;
   }
 
@@ -991,7 +1015,7 @@ function renderPostes() {
     </div>`;
 
     if (currentPieceFilter) {
-      const filtered = parCategorie.filter(p => {
+      const filtered = parCatActive.filter(p => {
         if (p.pieces && p.pieces.length) return p.pieces.includes(currentPieceFilter);
         return p.piece === currentPieceFilter;
       });
@@ -1001,7 +1025,7 @@ function renderPostes() {
     } else {
       const byPiece = {};
       const SANS_PIECE = '__sans__';
-      parCategorie.forEach(poste => {
+      parCatActive.forEach(poste => {
         const pcs = (poste.pieces&&poste.pieces.length) ? poste.pieces : (poste.piece ? [poste.piece] : [SANS_PIECE]);
         pcs.forEach(pc => {
           if (!byPiece[pc]) byPiece[pc] = [];
@@ -1016,10 +1040,10 @@ function renderPostes() {
       }).join('');
     }
   } else {
-    postesHtml = renderGroupesSousCat(parCategorie);
+    postesHtml = renderGroupesSousCat(parCatActive);
   }
 
-  content.innerHTML = modeToggleHtml + filtreHtml + `<div style="padding:20px 0">${postesHtml}</div>`;
+  content.innerHTML = modeToggleHtml + catFilterBar + filtreHtml + `<div style="padding:20px 0">${postesHtml}</div>`;
 }
 
 function buildPosteHTML(poste) {

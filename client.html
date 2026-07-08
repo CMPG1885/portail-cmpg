@@ -173,8 +173,22 @@ body { font-family: 'Roboto', sans-serif; background: var(--fond); color: var(--
 
 /* Simple (option unique) */
 .option-simple { padding: 20px; display: grid; grid-template-columns: 120px 1fr auto; gap: 20px; align-items: start; }
-.option-photo { width: 120px; height: 90px; object-fit: contain; background: var(--fond); border: 1px solid var(--bord); }
+.option-photo { width: 120px; height: 90px; object-fit: contain; background: var(--fond); border: 1px solid var(--bord); cursor: zoom-in; transition: opacity .15s; }
+.option-photo:hover { opacity: .85; }
 .option-photo-placeholder { width: 120px; height: 90px; background: var(--fond); border: 1px solid var(--bord); display: flex; align-items: center; justify-content: center; font-size: 32px; }
+
+/* ===== LIGHTBOX ===== */
+#lightbox-overlay {
+  display: none; position: fixed; inset: 0; background: rgba(0,0,0,.88);
+  z-index: 9999; align-items: center; justify-content: center; cursor: zoom-out;
+}
+#lightbox-overlay.open { display: flex; }
+#lightbox-overlay img { max-width: 90vw; max-height: 88vh; object-fit: contain; box-shadow: 0 8px 60px rgba(0,0,0,.5); }
+#lightbox-close {
+  position: absolute; top: 20px; right: 28px; color: #fff; font-size: 32px;
+  cursor: pointer; background: none; border: none; line-height: 1; opacity: .7;
+}
+#lightbox-close:hover { opacity: 1; }
 .option-details h4 { font-size: 15px; font-weight: 500; margin-bottom: 4px; }
 .option-details .fabricant { font-size: 12px; color: var(--caramel); text-transform: uppercase; letter-spacing: 1px; margin-bottom: 8px; }
 .option-details .specs { font-size: 12px; color: var(--texte-2); line-height: 1.6; }
@@ -431,8 +445,10 @@ body { font-family: 'Roboto', sans-serif; background: var(--fond); color: var(--
     </select>
   </div>
 
-  <!-- Navigation volets (générée dynamiquement) -->
-  <nav class="volet-nav" id="volet-nav" style="display:none"></nav>
+  <!-- Navigation volets (toujours visible — Devis d'approbation par défaut) -->
+  <nav class="volet-nav" id="volet-nav">
+    <div class="volet-tab active" onclick="basculerVolet('devis', this)">📋 Devis d'approbation</div>
+  </nav>
 
   <!-- Zone volet "autre" (tableau d'ambiance, plans, factures…) -->
   <div id="volet-autre" style="display:none"></div>
@@ -459,7 +475,7 @@ body { font-family: 'Roboto', sans-serif; background: var(--fond); color: var(--
     </div>
     <div class="prog-stat">
       <div class="value" id="prog-revoir" style="color:var(--caramel)">—</div>
-      <div class="label" style="color:var(--caramel)">En attente</div>
+      <div class="label" style="color:var(--caramel)">Décisions restantes</div>
     </div>
     <div class="prog-stat">
       <div class="value" id="prog-budget" style="color:var(--caramel);font-size:18px">—</div>
@@ -532,6 +548,12 @@ body { font-family: 'Roboto', sans-serif; background: var(--fond); color: var(--
       <button class="btn btn-dark btn-envoyer" onclick="envoyerCommentaire()">Confirmer le rejet</button>
     </div>
   </div>
+</div>
+
+<!-- Lightbox zoom image -->
+<div id="lightbox-overlay" onclick="fermerLightbox()">
+  <button id="lightbox-close" onclick="fermerLightbox()">×</button>
+  <img id="lightbox-img" src="" alt="" onclick="event.stopPropagation()" />
 </div>
 
 <div id="toast-container"></div>
@@ -636,41 +658,76 @@ async function chargerProjetsClient(email) {
 // ============================================================
 // VOLETS (onglets modulaires par projet)
 // ============================================================
+const VOLET_LABELS = {
+  devis:              { label: "Devis d'approbation", icon: '📋' },
+  tableau_ambiance:   { label: "Tableau d'ambiance",  icon: '🎨' },
+  approbation_plans:  { label: 'Plans et rendus 3D',  icon: '📐' },
+  approbation_budget: { label: 'Approbation du budget', icon: '💰' },
+  plans_finals:       { label: 'Plans finaux',         icon: '📄' },
+  procuration:        { label: 'Procuration',          icon: '✍️' },
+  offre_service:      { label: "Offre de service",     icon: '📝' },
+  factures:           { label: 'Factures',             icon: '🧾' },
+};
+
 async function chargerVoletsClient() {
-  const container = document.getElementById('volet-autre');
-  if (!container) return;
+  const nav = document.getElementById('volet-nav');
+  if (!nav) return;
+
+  let extraVolets = [];
   try {
-    const { data: volets, error } = await db
+    const { data } = await db
       .from('volets_projet')
       .select('*')
       .eq('projet_id', currentProjetId)
       .eq('actif', true)
       .order('ordre');
+    extraVolets = (data || []).filter(v => v.type_volet !== 'devis');
+  } catch(e) { /* Table may not exist yet */ }
 
-    if (error || !volets || volets.length === 0) {
-      container.innerHTML = '';
-      return;
-    }
+  // Toujours afficher "Devis d'approbation" en premier
+  nav.innerHTML = `<div class="volet-tab active" onclick="basculerVolet('devis', this)">📋 Devis d'approbation</div>`
+    + extraVolets.map(v => {
+        const info = VOLET_LABELS[v.type_volet] || { label: v.type_volet, icon: '📁' };
+        return `<div class="volet-tab" onclick="basculerVolet('${v.type_volet}', this)">${info.icon} ${info.label}</div>`;
+      }).join('');
+}
 
-    const VOLET_LABELS = {
-      tableau_ambiance:   "Tableau d'ambiance",
-      approbation_plans:  "Approbation des plans",
-      approbation_budget: "Approbation du budget",
-      plans_finals:       "Plans finaux",
-      procuration:        "Procuration",
-      offre_service:      "Offre de service",
-      factures:           "Factures",
-    };
+function basculerVolet(type, el) {
+  document.querySelectorAll('.volet-tab').forEach(t => t.classList.remove('active'));
+  el.classList.add('active');
+  currentVolet = type;
 
-    container.innerHTML = volets.map(v => `
-      <div style="padding:20px;border:1px solid var(--bord);border-radius:4px;margin-bottom:12px">
-        <h3 style="font-size:15px;margin:0 0 8px">${VOLET_LABELS[v.type_volet] || v.type_volet}</h3>
-        <p style="font-size:13px;color:var(--texte-2);margin:0">Documents et informations à venir.</p>
-      </div>`).join('');
-  } catch(e) {
-    // Table volets_projet non encore créée — silencieux
+  if (type === 'devis') {
+    document.getElementById('volet-devis').style.display = '';
+    document.getElementById('volet-autre').style.display = 'none';
+  } else {
+    document.getElementById('volet-devis').style.display = 'none';
+    const container = document.getElementById('volet-autre');
+    container.style.display = '';
+    const info = VOLET_LABELS[type] || { label: type, icon: '📁' };
+    container.innerHTML = `
+      <div style="text-align:center;padding:60px 20px;color:var(--texte-2)">
+        <div style="font-size:52px;margin-bottom:20px">${info.icon}</div>
+        <h3 style="font-family:'Noto Serif Display',serif;font-size:22px;color:var(--charcoal);margin-bottom:10px">${info.label}</h3>
+        <p style="font-size:13px;line-height:1.7">Cette section sera disponible prochainement.<br>Votre designer vous contactera lorsque des documents seront prêts.</p>
+      </div>`;
   }
 }
+
+// ============================================================
+// LIGHTBOX
+// ============================================================
+function ouvrirLightbox(src) {
+  const img = document.getElementById('lightbox-img');
+  if (img) img.src = src;
+  document.getElementById('lightbox-overlay')?.classList.add('open');
+  document.addEventListener('keydown', _lightboxEsc);
+}
+function fermerLightbox() {
+  document.getElementById('lightbox-overlay')?.classList.remove('open');
+  document.removeEventListener('keydown', _lightboxEsc);
+}
+function _lightboxEsc(e) { if (e.key === 'Escape') fermerLightbox(); }
 
 // ============================================================
 // PROJET
@@ -684,7 +741,7 @@ async function chargerProjet() {
   document.getElementById('volet-devis').style.display = '';
   document.getElementById('volet-autre').style.display = 'none';
 
-  // Charger les volets actifs pour ce projet
+  // Reconstruire la nav avec les volets actifs du projet
   await chargerVoletsClient();
 
   // Charger tous les postes avec options
@@ -1065,7 +1122,7 @@ function buildOptionContent(opt, isMultiple, posteId) {
 
   return `
     ${bp.photo_url
-      ? `<img src="${bp.photo_url}" class="option-photo" onerror="this.parentNode.replaceChild(Object.assign(document.createElement('div'),{className:'option-photo-placeholder',innerHTML:'📦'}),this)" />`
+      ? `<img src="${bp.photo_url}" class="option-photo" onclick="ouvrirLightbox(this.src)" title="Cliquer pour agrandir" onerror="this.parentNode.replaceChild(Object.assign(document.createElement('div'),{className:'option-photo-placeholder',innerHTML:'📦'}),this)" />`
       : '<div class="option-photo-placeholder">📦</div>'
     }
     <div class="option-details">
@@ -1338,15 +1395,16 @@ function mettreAJourProgression() {
     ? allPostes
     : allPostes.filter(p => p.categories && p.categories.id === currentCategorie);
 
+  // Total = tous les items (sauf markers dépréciés __rejete__)
   const opts = postesScope.flatMap(p => (p.options_produits || []).filter(o =>
-    o.statut_client !== 'annulé' &&
-    o.statut_client !== '__rejete__' &&
-    !(o.statut_client === 'à_revoir' && o.commentaire_client === 'Article non nécessaire')
+    o.statut_client !== '__rejete__'
   ));
   const total     = opts.length;
+  // "Fait" = le client a posé une action (tout sauf en_attente)
+  const done      = opts.filter(o => o.statut_client !== 'en_attente').length;
   const approuves = opts.filter(o => o.statut_client === 'approuvé').length;
-  const aRevoir   = opts.filter(o => o.statut_client === 'à_revoir').length;
-  const pct       = total > 0 ? Math.round(approuves / total * 100) : 0;
+  const enAttente = opts.filter(o => o.statut_client === 'en_attente').length;
+  const pct       = total > 0 ? Math.round(done / total * 100) : 0;
 
   const budget = postesScope
     .flatMap(p => (p.options_produits || []).filter(o => o.statut_client === 'approuvé'))
@@ -1367,7 +1425,7 @@ function mettreAJourProgression() {
   set('prog-total',     total);
   set('prog-pct',       pct + ' %');
   set('prog-approuves', approuves);
-  set('prog-revoir',    aRevoir);
+  set('prog-revoir',    enAttente);
   set('prog-budget',    budget > 0 ? budget.toLocaleString('fr-CA', { style: 'currency', currency: 'CAD' }) : '—');
 
   const fill = document.getElementById('prog-fill');

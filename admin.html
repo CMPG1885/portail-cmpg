@@ -304,7 +304,7 @@ body { font-family: 'Roboto', sans-serif; background: var(--fond); color: var(--
   <div class="auth-card">
     <div class="auth-logo">
       <h1>CMPG</h1>
-      <p>Architecture & Design</p>
+      <p>Design Construction</p>
     </div>
     <input type="email" id="login-email" placeholder="Adresse courriel" />
     <input type="password" id="login-password" placeholder="Mot de passe" />
@@ -1219,35 +1219,48 @@ async function chargerPostes() {
       const nextLetter = allLetters.find(l => !usedLetters.includes(l)) || '';
       const isMultiple = poste.type_selection === 'multiple';
 
-      let optionsHTML = options.length === 0
-        ? '<div style="padding:12px 16px;font-size:12px;color:var(--texte-2)">Aucune option — ajoutez un produit.</div>'
-        : options
-            .sort((a, b) => (a.lettre_option || 'A').localeCompare(b.lettre_option || 'A'))
-            .map(opt => {
+      const activeOptions  = options.filter(o => o.statut_client !== 'annulé' && !(o.statut_client === 'à_revoir' && o.commentaire_client === 'Article non nécessaire'));
+      const retiredOptions = options.filter(o => o.statut_client === 'annulé' || (o.statut_client === 'à_revoir' && o.commentaire_client === 'Article non nécessaire'));
+
+      const renderOptRow = (opt, retired = false) => {
               const bp = opt.banque_produits;
               const sc = opt.statut_client || 'en_attente';
               const statusClass = 'status-' + sc.replace('é', 'e').replace('_', '');
-              const statusLabel = { 'en_attente': 'En attente', 'approuvé': 'Approuvé', 'à_revoir': 'À revoir' }[sc] || sc;
+              const statusLabel = { 'en_attente': 'En attente', 'approuvé': 'Approuvé', 'à_revoir': 'À revoir', 'annulé': 'Retiré' }[sc] || sc;
               const canDelete = sc !== 'approuvé';
-              const isARevoir = sc === 'à_revoir';
-              return `<div class="option-row" style="${isARevoir ? 'border-left:3px solid var(--caramel)' : ''}">
+              const isARevoir = sc === 'à_revoir' && !retired;
+              return `<div class="option-row" style="${isARevoir ? 'border-left:3px solid var(--caramel)' : ''}${retired ? 'opacity:.6;background:var(--fond)' : ''}">
                 <div class="option-letter">Opt. ${opt.lettre_option}</div>
                 <div class="option-status ${statusClass}">${statusLabel}</div>
                 <div style="flex:1">
                   ${bp ? `<div style="font-size:13px;font-weight:500">${bp.nom || ''}</div>
                   <div style="font-size:11px;color:var(--texte-2)">${[bp.fabricant, bp.modele, bp.couleur].filter(Boolean).join(' · ')}</div>` : '<div style="font-size:12px;color:var(--texte-2)">Produit non disponible</div>'}
-                  ${opt.commentaire_client && opt.commentaire_client !== '__rejete__' ? `<div style="font-size:11px;color:var(--caramel);margin-top:3px">💬 ${opt.commentaire_client}</div>` : ''}
+                  ${opt.commentaire_client && opt.commentaire_client !== '__rejete__' && opt.commentaire_client !== 'Article non nécessaire' ? `<div style="font-size:11px;color:var(--caramel);margin-top:3px">💬 ${opt.commentaire_client}</div>` : ''}
                 </div>
                 <div style="text-align:right;display:flex;flex-direction:column;align-items:flex-end;gap:4px">
                   ${bp && bp.prix ? `<div style="font-size:13px;font-weight:500">$${Number(bp.prix * opt.quantite).toLocaleString('fr-CA')}</div>` : ''}
                   <div style="font-size:11px;color:var(--texte-2)">Qté: ${opt.quantite}</div>
                   ${isARevoir ? `<button class="btn btn-outline btn-sm" style="font-size:10px;padding:2px 8px;color:#1a5c2a;border-color:#1a5c2a" onclick="event.stopPropagation();remplacerOption('${opt.id}','${opt.lettre_option}',${opt.quantite})">↻ Proposer un remplacement</button>` : ''}
-                  ${!isARevoir && !opt.pre_approuve_cmpg ? `<button class="btn btn-outline btn-sm" style="font-size:10px;padding:2px 8px;color:var(--caramel);border-color:var(--caramel)" onclick="event.stopPropagation();preApprouverOption('${opt.id}')">✓ Pré-approuver</button>` : ''}
-                  ${opt.pre_approuve_cmpg ? `<span style="font-size:9px;background:var(--charcoal);color:var(--caramel);padding:2px 7px;letter-spacing:.5px">✓ Pré-approuvé CMPG</span>` : ''}
+                  ${!isARevoir && !retired && !opt.pre_approuve_cmpg ? `<button class="btn btn-outline btn-sm" style="font-size:10px;padding:2px 8px;color:var(--caramel);border-color:var(--caramel)" onclick="event.stopPropagation();preApprouverOption('${opt.id}',true)">✓ Pré-approuver</button>` : ''}
+                  ${opt.pre_approuve_cmpg ? `<span style="display:inline-flex;align-items:center;gap:4px;font-size:9px;background:var(--charcoal);color:var(--caramel);padding:2px 7px;letter-spacing:.5px">✓ Pré-approuvé CMPG<button onclick="event.stopPropagation();preApprouverOption('${opt.id}',false)" style="background:none;border:none;color:var(--caramel);cursor:pointer;font-size:10px;padding:0;margin-left:2px" title="Annuler la pré-approbation">✕</button></span>` : ''}
                   ${canDelete ? `<button class="btn btn-outline btn-sm" style="font-size:10px;padding:2px 8px;color:var(--danger);border-color:var(--danger)" onclick="event.stopPropagation();supprimerOption('${opt.id}','${(bp?.nom||'ce produit').replace(/'/g,"\\'")}')">✕</button>` : ''}
                 </div>
               </div>`;
-            }).join('');
+      };
+
+      const retiredHTML = retiredOptions.length > 0 ? `
+        <details style="border-top:1px solid var(--bord)">
+          <summary style="padding:8px 16px;font-size:11px;color:var(--texte-2);cursor:pointer;list-style:none;display:flex;align-items:center;gap:6px">
+            <span>▸</span> <span>Articles retirés (${retiredOptions.length})</span>
+          </summary>
+          ${retiredOptions.sort((a,b)=>(a.lettre_option||'A').localeCompare(b.lettre_option||'A')).map(o => renderOptRow(o, true)).join('')}
+        </details>` : '';
+
+      let optionsHTML = activeOptions.length === 0 && retiredOptions.length === 0
+        ? '<div style="padding:12px 16px;font-size:12px;color:var(--texte-2)">Aucune option — ajoutez un produit.</div>'
+        : (activeOptions.length === 0 ? '' : activeOptions
+            .sort((a, b) => (a.lettre_option || 'A').localeCompare(b.lettre_option || 'A'))
+            .map(opt => renderOptRow(opt)).join('')) + retiredHTML;
 
       const typeBadge = isMultiple
         ? `<span style="font-size:10px;background:rgba(207,147,79,.15);color:var(--caramel);padding:2px 7px;letter-spacing:.5px">MULTIPLE</span>`
@@ -1700,14 +1713,13 @@ async function supprimerOption(optionId, nomProduit) {
   chargerPostes();
 }
 
-async function preApprouverOption(optionId) {
-  const { error } = await db.from('options_produits').update({
-    statut_client:    'approuvé',
-    pre_approuve_cmpg: true,
-    date_decision:    new Date().toISOString()
-  }).eq('id', optionId);
+async function preApprouverOption(optionId, activer) {
+  const payload = activer
+    ? { statut_client: 'approuvé', pre_approuve_cmpg: true,  date_decision: new Date().toISOString() }
+    : { statut_client: 'en_attente', pre_approuve_cmpg: false, date_decision: null };
+  const { error } = await db.from('options_produits').update(payload).eq('id', optionId);
   if (error) { toast('Erreur : ' + error.message, 'error'); return; }
-  toast('Pré-approbation CMPG enregistrée.', 'success');
+  toast(activer ? 'Pré-approbation CMPG enregistrée.' : 'Pré-approbation annulée.', 'success');
   chargerPostes();
 }
 
@@ -2311,7 +2323,7 @@ async function genererExcel_base(mode) {
 
   // ── Workbook ──
   const wb = new ExcelJS.Workbook();
-  wb.creator = 'CMPG Architecture & Design';
+  wb.creator = 'CMPG Design Construction';
   wb.created = new Date();
 
   const nomProjet = projet?.nom || 'Projet';
@@ -2524,7 +2536,7 @@ async function initNotifications() {
 
 async function rafraichirNotifications() {
   const { data } = await db.from('notifications_log')
-    .select('*').order('created_at', { ascending: false }).limit(50);
+    .select('*, projets(nom)').order('created_at', { ascending: false }).limit(50);
   if (!data) return;
   const lastSeen = getLastSeenNotif();
   const nonLus   = data.filter(n => n.created_at > lastSeen).length;
@@ -2542,7 +2554,7 @@ async function toggleNotifPanel() {
   document.getElementById('notif-panel')?.classList.add('open');
   document.getElementById('notif-backdrop')?.classList.add('open');
   const { data } = await db.from('notifications_log')
-    .select('*').order('created_at', { ascending: false }).limit(50);
+    .select('*, projets(nom)').order('created_at', { ascending: false }).limit(50);
   _renderNotifList(data || [], getLastSeenNotif());
 }
 
@@ -2556,7 +2568,7 @@ function marquerToutLu() {
   localStorage.setItem('cmpg_notif_last_seen', new Date().toISOString());
   const badge = document.getElementById('notif-badge');
   if (badge) { badge.textContent = '0'; badge.classList.remove('visible'); }
-  db.from('notifications_log').select('*').order('created_at', { ascending: false }).limit(50)
+  db.from('notifications_log').select('*, projets(nom)').order('created_at', { ascending: false }).limit(50)
     .then(({ data }) => _renderNotifList(data || [], getLastSeenNotif()));
 }
 
@@ -2573,13 +2585,19 @@ function _renderNotifList(data, lastSeen) {
     annule:   { label: 'Article non nécessaire', cls: 'annule'   },
   };
   list.innerHTML = data.map(n => {
-    const unread = n.created_at > lastSeen;
-    const tl   = TYPE_LABELS[n.type] || { label: n.type || 'Notification', cls: '' };
-    const date = new Date(n.created_at).toLocaleString('fr-CA', { dateStyle: 'short', timeStyle: 'short' });
+    const unread   = n.created_at > lastSeen;
+    const tl       = TYPE_LABELS[n.type] || { label: n.type || 'Notification', cls: '' };
+    const date     = new Date(n.created_at).toLocaleString('fr-CA', { dateStyle: 'medium', timeStyle: 'short' });
+    const projetNom = n.projets?.nom || n.contenu?.projet_nom || '';
+    const produit   = n.contenu?.nom_produit || '';
+    const commentaire = n.contenu?.commentaire || '';
     return `<div class="notif-item ${unread ? 'unread' : 'read'}">
       <div class="notif-type ${tl.cls}">${tl.label}</div>
-      <div class="notif-desc">${n.description || ''}</div>
-      <div class="notif-meta">${n.projet_nom || ''} · ${date}</div>
+      ${produit    ? `<div class="notif-desc" style="font-weight:500">📦 ${produit}</div>` : ''}
+      ${commentaire ? `<div class="notif-desc" style="font-style:italic;color:var(--texte-2)">💬 "${commentaire}"</div>` : ''}
+      <div class="notif-meta">
+        ${projetNom ? `<span style="color:var(--caramel)">📁 ${projetNom}</span> · ` : ''}${date}
+      </div>
     </div>`;
   }).join('');
 }

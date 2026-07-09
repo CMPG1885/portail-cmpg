@@ -714,8 +714,24 @@ body { font-family: 'Roboto', sans-serif; background: var(--fond); color: var(--
           <textarea id="ap-carac" placeholder="Résine composite, 1 cuve, vidange incluse…"></textarea>
         </div>
         <div class="form-group form-full">
-          <label>URL Photo</label>
-          <input type="url" id="ap-photo" placeholder="https://..." />
+          <label>Photo</label>
+          <div style="display:flex;gap:8px;align-items:center">
+            <input type="url" id="ap-photo" placeholder="https://… ou téléverser →" style="flex:1"
+              oninput="apercuPhotoUrl(this.value)" />
+            <label class="btn btn-outline btn-sm" style="cursor:pointer;white-space:nowrap;padding:7px 14px">
+              ↑ Téléverser
+              <input type="file" id="ap-photo-file" accept="image/jpeg,image/png,image/webp,image/gif"
+                style="display:none" onchange="telechargerPhoto(this)">
+            </label>
+          </div>
+          <div id="ap-photo-wrap" style="display:none;margin-top:10px;align-items:center;gap:12px">
+            <img id="ap-photo-img" referrerpolicy="no-referrer"
+              style="width:90px;height:68px;object-fit:contain;border:1px solid var(--bord);background:var(--fond)" />
+            <button type="button" onclick="effacerPhoto()"
+              style="font-size:11px;background:none;border:none;cursor:pointer;color:var(--danger);letter-spacing:.5px">
+              ✕ Effacer
+            </button>
+          </div>
         </div>
         <div class="form-group">
           <label>Statut</label>
@@ -2052,6 +2068,7 @@ function resetModalProduit() {
     .forEach(id => { const el = document.getElementById(id); if(el) el.value = ''; });
   const statutEl = document.getElementById('ap-statut');
   if (statutEl) statutEl.value = 'actif';
+  effacerPhoto();
 }
 
 async function supprimerProduit(id, nom) {
@@ -2080,9 +2097,72 @@ function editerProduit(id) {
   document.getElementById('ap-photo').value       = p.photo_url || '';
   document.getElementById('ap-notes').value       = p.notes_internes || '';
   document.getElementById('ap-statut').value      = p.statut || 'actif';
+  apercuPhotoUrl(p.photo_url || '');
   document.querySelector('#modal-ajout-produit .modal-header h3').textContent = 'Modifier le produit';
   document.querySelector('#modal-ajout-produit .modal-footer .btn-dark').textContent = 'Enregistrer';
   openModal('modal-ajout-produit');
+}
+
+// ============================================================
+// PHOTO UPLOAD — Supabase Storage
+// ============================================================
+function apercuPhotoUrl(url) {
+  const wrap = document.getElementById('ap-photo-wrap');
+  const img  = document.getElementById('ap-photo-img');
+  if (!wrap || !img) return;
+  if (url) {
+    img.src = url;
+    wrap.style.display = 'flex';
+  } else {
+    wrap.style.display = 'none';
+  }
+}
+
+function effacerPhoto() {
+  document.getElementById('ap-photo').value = '';
+  const fileInput = document.getElementById('ap-photo-file');
+  if (fileInput) fileInput.value = '';
+  const wrap = document.getElementById('ap-photo-wrap');
+  if (wrap) wrap.style.display = 'none';
+}
+
+async function telechargerPhoto(input) {
+  const file = input.files[0];
+  if (!file) return;
+
+  if (!file.type.startsWith('image/')) {
+    toast('Seules les images sont acceptées (jpg, png, webp…)', 'error');
+    input.value = '';
+    return;
+  }
+  if (file.size > 8 * 1024 * 1024) {
+    toast('L\'image ne doit pas dépasser 8 Mo.', 'error');
+    input.value = '';
+    return;
+  }
+
+  toast('Téléversement en cours…', 'info');
+
+  const ext    = file.name.split('.').pop().toLowerCase().replace('jpg','jpeg');
+  const chemin = `produits/${Date.now()}-${Math.random().toString(36).slice(2,8)}.${ext}`;
+
+  const { error } = await db.storage
+    .from('photos-produits')
+    .upload(chemin, file, { cacheControl: '31536000', upsert: false });
+
+  if (error) {
+    toast('Erreur : ' + error.message, 'error');
+    input.value = '';
+    return;
+  }
+
+  const { data: { publicUrl } } = db.storage
+    .from('photos-produits')
+    .getPublicUrl(chemin);
+
+  document.getElementById('ap-photo').value = publicUrl;
+  apercuPhotoUrl(publicUrl);
+  toast('✓ Photo téléversée !', 'success');
 }
 
 // ============================================================
@@ -2555,6 +2635,10 @@ async function toggleNotifPanel() {
   document.getElementById('notif-backdrop')?.classList.add('open');
   const { data } = await db.from('notifications_log')
     .select('*, projets(nom)').order('created_at', { ascending: false }).limit(50);
+  // Marquer automatiquement comme lues à l'ouverture du panneau
+  localStorage.setItem('cmpg_notif_last_seen', new Date().toISOString());
+  const badge = document.getElementById('notif-badge');
+  if (badge) { badge.textContent = '0'; badge.classList.remove('visible'); }
   _renderNotifList(data || [], getLastSeenNotif());
 }
 
@@ -2591,7 +2675,9 @@ function _renderNotifList(data, lastSeen) {
     const projetNom = n.projets?.nom || n.contenu?.projet_nom || '';
     const produit   = n.contenu?.nom_produit || '';
     const commentaire = n.contenu?.commentaire || '';
-    return `<div class="notif-item ${unread ? 'unread' : 'read'}">
+    const projetId  = n.projet_id || '';
+    const clickable = projetId ? `onclick="fermerNotifPanel();ouvrirProjet('${projetId}')" style="cursor:pointer"` : '';
+    return `<div class="notif-item ${unread ? 'unread' : 'read'}" ${clickable}>
       <div class="notif-type ${tl.cls}">${tl.label}</div>
       ${produit    ? `<div class="notif-desc" style="font-weight:500">📦 ${produit}</div>` : ''}
       ${commentaire ? `<div class="notif-desc" style="font-style:italic;color:var(--texte-2)">💬 "${commentaire}"</div>` : ''}

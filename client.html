@@ -1156,7 +1156,7 @@ function buildOptionContent(opt, isMultiple, posteId) {
 
   return `
     ${bp.photo_url
-      ? `<img src="${bp.photo_url}" class="option-photo" onclick="ouvrirLightbox(this.src)" title="Cliquer pour agrandir" onerror="this.parentNode.replaceChild(Object.assign(document.createElement('div'),{className:'option-photo-placeholder',innerHTML:'📦'}),this)" />`
+      ? `<img src="${bp.photo_url}" referrerpolicy="no-referrer" class="option-photo" onclick="ouvrirLightbox(this.src)" title="Cliquer pour agrandir" onerror="this.parentNode.replaceChild(Object.assign(document.createElement('div'),{className:'option-photo-placeholder',innerHTML:'📦'}),this)" />`
       : '<div class="option-photo-placeholder">📦</div>'
     }
     <div class="option-details">

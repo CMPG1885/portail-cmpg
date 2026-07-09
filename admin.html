@@ -1409,6 +1409,7 @@ async function chargerProduitsBanqueSelect() {
 // GESTION DES SLOTS D'OPTIONS (modal ajout/modif poste)
 // ============================================================
 let optionSlots = ['A']; // lettres actives
+let _editingOptionIds = {}; // lettre → id dans options_produits (mode édition)
 
 function onTypeSelectionChange() {
   renderOptionsSlots();
@@ -1539,12 +1540,40 @@ async function sauvegarderPoste() {
   };
 
   if (editingPosteId) {
-    // MODE MODIFICATION — on met à jour le poste uniquement
+    // MODE MODIFICATION — mettre à jour le poste ET les produits associés
     const { error } = await db.from('postes').update(payload).eq('id', editingPosteId);
     if (error) { toast('Erreur : ' + error.message, 'error'); return; }
+
+    // Mettre à jour / ajouter les options produits
+    for (const letter of optionSlots) {
+      const produitId = document.getElementById(`slot-prod-${letter}`)?.value || null;
+      const qty = parseInt(document.getElementById(`slot-qty-${letter}`)?.value) || 1;
+      const note = document.getElementById(`slot-note-${letter}`)?.value?.trim() || null;
+      const optId = _editingOptionIds[letter];
+
+      if (optId) {
+        // Mettre à jour l'option existante
+        await db.from('options_produits').update({
+          banque_produit_id: produitId || null,
+          quantite: qty,
+          note_client: note
+        }).eq('id', optId);
+      } else if (produitId) {
+        // Nouveau slot ajouté en mode édition — insérer
+        await db.from('options_produits').insert({
+          poste_id: editingPosteId,
+          banque_produit_id: produitId,
+          lettre_option: letter,
+          quantite: qty,
+          note_client: note
+        });
+      }
+    }
+
     closeModal('modal-ajout-poste');
     toast('Poste modifié avec succès.', 'success');
     editingPosteId = null;
+    _editingOptionIds = {};
     chargerPostes();
   } else {
     // MODE AJOUT — on crée le poste + toutes les options remplies
@@ -1593,8 +1622,38 @@ async function ouvrirModalEditerPoste(id) {
     : (poste.piece ? [poste.piece] : []);
   await construirePiecesChecklist(selectionnees);
 
+  // Charger la banque de produits puis les options existantes du poste
+  await chargerProduitsBanqueSelect();
+  const { data: existingOpts } = await db.from('options_produits')
+    .select('id, lettre_option, banque_produit_id, quantite, note_client')
+    .eq('poste_id', id)
+    .order('lettre_option');
+
+  // Mémoriser les IDs pour sauvegarder en mode édition
+  _editingOptionIds = {};
+  (existingOpts || []).forEach(opt => {
+    _editingOptionIds[opt.lettre_option] = opt.id;
+  });
+
+  // Configurer les slots selon les options existantes
+  optionSlots = (existingOpts || []).map(o => o.lettre_option);
+  if (optionSlots.length === 0) optionSlots = ['A'];
+
   const sectProduit = document.getElementById('poste-options-section');
-  if (sectProduit) sectProduit.style.display = 'none';
+  if (sectProduit) sectProduit.style.display = '';
+  renderOptionsSlots();
+
+  // Pré-remplir chaque slot avec le produit existant
+  (existingOpts || []).forEach(opt => {
+    const sel = document.getElementById(`slot-prod-${opt.lettre_option}`);
+    if (sel) { sel.value = opt.banque_produit_id || ''; }
+    mettreAJourApercuSlot(opt.lettre_option, opt.banque_produit_id);
+    const qty = document.getElementById(`slot-qty-${opt.lettre_option}`);
+    if (qty) qty.value = opt.quantite || 1;
+    const note = document.getElementById(`slot-note-${opt.lettre_option}`);
+    if (note) note.value = opt.note_client || '';
+  });
+
   const titreEl = document.querySelector('#modal-ajout-poste h3');
   if (titreEl) titreEl.textContent = 'Modifier le poste';
   const btnEl = document.querySelector('#modal-ajout-poste .modal-footer .btn-dark');
@@ -1799,9 +1858,11 @@ function renderProduits(produits) {
         ${avertissementPrix(p.date_verification_prix)}
       </td>
       <td>${badgeStatut(p.statut || 'actif')}</td>
-      <td>
-        <button class="btn btn-outline btn-sm" onclick="editerProduit('${p.id}')">Modifier</button>
-        <button class="btn btn-outline btn-sm" style="color:var(--danger);border-color:var(--danger);margin-left:6px" onclick="supprimerProduit('${p.id}','${(p.nom||'').replace(/'/g,"\\'")}')">Supprimer</button>
+      <td style="white-space:nowrap">
+        <div style="display:flex;align-items:center;gap:6px">
+          <button class="btn btn-outline btn-sm" onclick="editerProduit('${p.id}')">Modifier</button>
+          <button class="btn btn-outline btn-sm" style="color:var(--danger);border-color:var(--danger)" onclick="supprimerProduit('${p.id}','${(p.nom||'').replace(/'/g,"\\'")}')">Supprimer</button>
+        </div>
       </td>
     </tr>
   `).join('');

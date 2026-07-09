@@ -172,7 +172,7 @@ body { font-family: 'Roboto', sans-serif; background: var(--fond); color: var(--
 .selection-type-badge { font-size: 10px; padding: 3px 10px; background: var(--fond); color: var(--texte-2); }
 
 /* Simple (option unique) */
-.option-simple { padding: 20px; display: grid; grid-template-columns: 120px 1fr auto; gap: 20px; align-items: start; }
+.option-simple { padding: 20px; display: grid; grid-template-columns: 120px 1fr; gap: 20px; align-items: start; }
 .option-photo { width: 120px; height: 90px; object-fit: contain; background: var(--fond); border: 1px solid var(--bord); cursor: zoom-in; transition: opacity .15s; }
 .option-photo:hover { opacity: .85; }
 .option-photo-placeholder { width: 120px; height: 90px; background: var(--fond); border: 1px solid var(--bord); display: flex; align-items: center; justify-content: center; font-size: 32px; }
@@ -194,30 +194,36 @@ body { font-family: 'Roboto', sans-serif; background: var(--fond); color: var(--
 .option-details .specs { font-size: 12px; color: var(--texte-2); line-height: 1.6; }
 .option-details .note-cmpg { font-size: 12px; color: var(--texte-2); background: var(--fond); padding: 8px 12px; margin-top: 10px; border-left: 3px solid var(--caramel); }
 .option-details .prix { font-size: 16px; font-weight: 500; margin-top: 10px; }
-.option-actions { display: flex; flex-direction: column; gap: 8px; min-width: 130px; }
+.option-actions { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; margin-top: 14px; }
+.action-sep { color: #D8D4CE; font-size: 11px; user-select: none; }
 
 /* Options multiples (A/B/C) */
 .options-multiple { padding: 0; }
 .option-tab-nav { display: flex; border-bottom: 1px solid var(--bord); }
 .option-tab { padding: 12px 20px; font-size: 12px; letter-spacing: 1px; cursor: pointer; color: var(--texte-2); border-bottom: 2px solid transparent; }
 .option-tab.active { color: var(--charcoal); border-bottom-color: var(--caramel); font-weight: 500; }
-.option-tab-content { padding: 20px; display: none; grid-template-columns: 120px 1fr auto; gap: 20px; align-items: start; }
+.option-tab-content { padding: 20px; display: none; grid-template-columns: 120px 1fr; gap: 20px; align-items: start; }
 .option-tab-content.active { display: grid; }
 
-/* Boutons décision */
+/* Boutons décision — texte souligné horizontal */
 .btn-decision {
-  padding: 10px 14px; font-family: 'Roboto', sans-serif; font-size: 11px;
-  letter-spacing: 1px; text-transform: uppercase; cursor: pointer; border: none;
-  transition: all .15s; text-align: center;
+  background: none; border: none; padding: 0; cursor: pointer;
+  font-family: 'Roboto', sans-serif; font-size: 11px; letter-spacing: 1.5px;
+  text-transform: uppercase; text-decoration: underline;
+  text-underline-offset: 3px; text-decoration-thickness: 1px;
+  color: #B8B0A8; transition: color .18s; text-align: left;
 }
-.btn-approuver { background: rgba(75,122,92,.1); color: #4B7A5C; border: 1px solid rgba(75,122,92,.3); }
-.btn-approuver:hover, .btn-approuver.actif { background: #4B7A5C; color: var(--blanc); border-color: #4B7A5C; }
-.btn-revoir { background: rgba(139,58,58,.08); color: var(--danger); border: 1px solid rgba(139,58,58,.25); }
-.btn-revoir:hover, .btn-revoir.actif { background: var(--danger); color: var(--blanc); border-color: var(--danger); }
-.btn-rejeter { background: rgba(139,58,58,.06); color: var(--danger); border: 1px solid rgba(139,58,58,.2); font-size: 10px; }
-.btn-rejeter:hover, .btn-rejeter.actif { background: var(--danger); color: var(--blanc); border-color: var(--danger); }
-.btn-revision { background: rgba(207,147,79,.1); color: var(--caramel); border: 1px solid rgba(207,147,79,.3); }
-.btn-revision:hover, .btn-revision.actif { background: var(--caramel); color: var(--blanc); border-color: var(--caramel); }
+.btn-decision:hover { color: #706862; }
+.btn-approuver.actif  { color: #4A6E5A; text-decoration-color: #4A6E5A; font-weight: 500; }
+.btn-revoir.actif,
+.btn-rejeter.actif    { color: #7C5B5B; text-decoration-color: #7C5B5B; font-weight: 500; }
+.btn-revision.actif   { color: #8A7446; text-decoration-color: #8A7446; font-weight: 500; }
+.btn-annuler {
+  background: none; border: none; padding: 0; cursor: pointer;
+  font-family: 'Roboto', sans-serif; font-size: 10px; letter-spacing: 0.5px;
+  color: #B8B0A8; transition: color .18s;
+}
+.btn-annuler:hover { color: #706862; }
 
 /* ===== FILTRE MODE TOGGLE ===== */
 .filtre-mode-row { display: flex; align-items: center; background: var(--blanc); border-bottom: 1px solid var(--bord); margin-bottom: 0; }
@@ -1127,21 +1133,25 @@ function buildOptionContent(opt, isMultiple, posteId) {
     : '';
 
   // 3 boutons selon le mode
+  const hasDecision = isApprouve || isRevision || isRejete || isNonRetenu;
+  const btnAnnuler = hasDecision
+    ? `<span class="action-sep">·</span><button class="btn-annuler" onclick="reinitialiserDecision('${opt.id}','${posteId}',${isMultiple})">↩ annuler</button>`
+    : '';
   let btnApprouver, btnRevision, btnRejeter;
   if (isMultiple) {
     btnApprouver = `<button class="btn-decision btn-approuver ${isApprouve?'actif':''}"
-        onclick="choisirOption('${opt.id}','${posteId}')">✓ Choisir</button>`;
+        onclick="choisirOption('${opt.id}','${posteId}')">Choisir</button>`;
     btnRevision  = `<button class="btn-decision btn-revision ${isRevision?'actif':''}"
-        onclick="ouvrirCommentaire('${opt.id}','${nomEsc}')">↩ Révision</button>`;
+        onclick="ouvrirCommentaire('${opt.id}','${nomEsc}')">Révision</button>`;
     btnRejeter   = `<button class="btn-decision btn-revoir ${isNonRetenu?'actif':''}"
-        onclick="rejeterOption('${opt.id}','${nomEsc}')">✗ Ne pas retenir</button>`;
+        onclick="rejeterOption('${opt.id}','${nomEsc}')">Ne pas retenir</button>`;
   } else {
     btnApprouver = `<button class="btn-decision btn-approuver ${isApprouve?'actif':''}"
-        onclick="decider('${opt.id}','approuvé',this)">✓ Approuver</button>`;
+        onclick="decider('${opt.id}','approuvé',this)">Approuver</button>`;
     btnRevision  = `<button class="btn-decision btn-revision ${isRevision?'actif':''}"
-        onclick="ouvrirCommentaire('${opt.id}','${nomEsc}')">↩ Demande de révision</button>`;
+        onclick="ouvrirCommentaire('${opt.id}','${nomEsc}')">Révision</button>`;
     btnRejeter   = `<button class="btn-decision btn-rejeter ${isRejete?'actif':''}"
-        onclick="rejeterDirectement('${opt.id}','${nomEsc}','${posteId}')">✗ Rejeter</button>`;
+        onclick="rejeterDirectement('${opt.id}','${nomEsc}','${posteId}')">Ne pas retenir</button>`;
   }
 
   return `
@@ -1159,11 +1169,14 @@ function buildOptionContent(opt, isMultiple, posteId) {
       ${bp.url ? `<a href="${bp.url}" target="_blank" style="font-size:12px;color:var(--caramel);display:inline-block;margin-top:8px">↗ Voir le produit en ligne</a>` : ''}
       ${commentAffiche ? `<div style="font-size:12px;color:var(--caramel);margin-top:8px;font-style:italic">Votre note : "${commentAffiche}"</div>` : ''}
       ${dateAppHtml}
-    </div>
-    <div class="option-actions">
-      ${btnApprouver}
-      ${btnRevision}
-      ${btnRejeter}
+      <div class="option-actions">
+        ${btnApprouver}
+        <span class="action-sep">·</span>
+        ${btnRevision}
+        <span class="action-sep">·</span>
+        ${btnRejeter}
+        ${btnAnnuler}
+      </div>
     </div>
   `;
 }
@@ -1214,6 +1227,42 @@ async function decider(optionId, statut, btn) {
   });
 
   toast(statut === 'approuvé' ? '✓ Sélection approuvée !' : 'Demande de révision envoyée.', 'success');
+  mettreAJourProgression();
+  renderPostes();
+}
+
+// Annuler une décision — remet en_attente (option unique ou tout le poste si multiple)
+async function reinitialiserDecision(optionId, posteId, isMultiple) {
+  if (isMultiple) {
+    // Remettre toutes les options du poste en attente
+    const { error } = await db.from('options_produits').update({
+      statut_client: 'en_attente',
+      commentaire_client: null,
+      date_decision: null
+    }).eq('poste_id', posteId);
+    if (error) { toast('Erreur lors de la réinitialisation.', 'error'); return; }
+    allPostes.forEach(p => {
+      if (p.id === posteId) {
+        (p.options_produits || []).forEach(opt => {
+          opt.statut_client = 'en_attente';
+          opt.commentaire_client = null;
+          opt.date_decision = null;
+        });
+      }
+    });
+  } else {
+    const { error } = await db.from('options_produits').update({
+      statut_client: 'en_attente',
+      commentaire_client: null,
+      date_decision: null
+    }).eq('id', optionId);
+    if (error) { toast('Erreur lors de la réinitialisation.', 'error'); return; }
+    allPostes.forEach(p => {
+      const opt = (p.options_produits || []).find(o => o.id === optionId);
+      if (opt) { opt.statut_client = 'en_attente'; opt.commentaire_client = null; opt.date_decision = null; }
+    });
+  }
+  toast('Décision annulée.', 'info');
   mettreAJourProgression();
   renderPostes();
 }

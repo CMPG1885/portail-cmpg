@@ -729,14 +729,20 @@ body { font-family: 'Roboto', sans-serif; background: var(--fond); color: var(--
         </div>
         <div class="form-group form-full">
           <label>Photo</label>
-          <div style="display:flex;gap:8px;align-items:center">
-            <input type="url" id="ap-photo" placeholder="https://… ou téléverser →" style="flex:1"
+          <div id="ap-photo-dropzone" style="display:flex;gap:8px;align-items:center;border:1px dashed var(--bord);border-radius:6px;padding:6px;transition:border-color .15s,background .15s"
+            ondragover="event.preventDefault();this.style.borderColor='var(--caramel)';this.style.background='var(--fond)'"
+            ondragleave="this.style.borderColor='var(--bord)';this.style.background='transparent'"
+            ondrop="deposerPhoto(event)">
+            <input type="url" id="ap-photo" placeholder="https://… glisser une image ici, ou téléverser →" style="flex:1"
               oninput="apercuPhotoUrl(this.value)" />
             <label class="btn btn-outline btn-sm" style="cursor:pointer;white-space:nowrap;padding:7px 14px">
               ↑ Téléverser
               <input type="file" id="ap-photo-file" accept="image/jpeg,image/png,image/webp,image/gif"
                 style="display:none" onchange="telechargerPhoto(this)">
             </label>
+          </div>
+          <div style="font-size:11px;color:var(--texte-2);margin-top:4px">
+            Astuce : glissez-déposez une image directement depuis un autre onglet (ex. la page du fournisseur) dans le cadre ci-dessus — pas besoin de l'enregistrer avant.
           </div>
           <div id="ap-photo-wrap" style="display:none;margin-top:10px;align-items:center;gap:12px">
             <img id="ap-photo-img" referrerpolicy="no-referrer"
@@ -2195,40 +2201,75 @@ function effacerPhoto() {
 async function telechargerPhoto(input) {
   const file = input.files[0];
   if (!file) return;
+  await traiterFichierPhoto(file);
+  input.value = '';
+}
 
-  if (!file.type.startsWith('image/')) {
-    toast('Seules les images sont acceptées (jpg, png, webp…)', 'error');
-    input.value = '';
-    return;
-  }
-  if (file.size > 8 * 1024 * 1024) {
-    toast('L\'image ne doit pas dépasser 8 Mo.', 'error');
-    input.value = '';
-    return;
-  }
+// Glisser-déposer une image directement depuis un autre onglet (ex. la fiche
+// fournisseur) — évite le détour par "Enregistrer l'image sous…" + Explorateur.
+async function deposerPhoto(event) {
+  event.preventDefault();
+  event.currentTarget.style.borderColor = 'var(--bord)';
+  event.currentTarget.style.background = 'transparent';
 
-  toast('Téléversement en cours…', 'info');
+  const dt = event.dataTransfer;
+  const file = dt.files && dt.files[0];
 
-  const ext    = file.name.split('.').pop().toLowerCase().replace('jpg','jpeg');
-  const chemin = `produits/${Date.now()}-${Math.random().toString(36).slice(2,8)}.${ext}`;
-
-  const { error } = await db.storage
-    .from('photos-produits')
-    .upload(chemin, file, { cacheControl: '31536000', upsert: false });
-
-  if (error) {
-    toast('Erreur : ' + error.message, 'error');
-    input.value = '';
+  if (file) {
+    await traiterFichierPhoto(file);
     return;
   }
 
-  const { data: { publicUrl } } = db.storage
-    .from('photos-produits')
-    .getPublicUrl(chemin);
+  // Certains navigateurs ne fournissent qu'un lien (pas de fichier) lors du
+  // glisser d'une image protégée — on récupère l'URL si possible, sinon on guide.
+  const uri = dt.getData('text/uri-list') || dt.getData('text/plain');
+  if (uri && /^https?:\/\//i.test(uri)) {
+    document.getElementById('ap-photo').value = uri;
+    apercuPhotoUrl(uri);
+    toast('Lien d\'image détecté — vérifiez l\'aperçu ci-dessous avant d\'enregistrer.', 'info');
+  } else {
+    toast('Image non reconnue. Glissez l\'image elle-même (pas un lien), ou utilisez ↑ Téléverser.', 'error');
+  }
+}
 
-  document.getElementById('ap-photo').value = publicUrl;
-  apercuPhotoUrl(publicUrl);
-  toast('✓ Photo téléversée !', 'success');
+// Logique commune de téléversement, utilisée par le bouton ↑ Téléverser et le
+// glisser-déposer. Toute erreur — même inattendue — affiche un message visible
+// (plus jamais un échec silencieux sans indication).
+async function traiterFichierPhoto(file) {
+  try {
+    if (!file.type.startsWith('image/')) {
+      toast('Seules les images sont acceptées (jpg, png, webp…)', 'error');
+      return;
+    }
+    if (file.size > 8 * 1024 * 1024) {
+      toast('L\'image ne doit pas dépasser 8 Mo.', 'error');
+      return;
+    }
+
+    toast('Téléversement en cours…', 'info');
+
+    const ext    = (file.name.split('.').pop() || 'jpg').toLowerCase().replace('jpeg','jpg');
+    const chemin = `produits/${Date.now()}-${Math.random().toString(36).slice(2,8)}.${ext}`;
+
+    const { error } = await db.storage
+      .from('photos-produits')
+      .upload(chemin, file, { cacheControl: '31536000', upsert: false });
+
+    if (error) {
+      toast('Erreur : ' + error.message, 'error');
+      return;
+    }
+
+    const { data: { publicUrl } } = db.storage
+      .from('photos-produits')
+      .getPublicUrl(chemin);
+
+    document.getElementById('ap-photo').value = publicUrl;
+    apercuPhotoUrl(publicUrl);
+    toast('✓ Photo téléversée !', 'success');
+  } catch (e) {
+    toast('Erreur inattendue : ' + (e && e.message ? e.message : String(e)), 'error');
+  }
 }
 
 // ============================================================

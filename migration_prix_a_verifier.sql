@@ -1,0 +1,12 @@
+-- =====================================================
+-- Migration : colonne manquante prix_a_verifier — Juillet 2026
+-- Corrige le bouton "Enregistrer" du formulaire produit, qui échouait
+-- silencieusement sur TOUTE sauvegarde (ajout ou modification) car le
+-- code tentait d'écrire cette colonne, absente de banque_produits.
+-- Erreur observée : "Could not find the 'prix_a_verifier' column of
+-- 'banque_produits' in the schema cache" (PGRST204).
+--
+-- Déjà exécutée directement via Supabase MCP le 2026-07-31.
+-- Conservée ici pour la traçabilité du schéma.
+-- =====================================================
+ALTER TABLE banque_produits ADD COLUMN IF NOT EXISTS prix_a_verifier BOOLEAN NOT NULL DEFAULT false;

@@ -1,11 +1,12 @@
 <!DOCTYPE html>
-<html lang="fr">
+<html lang="fr" xmlns:mso="urn:schemas-microsoft-com:office:office" xmlns:msdt="uuid:C2F41010-65B3-11d1-A29F-00AA00C14882">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>CMPG — Portail Administration</title>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-<script src="https://cdn.jsdelivr.net/npm/exceljs@4.4.0/dist/exceljs.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/jspdf-autotable@3.8.2/dist/jspdf.plugin.autotable.min.js"></script>
 <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;500;700&family=Noto+Serif+Display:ital,wght@0,400;0,700;1,400&display=swap" rel="stylesheet">
 <style>
 /* ===== CMPG DESIGN SYSTEM ===== */
@@ -296,6 +297,14 @@ body { font-family: 'Roboto', sans-serif; background: var(--fond); color: var(--
 .notif-meta  { font-size: 10px; color: var(--texte-2); }
 .notif-empty { padding: 48px 20px; text-align: center; color: var(--texte-2); font-size: 13px; }
 </style>
+
+<!--[if gte mso 9]><xml>
+<mso:CustomDocumentProperties>
+<mso:MediaServiceImageTags msdt:dt="string"></mso:MediaServiceImageTags>
+<mso:lcf76f155ced4ddcb4097134ff3c332f msdt:dt="string"></mso:lcf76f155ced4ddcb4097134ff3c332f>
+<mso:TaxCatchAll msdt:dt="string"></mso:TaxCatchAll>
+</mso:CustomDocumentProperties>
+</xml><![endif]-->
 </head>
 <body>
 
@@ -389,8 +398,8 @@ body { font-family: 'Roboto', sans-serif; background: var(--fond); color: var(--
           <div id="detail-projet-client" style="font-size:12px;color:var(--caramel);letter-spacing:1px;text-transform:uppercase;margin-top:2px"></div>
         </div>
         <div style="display:flex;gap:10px">
-          <button class="btn btn-outline btn-sm" onclick="genererExcelClient()">⬇ Excel Client</button>
-          <button class="btn btn-caramel btn-sm" onclick="genererExcelChantier()">⬇ Excel Chantier</button>
+          <button class="btn btn-outline btn-sm" onclick="genererPDFClient()">⬇ PDF Client</button>
+          <button class="btn btn-caramel btn-sm" onclick="genererPDFChantier()">⬇ PDF Chantier</button>
         </div>
       </div>
       <div class="page-body">
@@ -446,6 +455,11 @@ body { font-family: 'Roboto', sans-serif; background: var(--fond); color: var(--
         <!-- Import URL rapide -->
         <div class="card">
           <div style="font-size:11px;letter-spacing:1.5px;text-transform:uppercase;color:var(--texte-2);margin-bottom:10px">Ajout rapide par URL</div>
+          <div id="bandeau-revalidation" style="display:none;background:#eef6f0;border:1px solid var(--bord);padding:10px 14px;margin-bottom:14px;font-size:13px"></div>
+          <div style="margin-bottom:14px">
+            <button class="btn btn-outline btn-sm" onclick="revaliderPrix()">↻ Revalider les prix</button>
+            <span id="reval-status" style="font-size:12px;color:var(--texte-2);margin-left:8px"></span>
+          </div>
           <div class="url-import">
             <input type="url" id="url-import-input" placeholder="https://www.espaceplomberium.com/products/..." />
             <button class="btn btn-caramel" onclick="importerParURL()">Importer</button>
@@ -744,6 +758,10 @@ body { font-family: 'Roboto', sans-serif; background: var(--fond); color: var(--
         <div class="form-group form-full">
           <label>Notes internes</label>
           <textarea id="ap-notes" placeholder="Notes CMPG (non visibles par le client)…"></textarea>
+        </div>
+        <div class="form-group form-full" id="ap-historique-wrap" style="display:none">
+          <label>Historique des prix</label>
+          <div id="ap-historique" style="font-size:12px;color:var(--texte-2)"></div>
         </div>
       </div>
     </div>
@@ -1091,12 +1109,21 @@ async function ouvrirModalNouveauProjet() {
   openModal('modal-nouveau-projet');
 }
 
+// Extrait le numéro de projet à partir des chiffres en début de nom
+// (ex. "2505 Mercier Thibault" → "2505"). Retourne null si le nom
+// ne commence pas par un numéro.
+function extraireNumeroProjet(nom) {
+  const m = (nom || '').trim().match(/^(\d+)/);
+  return m ? m[1] : null;
+}
+
 async function creerProjet() {
   const nom = document.getElementById('np-nom').value.trim();
   if (!nom) { toast('Le nom du projet est requis.', 'error'); return; }
 
   const { error } = await db.from('projets').insert({
     nom,
+    numero_projet: extraireNumeroProjet(nom),
     adresse: document.getElementById('np-adresse').value.trim() || null,
     client_id: document.getElementById('np-client').value || null,
     budget_min: parseFloat(document.getElementById('np-budget-min').value) || null,
@@ -1144,6 +1171,7 @@ async function sauvegarderProjet() {
 
   const { error } = await db.from('projets').update({
     nom,
+    numero_projet:       extraireNumeroProjet(nom),
     adresse:             document.getElementById('mp-adresse').value.trim() || null,
     client_id:           document.getElementById('mp-client').value || null,
     budget_min:          parseFloat(document.getElementById('mp-budget-min').value) || null,
@@ -1817,14 +1845,57 @@ async function chargerProduits() {
 
   produitsCache = data || [];
   renderProduits(produitsCache);
+  afficherBandeauRevalidation();
 }
 
-function badgeStatut(statut) {
+async function afficherBandeauRevalidation() {
+  const { data } = await db.from('revalidation_etat').select('resume, termine_a').eq('id', 1).maybeSingle();
+  const r = data?.resume;
+  if (!r || (!r.mis_a_jour && !r.signales && !r.echecs)) return;
+  const el = document.getElementById('bandeau-revalidation');
+  el.innerHTML = `Dernière revalidation : <strong>${r.mis_a_jour||0}</strong> prix mis à jour, <strong>${r.signales||0}</strong> à vérifier, <strong>${r.echecs||0}</strong> échec(s).`;
+  el.style.display = 'block';
+}
+
+async function revaliderPrix() {
+  const status = document.getElementById('reval-status');
+  status.innerHTML = '<span class="spinner"></span> Revalidation en cours…';
+  const { data: { session } } = await db.auth.getSession();
+  try {
+    // Boucle par lots jusqu'à termine=true.
+    let termine = false, garde = 0;
+    while (!termine && garde++ < 100) {
+      const resp = await fetch(`${SUPABASE_URL}/functions/v1/revalider-prix`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${session?.access_token}` },
+        body: '{}',
+      });
+      const j = await resp.json();
+      if (!j.ok) { status.innerHTML = '⚠️ ' + (j.erreur || 'Erreur'); return; }
+      termine = j.termine;
+    }
+    status.innerHTML = '✅ Revalidation terminée.';
+    await afficherBandeauRevalidation();
+    chargerProduits();
+  } catch (e) {
+    status.innerHTML = '⚠️ Serveur injoignable.';
+  }
+}
+
+function badgeStatut(p) {
+  const badges = [];
+  const statut = (typeof p === 'object') ? (p.statut || 'actif') : p;
+  const prixAVerif = (typeof p === 'object') ? p.prix_a_verifier : false;
+  const discontinueSugg = (typeof p === 'object') ? p.suggerer_discontinue : false;
   if (statut === 'discontinue')
-    return `<span style="background:#f8e0e0;color:var(--danger);font-size:10px;padding:2px 8px;letter-spacing:1px;text-transform:uppercase">Discontinué</span>`;
-  if (statut === 'prix_a_verifier')
-    return `<span style="background:#fef3e2;color:#b86c00;font-size:10px;padding:2px 8px;letter-spacing:1px;text-transform:uppercase">Prix à vérifier</span>`;
-  return `<span style="background:#e6f4ec;color:var(--success);font-size:10px;padding:2px 8px;letter-spacing:1px;text-transform:uppercase">Actif</span>`;
+    badges.push(`<span style="background:#f8e0e0;color:var(--danger);font-size:10px;padding:2px 8px;letter-spacing:1px;text-transform:uppercase">Discontinué</span>`);
+  else
+    badges.push(`<span style="background:#e6f4ec;color:var(--success);font-size:10px;padding:2px 8px;letter-spacing:1px;text-transform:uppercase">Actif</span>`);
+  if (prixAVerif)
+    badges.push(`<span style="background:#fef3e2;color:#b86c00;font-size:10px;padding:2px 8px;letter-spacing:1px;text-transform:uppercase">Prix à vérifier</span>`);
+  if (discontinueSugg)
+    badges.push(`<span style="background:#f3e8f8;color:#7a4b8a;font-size:10px;padding:2px 8px;letter-spacing:1px;text-transform:uppercase">Discontinué ?</span>`);
+  return badges.join(' ');
 }
 
 function avertissementPrix(dateVerif) {
@@ -1857,7 +1928,7 @@ function renderProduits(produits) {
         ${p.prix ? '$' + Number(p.prix).toLocaleString('fr-CA') : '—'}
         ${avertissementPrix(p.date_verification_prix)}
       </td>
-      <td>${badgeStatut(p.statut || 'actif')}</td>
+      <td>${badgeStatut(p)}</td>
       <td style="white-space:nowrap">
         <div style="display:flex;align-items:center;gap:6px">
           <button class="btn btn-outline btn-sm" onclick="editerProduit('${p.id}')">Modifier</button>
@@ -1889,180 +1960,68 @@ async function importerParURL() {
   const statusEl = document.getElementById('url-import-status');
   statusEl.innerHTML = '<span class="spinner"></span> Analyse en cours…';
 
-  // Vérification doublon avant tout
+  // Doublon
   const { data: doublon } = await db.from('banque_produits').select('id, nom').eq('url', url).maybeSingle();
   if (doublon) {
-    statusEl.innerHTML = `⛔ Ce produit est déjà dans la banque : <strong>${doublon.nom}</strong>. Utilisez le bouton Modifier si vous souhaitez le mettre à jour.`;
+    statusEl.innerHTML = `⛔ Ce produit est déjà dans la banque : <strong>${doublon.nom}</strong>. Utilisez Modifier pour le mettre à jour.`;
     return;
   }
 
-  // Helpers
-  const estSlug = s => s && (s.match(/-/g)||[]).length > 3 && (s.match(/ /g)||[]).length < 2;
-  const nettoyerTitre = t => {
-    if (!t) return '';
-    // Enlever le nom du site après " | ", " – ", " — "
-    t = t.split(/\s*[\|–—]\s*/)[0].trim();
-    // Si c'est toujours un slug, convertir en texte lisible
-    if (estSlug(t)) t = t.replace(/\.[A-Za-z]{2,4}$/, '').replace(/-/g,' ').replace(/\s+/g,' ').trim();
-    return (t.startsWith('http') || t.length < 3) ? '' : t;
-  };
-
-  function remplirFormulaire(champs) {
-    if (champs.nom)        document.getElementById('ap-nom').value        = champs.nom;
-    if (champs.fabricant)  document.getElementById('ap-fabricant').value  = champs.fabricant;
-    if (champs.modele)     document.getElementById('ap-modele').value     = champs.modele;
-    if (champs.sku)        document.getElementById('ap-sku').value        = champs.sku;
-    if (champs.prix)       document.getElementById('ap-prix').value       = champs.prix;
-    if (champs.photo)      document.getElementById('ap-photo').value      = champs.photo;
-    if (champs.carac)      document.getElementById('ap-carac').value      = champs.carac;
+  // Appel de la fonction Edge (extraction IA).
+  const { data: { session } } = await db.auth.getSession();
+  let resp;
+  try {
+    resp = await fetch(`${SUPABASE_URL}/functions/v1/extraire-produit`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${session?.access_token}`,
+      },
+      body: JSON.stringify({ url }),
+    });
+  } catch (e) {
+    statusEl.innerHTML = '⚠️ Serveur d\'extraction injoignable. Remplissez le formulaire manuellement.';
     document.getElementById('ap-url').value = url;
-  }
-
-  // ── Méthode 1 : Shopify JSON ──────────────────────────────
-  try {
-    const jsonUrl = url.replace(/[?#].*$/, '') + '.json';
-    const resp = await fetch(jsonUrl);
-    if (resp.ok) {
-      const data = await resp.json();
-      if (data.product) {
-        const p = data.product;
-        const v = p.variants && p.variants[0];
-        remplirFormulaire({
-          nom:       p.title,
-          fabricant: p.vendor,
-          modele:    v ? v.title : '',
-          sku:       v ? v.sku   : '',
-          prix:      v ? v.price : '',
-          photo:     p.images && p.images[0] ? p.images[0].src : '',
-          carac:     p.body_html ? p.body_html.replace(/<[^>]+>/g,'').substring(0,300) : ''
-        });
-        openModal('modal-ajout-produit');
-        statusEl.innerHTML = '✅ Données Shopify importées.';
-        document.getElementById('url-import-input').value = '';
-        return;
-      }
-    }
-  } catch(e) {}
-
-  // ── Méthode 2 : Proxy CORS + Open Graph / JSON-LD ─────────
-  // (priorité sur Microlink car on obtient plus de données structurées)
-  let donneesProxy = null;
-  try {
-    const proxyResp = await fetch(`https://api.allorigins.win/get?url=${encodeURIComponent(url)}`);
-    if (proxyResp.ok) {
-      const result = await proxyResp.json();
-      const html = result.contents || '';
-
-      const getOG = prop => {
-        const m = html.match(new RegExp(`<meta[^>]*property=["']og:${prop}["'][^>]*content=["']([^"']{1,600})["']`,'i'))
-                || html.match(new RegExp(`<meta[^>]*content=["']([^"']{1,600})["'][^>]*property=["']og:${prop}["']`,'i'));
-        return m ? m[1].trim() : '';
-      };
-      const getMeta = name => {
-        const m = html.match(new RegExp(`<meta[^>]*name=["']${name}["'][^>]*content=["']([^"']{1,600})["']`,'i'))
-                || html.match(new RegExp(`<meta[^>]*content=["']([^"']{1,600})["'][^>]*name=["']${name}["']`,'i'));
-        return m ? m[1].trim() : '';
-      };
-      const getTitle = () => {
-        const m = html.match(/<title[^>]*>([^<]{3,200})<\/title>/i);
-        return m ? m[1].trim() : '';
-      };
-
-      // JSON-LD
-      let jld = null;
-      for (const m of html.matchAll(/<script[^>]*type=["']application\/ld\+json["'][^>]*>([\s\S]*?)<\/script>/gi)) {
-        try {
-          const parsed = JSON.parse(m[1]);
-          const list = Array.isArray(parsed) ? parsed : [parsed];
-          jld = list.find(x => x['@type'] === 'Product') || jld;
-        } catch(e) {}
-      }
-
-      const extractImg = jld => {
-        if (!jld?.image) return '';
-        if (typeof jld.image === 'string') return jld.image;
-        if (Array.isArray(jld.image)) return jld.image[0]?.url || jld.image[0] || '';
-        return jld.image.url || '';
-      };
-
-      // Photo : OG > JSON-LD > première grande image dans la page
-      let photo = getOG('image') || extractImg(jld);
-      if (!photo) {
-        const imgMatch = html.match(/<img[^>]+(src|data-src)=["'](https?:\/\/[^"']{20,500}\.(jpg|jpeg|png|webp)[^"']*)["'][^>]*(width=["']([2-9]\d{2,}|\d{4,})["']|class=["'][^"']*(product|main|primary|hero|principal)[^"']*["'])/i);
-        if (imgMatch) photo = imgMatch[2];
-      }
-
-      const offre = jld?.offers ? (Array.isArray(jld.offers) ? jld.offers[0] : jld.offers) : null;
-      const nom   = nettoyerTitre(getOG('title') || getTitle() || (jld && jld.name) || '');
-      const carac = getOG('description') || getMeta('description') || (jld?.description) || '';
-      const fab   = jld?.brand?.name || '';
-      const sku   = jld?.sku || getMeta('product:retailer_item_id') || '';
-      const prix  = offre?.price || getMeta('product:price:amount') || '';
-
-      if (nom || photo) {
-        donneesProxy = { nom, photo, carac: carac.substring(0,300), fabricant: fab, sku, prix };
-      }
-    }
-  } catch(e) {}
-
-  // ── Méthode 3 : Microlink ─────────────────────────────────
-  try {
-    const resp = await fetch(`https://api.microlink.io?url=${encodeURIComponent(url)}`);
-    if (resp.ok) {
-      const result = await resp.json();
-      if (result.status === 'success') {
-        const m = result.data;
-        const titreMl  = nettoyerTitre(m.title || '');
-        const photoMl  = m.image?.url || '';
-        // Fusionner avec données proxy : proxy a priorité sur le nom, Microlink sur la photo si proxy n'en a pas
-        const nomFinal   = (donneesProxy?.nom && !estSlug(donneesProxy.nom)) ? donneesProxy.nom : (titreMl || donneesProxy?.nom || '');
-        const photoFinal = donneesProxy?.photo || photoMl;
-        if (nomFinal || photoFinal) {
-          remplirFormulaire({
-            nom:       nomFinal,
-            photo:     photoFinal,
-            carac:     donneesProxy?.carac || (m.description?.substring(0,300) || ''),
-            fabricant: donneesProxy?.fabricant || '',
-            sku:       donneesProxy?.sku || '',
-            prix:      donneesProxy?.prix || '',
-          });
-          openModal('modal-ajout-produit');
-          const champs = [nomFinal && 'nom', photoFinal && 'photo', donneesProxy?.prix && 'prix'].filter(Boolean);
-          statusEl.innerHTML = `✅ Importé (${champs.join(', ')}) — vérifiez et complétez.`;
-          document.getElementById('url-import-input').value = '';
-          return;
-        }
-      }
-    }
-  } catch(e) {}
-
-  // ── Méthode 4 : Données proxy seules ─────────────────────
-  if (donneesProxy) {
-    remplirFormulaire(donneesProxy);
     openModal('modal-ajout-produit');
-    statusEl.innerHTML = '✅ Données extraites — vérifiez et complétez si nécessaire.';
-    document.getElementById('url-import-input').value = '';
     return;
   }
 
-  // ── Méthode 5 : Nom extrait du slug URL ──────────────────
-  try {
-    const slug = url.split('/').pop().replace(/[?#].*$/, '');
-    const nomSlug = nettoyerTitre(slug);
-    if (nomSlug && nomSlug.length > 4) {
-      document.getElementById('ap-nom').value = nomSlug;
-      document.getElementById('ap-url').value = url;
-      openModal('modal-ajout-produit');
-      statusEl.innerHTML = '⚠️ Nom extrait de l\'URL — vérifiez et complétez les autres champs.';
-      document.getElementById('url-import-input').value = '';
-      return;
-    }
-  } catch(e) {}
+  const resultat = await resp.json().catch(() => ({ ok: false }));
+  if (!resultat.ok || !resultat.specs) {
+    statusEl.innerHTML = '⚠️ Extraction impossible pour ce site. Remplissez le formulaire manuellement.';
+    document.getElementById('ap-url').value = url;
+    openModal('modal-ajout-produit');
+    return;
+  }
 
-  // ── Fallback : formulaire vide ────────────────────────────
-  statusEl.innerHTML = '⚠️ Import impossible pour ce site. Remplissez le formulaire manuellement.';
-  document.getElementById('ap-url').value = url;
+  const s = resultat.specs;
+  const set = (id, val) => { const el = document.getElementById(id); if (el && val != null && val !== '') el.value = val; };
+  set('ap-url', url);
+  set('ap-nom', s.nom);
+  set('ap-fabricant', s.fabricant);
+  set('ap-modele', s.modele);
+  set('ap-sku', s.sku);
+  set('ap-prix', s.prix_regulier);
+  set('ap-couleur', s.couleur);
+  set('ap-dimensions', s.dimensions);
+  set('ap-carac', s.caracteristiques);
+  set('ap-photo', s.photo_url);
+  if (s.photo_url) apercuPhotoUrl(s.photo_url);
+
   openModal('modal-ajout-produit');
+  mettreEnEvidenceChampsVides();
+  statusEl.innerHTML = `✅ Importé (${resultat.source}). Vérifiez les champs surlignés puis enregistrez.`;
+  document.getElementById('url-import-input').value = '';
+}
+
+// Surligne les champs de spec restés vides pour guider la vérification.
+function mettreEnEvidenceChampsVides() {
+  ['ap-nom','ap-fabricant','ap-modele','ap-sku','ap-prix','ap-couleur','ap-dimensions','ap-carac','ap-photo']
+    .forEach(id => {
+      const el = document.getElementById(id);
+      if (!el) return;
+      el.style.background = (el.value.trim() === '') ? '#fff8e6' : '';
+    });
 }
 
 async function sauvegarderProduit() {
@@ -2078,6 +2037,13 @@ async function sauvegarderProduit() {
       toast(`Ce produit existe déjà dans la banque : "${existe.nom}"`, 'error');
       return;
     }
+  }
+
+  // (avant payload) capturer l'ancien prix pour journaliser une édition manuelle
+  let ancienPrix = null;
+  if (editingProduitId) {
+    const p = produitsCache.find(x => x.id === editingProduitId);
+    ancienPrix = p ? p.prix : null;
   }
 
   const payload = {
@@ -2096,6 +2062,7 @@ async function sauvegarderProduit() {
     notes_internes:        document.getElementById('ap-notes').value.trim() || null,
     statut:                document.getElementById('ap-statut').value || 'actif',
     date_verification_prix: new Date().toISOString(),
+    prix_a_verifier:       false,   // toute sauvegarde manuelle résout le drapeau
   };
 
   const wasEditing = !!editingProduitId;
@@ -2114,6 +2081,24 @@ async function sauvegarderProduit() {
     }
     return;
   }
+
+  const nouveauPrix = parseFloat(document.getElementById('ap-prix').value) || null;
+  if (wasEditing && nouveauPrix !== ancienPrix) {
+    await db.from('historique_prix').insert({
+      produit_id: editingProduitId, ancien_prix: ancienPrix, nouveau_prix: nouveauPrix,
+      devise: 'CAD', ecart_pct: null, source: 'manuel', applique: true,
+    });
+  } else if (!wasEditing && nouveauPrix != null) {
+    // Première ligne d'historique à la création (spec §4.2 : ancien_prix = null).
+    const { data: cree } = await db.from('banque_produits').select('id').eq('url', urlProduit).maybeSingle();
+    if (cree) {
+      await db.from('historique_prix').insert({
+        produit_id: cree.id, ancien_prix: null, nouveau_prix: nouveauPrix,
+        devise: 'CAD', ecart_pct: null, source: 'import', applique: true,
+      });
+    }
+  }
+
   resetModalProduit();
   closeModal('modal-ajout-produit');
   toast(wasEditing ? 'Produit modifié.' : 'Produit ajouté à la banque.', 'success');
@@ -2129,6 +2114,8 @@ function resetModalProduit() {
     .forEach(id => { const el = document.getElementById(id); if(el) el.value = ''; });
   const statutEl = document.getElementById('ap-statut');
   if (statutEl) statutEl.value = 'actif';
+  const histWrap = document.getElementById('ap-historique-wrap');
+  if (histWrap) histWrap.style.display = 'none';
   effacerPhoto();
 }
 
@@ -2140,7 +2127,7 @@ async function supprimerProduit(id, nom) {
   chargerProduits();
 }
 
-function editerProduit(id) {
+async function editerProduit(id) {
   const p = produitsCache.find(x => x.id === id);
   if (!p) return;
   editingProduitId = id;
@@ -2161,6 +2148,18 @@ function editerProduit(id) {
   apercuPhotoUrl(p.photo_url || '');
   document.querySelector('#modal-ajout-produit .modal-header h3').textContent = 'Modifier le produit';
   document.querySelector('#modal-ajout-produit .modal-footer .btn-dark').textContent = 'Enregistrer';
+  const wrap = document.getElementById('ap-historique-wrap');
+  const { data: hist } = await db.from('historique_prix')
+    .select('ancien_prix, nouveau_prix, source, applique, created_at')
+    .eq('produit_id', id).order('created_at', { ascending: false }).limit(5);
+  if (hist && hist.length) {
+    document.getElementById('ap-historique').innerHTML = hist.map(h =>
+      `<div>${new Date(h.created_at).toLocaleDateString('fr-CA')} — ${h.ancien_prix ?? '—'} $ → <strong>${h.nouveau_prix ?? '—'} $</strong> (${h.source}${h.applique ? '' : ', signalé'})</div>`
+    ).join('');
+    wrap.style.display = 'block';
+  } else {
+    wrap.style.display = 'none';
+  }
   openModal('modal-ajout-produit');
 }
 
@@ -2377,21 +2376,30 @@ async function chargerImageProduit(url) {
   });
 }
 
-function genererExcelClient()   { genererExcel_base('client'); }
-function genererExcelChantier() { genererExcel_base('chantier'); }
+function genererPDFClient()   { genererPDF_base('client'); }
+function genererPDFChantier() { genererPDF_base('chantier'); }
+
+// Extrait les chiffres en début de référence pour un tri numérique fiable
+// même si le format mélange lettres et chiffres (ex. "P-2" avant "P-10").
+function comparerReferences(a, b) {
+  return String(a || '').localeCompare(String(b || ''), 'fr', { numeric: true, sensitivity: 'base' });
+}
 
 // ─────────────────────────────────────────────────────────────
-// GÉNÉRATION EXCEL — reproduit fidèlement le template CMPG
+// GÉNÉRATION PDF — remplace l'ancien export Excel (jamais fonctionnel)
 // ─────────────────────────────────────────────────────────────
-async function genererExcel_base(mode) {
+async function genererPDF_base(mode) {
   if (!currentProjetId) { toast('Aucun projet sélectionné.', 'error'); return; }
-  if (typeof ExcelJS === 'undefined') { toast('Bibliothèque Excel non chargée. Rechargez la page.', 'error'); return; }
+  if (typeof window.jspdf === 'undefined' || typeof window.jspdf.jsPDF === 'undefined') {
+    toast('Bibliothèque PDF non chargée. Rechargez la page.', 'error'); return;
+  }
 
-  toast('Génération du fichier Excel…', 'info');
+  toast('Génération du PDF…', 'info');
 
   // ── Données Supabase ──
   const { data: projet } = await db.from('projets')
-    .select('nom, clients(nom, email)').eq('id', currentProjetId).single();
+    .select('nom, numero_projet, adresse, responsable_nom, clients(nom, email)')
+    .eq('id', currentProjetId).single();
 
   const { data: postesAll } = await db.from('postes')
     .select(`
@@ -2403,31 +2411,42 @@ async function genererExcel_base(mode) {
         banque_produits(id, nom, fabricant, modele, sku, couleur, dimensions, caracteristiques, prix, photo_url, url)
       )
     `)
-    .eq('projet_id', currentProjetId)
-    .order('ordre');
+    .eq('projet_id', currentProjetId);
 
-  // ── Regrouper par catégorie → sous-catégorie ──
+  // ── Regrouper par catégorie → sous-catégorie, en séparant les options
+  //    "non retenues" (mode client) vers l'historique de fin de document ──
   const catMap = {};
+  const historiqueRows = []; // rempli seulement en mode client
+
   (postesAll || []).forEach(poste => {
     const cat = poste.categories;
     if (!cat) return;
-    let opts = poste.options_produits || [];
-    if (mode === 'chantier') opts = opts.filter(o => o.statut_client === 'approuvé');
+    const allOpts = poste.options_produits || [];
+
+    // Produit approuvé pour ce poste (référencé dans l'historique : "remplacé par")
+    const approuve    = allOpts.find(o => o.statut_client === 'approuvé');
+    const nomApprouve = approuve?.banque_produits?.nom || '';
+
+    // Chantier : uniquement les options approuvées.
+    // Client : tout sauf les postes entièrement annulés ("article non nécessaire").
+    const opts = mode === 'chantier'
+      ? allOpts.filter(o => o.statut_client === 'approuvé')
+      : allOpts.filter(o => o.statut_client !== 'annulé');
     if (opts.length === 0) return;
 
-    if (!catMap[cat.id]) catMap[cat.id] = { cat, scMap: {} };
-    const sc      = poste.sous_categories;
-    const scKey   = sc ? sc.id : '__none__';
-    const scNom   = sc ? sc.nom : null;
-    const scOrdre = sc ? (sc.ordre ?? 999) : 0;
-    if (!catMap[cat.id].scMap[scKey]) catMap[cat.id].scMap[scKey] = { scNom, scOrdre, rows: [] };
+    const piecesStr = (poste.pieces || []).join(', ') || poste.piece || '';
 
     opts.forEach(opt => {
       const bp = opt.banque_produits;
       if (!bp) return;
-      catMap[cat.id].scMap[scKey].rows.push({
+
+      const isNonRetenu = mode === 'client'
+        && opt.statut_client === 'à_revoir'
+        && opt.commentaire_client === 'Option non retenue';
+
+      const row = {
         ref:         poste.reference || '',
-        pieces:      (poste.pieces || []).join(', ') || poste.piece || '',
+        pieces:      piecesStr,
         nom:         bp.nom || '',
         fabricant:   bp.fabricant || '',
         modele:      bp.modele || '',
@@ -2437,225 +2456,248 @@ async function genererExcel_base(mode) {
         dims:        bp.dimensions || '',
         caract:      bp.caracteristiques || '',
         photo_url:   bp.photo_url || '',
-        choix_faire: !opt.statut_client ? 'OUI' : '',
         prix_u:      bp.prix ? Number(bp.prix) : null,
         prix_total:  bp.prix ? Number(bp.prix) * (opt.quantite || 1) : null,
         statut:      opt.statut_client || '',
         date_conf:   opt.date_decision ? new Date(opt.date_decision).toLocaleDateString('fr-CA') : '',
         lien:        bp.url || '',
-        approbation: opt.statut_client === 'approuvé' ? 'Approuvé' : (opt.statut_client === 'à_revoir' ? 'À revoir' : ''),
-        isApprouved: opt.statut_client === 'approuvé',
-      });
+        catNom:      cat.nom || 'Général',
+        remplacePar: nomApprouve,
+      };
+
+      if (isNonRetenu) { historiqueRows.push(row); return; }
+
+      const scNode  = poste.sous_categories;
+      const scKey   = scNode ? scNode.id : '__none__';
+      const scNom   = scNode ? scNode.nom : null;
+      const scOrdre = scNode ? (scNode.ordre ?? 999) : 0;
+      if (!catMap[cat.id]) catMap[cat.id] = { cat, scMap: {} };
+      if (!catMap[cat.id].scMap[scKey]) catMap[cat.id].scMap[scKey] = { scNom, scOrdre, rows: [] };
+      catMap[cat.id].scMap[scKey].rows.push(row);
     });
   });
 
-  const sortedCats = Object.values(catMap)
-    .sort((a, b) => (a.cat.ordre || 0) - (b.cat.ordre || 0));
+  const sortedCats = Object.values(catMap).sort((a, b) => (a.cat.ordre || 0) - (b.cat.ordre || 0));
 
-  if (sortedCats.length === 0) { toast('Aucune donnée à exporter.', 'info'); return; }
-
-  // ── Pré-charger images ──
-  const photoMap = {};
-  if (mode === 'client') {
-    const allR = sortedCats.flatMap(({scMap}) => Object.values(scMap).flatMap(s => s.rows));
-    const urls = [...new Set(allR.map(r => r.photo_url).filter(Boolean))];
-    await Promise.all(urls.map(async url => { photoMap[url] = await chargerImageProduit(url); }));
+  if (sortedCats.length === 0 && historiqueRows.length === 0) {
+    toast('Aucune donnée à exporter.', 'info'); return;
   }
 
-  // ── Workbook ──
-  const wb = new ExcelJS.Workbook();
-  wb.creator = 'CMPG Design Construction';
-  wb.created = new Date();
+  // ── Tri en ordre chronologique de référence (dans chaque sous-catégorie) ──
+  sortedCats.forEach(({ scMap }) => {
+    Object.values(scMap).forEach(s => s.rows.sort((a, b) => comparerReferences(a.ref, b.ref)));
+  });
+  historiqueRows.sort((a, b) => comparerReferences(a.ref, b.ref));
 
-  const nomProjet = projet?.nom || 'Projet';
-  const nomClient = projet?.clients?.nom || '';
-  const dateStr   = new Date().toLocaleDateString('fr-CA');
-
-  // ── Couleurs exactes du template ──
-  const T_DARK   = 'FF302F24'; // charcoal foncé (col headers, subcats)
-  const T_BEIGE  = 'FFEFEBE6'; // fond info rows 1-6
-  const T_WHITE  = 'FFFFFFFF'; // lignes impaires
-  const T_ALT    = 'FFF7F5F2'; // lignes paires
-  const T_SUBCAT = 'FFACA298'; // fond sous-catégorie
-  const T_INPUT  = 'FFFFFDE7'; // cellules saisie Sommaire
-  const T_BORD   = 'FFC8C2BB'; // bordures
-  const T_TEXT   = 'FF302F24'; // texte principal
-  const T_WARNBG = 'FF302F24'; // fond avertissement Sommaire
-  const T_WARNTX = 'FF7A5C00'; // texte avertissement
-  const T_GREEN  = 'FF1A5C2A'; // prix confirmés
-  const T_CARAMEL= 'FF9A8C7E'; // accent liens / OUI
-  const FONT     = 'Calibri';
-  const PFMT     = '"$"#,##0.00;\\-"$"#,##0.00;"-"'; // format prix exact du template
-
-  const FL = (c) => ({ type: 'pattern', pattern: 'solid', fgColor: { argb: c } });
-  const BD = (c = T_BORD) => { const s = { style: 'thin', color: { argb: c } }; return { top:s, bottom:s, left:s, right:s }; };
-  const cl = (n) => n <= 26 ? String.fromCharCode(64 + n) : String.fromCharCode(64 + Math.floor((n-1)/26)) + String.fromCharCode(65 + (n-1)%26);
-
-  function sc(ws, r, c, val, { bg=null, fg=T_TEXT, bold=false, italic=false, sz=9, h='left', v='middle', wrap=true, numFmt=null, bdColor=T_BORD } = {}) {
-    const cell = ws.getCell(r, c);
-    cell.value = val;
-    if (bg) cell.fill = FL(bg);
-    cell.font = { name: FONT, size: sz, bold, italic, color: { argb: fg } };
-    cell.alignment = { horizontal: h, vertical: v, wrapText: wrap };
-    cell.border = BD(bdColor);
-    if (numFmt) cell.numFmt = numFmt;
-    return cell;
-  }
-
-  // ── Définition colonnes selon mode (largeurs exactes du template) ──
-  // tpl = position dans le template original (1-19 = A-S)
-  // Client exclut tpl 12 (L). Chantier exclut tpl 12-17 (L-Q).
-  const ALL_COLS = [
-    { tpl:1,  key:'ref',         hdr:'Réf.\nPlan',                 w:7,  sz:8, h:'center'  },
-    { tpl:2,  key:'pieces',      hdr:'Pièce(s)',                   w:13, sz:9, h:'left'    },
-    { tpl:3,  key:'nom',         hdr:'Item /\nDescription',        w:24, sz:9, h:'left'    },
-    { tpl:4,  key:'fabricant',   hdr:'Compagnie /\nFournisseur',   w:17, sz:9, h:'left'    },
-    { tpl:5,  key:'modele',      hdr:'Modèle',                     w:14, sz:9, h:'left'    },
-    { tpl:6,  key:'sku',         hdr:'No. série /\nCode produit',  w:13, sz:9, h:'left'    },
-    { tpl:7,  key:'qte',         hdr:'Qté.',                       w:6,  sz:9, h:'left'    },
-    { tpl:8,  key:'couleur',     hdr:'Couleur /\nFinition',        w:13, sz:9, h:'left'    },
-    { tpl:9,  key:'dims',        hdr:'Dimensions',                 w:13, sz:9, h:'left'    },
-    { tpl:10, key:'caract',      hdr:'Caractéristiques\nspécifiques',w:22,sz:9,h:'left'   },
-    { tpl:11, key:'photo',       hdr:'Photo\n(insérer img)',       w:16, sz:9, h:'center'  },
-    // tpl 12 (L) excl    { tpl:13, key:'choix_faire',  hdr:'⚠ Choix\nà faire',           w:10, sz:9, h:'center'  },
-    { tpl:14, key:'prix_u',       hdr:'Prix\nunitaire ($)',          w:13, sz:9, h:'right'   },
-    { tpl:15, key:'prix_total',   hdr:'Prix\ntotal ($)',             w:13, sz:9, h:'right'   },
-    { tpl:16, key:'statut',       hdr:'Statut',                      w:13, sz:9, h:'center'  },
-    { tpl:17, key:'date_conf',    hdr:'Date\nconfirmé',              w:11, sz:9, h:'center'  },
-    { tpl:18, key:'lien',         hdr:'Lien',                        w:22, sz:9, h:'left'    },
-    { tpl:19, key:'approbation',  hdr:'Approbation\nclient',         w:14, sz:9, h:'center'  },
+  // ── Précharger le logo + les photos produits (client ET chantier) ──
+  const logoUrl = await getLogoDataUrl();
+  const allRowsForPhotos = [
+    ...sortedCats.flatMap(({ scMap }) => Object.values(scMap).flatMap(s => s.rows)),
+    ...historiqueRows,
   ];
+  const photoUrls = [...new Set(allRowsForPhotos.map(r => r.photo_url).filter(Boolean))];
+  const photoMap = {};
+  await Promise.all(photoUrls.map(async url => { photoMap[url] = await chargerImageProduit(url); }));
 
-  // Colonnes selon mode
-  // Client : tout (tpl 12 déjà exclu du tableau)
-  // Chantier : tpl 1-11 et 18-19 seulement
-  const COLS = mode === 'chantier'
-    ? ALL_COLS.filter(c => c.tpl <= 11 || c.tpl >= 18)
-    : ALL_COLS;
-  const NC = COLS.length;
+  // ── Couleurs de marque CMPG ──
+  const T_DARK    = '#302F24';
+  const T_BEIGE   = '#EFEBE6';
+  const T_SUBCAT  = '#ACA298';
+  const T_BORD    = '#C8C2BB';
+  const T_TEXT    = '#302F24';
+  const T_WARN    = '#7A5C00';
 
-  // ── Utilitaire merge ──
-  function merge(ws, r1, c1, r2, c2, val, opts) {
-    if (r1 === r2 && c1 === c2) { sc(ws, r1, c1, val, opts); return; }
-    try { ws.mergeCells(r1, c1, r2, c2); } catch(e) {}
-    sc(ws, r1, c1, val, opts);
+  const { jsPDF } = window.jspdf;
+  const doc = new jsPDF({ orientation: 'landscape', unit: 'mm', format: 'letter' });
+  const PW = doc.internal.pageSize.getWidth();
+  const MARGIN = 8;
+  const HEADER_H = mode === 'client' ? 34 : 28;
+
+  const nomProjet    = projet?.nom || 'Projet';
+  const numeroProjet = projet?.numero_projet || '—';
+  const nomClient    = projet?.clients?.nom || '—';
+  const adresse      = projet?.adresse || '—';
+  const dateStr      = new Date().toLocaleDateString('fr-CA');
+
+  function drawHeader(titre, estimTotal, nbAttente) {
+    doc.setFillColor(T_DARK);
+    doc.rect(0, 0, PW, 16, 'F');
+    if (logoUrl) { try { doc.addImage(logoUrl, 'PNG', MARGIN, 2, 34, 12); } catch(e) {} }
+    doc.setTextColor('#FFFFFF');
+    doc.setFont('helvetica', 'bold'); doc.setFontSize(11);
+    doc.text(titre, MARGIN + 40, 10);
+    doc.setFont('helvetica', 'normal'); doc.setFontSize(8);
+    doc.text('450 455-6006  |  info@conceptionmpg.ca', PW - MARGIN, 10, { align: 'right' });
+
+    doc.setFillColor(T_BEIGE);
+    doc.rect(0, 16, PW, 12, 'F');
+    doc.setTextColor(T_TEXT);
+    doc.setFontSize(8.5);
+    doc.text(`N° ${numeroProjet}   —   ${nomProjet}`, MARGIN, 21);
+    doc.text(`Client : ${nomClient}`, MARGIN, 26);
+    doc.text(`Adresse : ${adresse}`, PW / 2, 21);
+    doc.text(`Date : ${dateStr}`, PW - MARGIN, 21, { align: 'right' });
+
+    if (mode === 'client' && estimTotal !== undefined) {
+      doc.setFont('helvetica', 'bold');
+      doc.text(`ESTIMATION (avant taxes) : ${estimTotal.toLocaleString('fr-CA', { style: 'currency', currency: 'CAD' })}`, MARGIN, 32);
+      if (nbAttente > 0) {
+        doc.setTextColor(T_WARN);
+        doc.text(`⚠ Items en attente : ${nbAttente}`, PW - MARGIN, 32, { align: 'right' });
+        doc.setTextColor(T_TEXT);
+      }
+      doc.setFont('helvetica', 'normal');
+    }
   }
 
-  // ── Une feuille par catégorie ──
-  for (const { cat, scMap } of sortedCats.map(([, v]) => v)) {
+  // ── Colonnes selon mode ──
+  const COLS_CLIENT = [
+    { key:'ref',        hdr:'Réf.',               w:9  },
+    { key:'pieces',     hdr:'Pièce(s)',           w:16 },
+    { key:'nom',        hdr:'Item / Description', w:30 },
+    { key:'fabricant',  hdr:'Fournisseur',        w:18 },
+    { key:'modele',     hdr:'Modèle',             w:15 },
+    { key:'sku',        hdr:'Code',               w:12 },
+    { key:'qte',        hdr:'Qté',                w:7  },
+    { key:'couleur',    hdr:'Couleur/Fini',       w:14 },
+    { key:'dims',       hdr:'Dimensions',         w:14 },
+    { key:'caract',     hdr:'Caractéristiques',   w:18 },
+    { key:'photo',      hdr:'Photo',              w:20 },
+    { key:'prix_u',     hdr:'Prix unit.',         w:15 },
+    { key:'prix_total', hdr:'Prix total',         w:15 },
+    { key:'statut',     hdr:'Statut',             w:14 },
+    { key:'date_conf',  hdr:'Date',               w:12 },
+    { key:'lien',       hdr:'Lien',               w:16 },
+  ];
+  const COLS_CHANTIER = [
+    { key:'ref',       hdr:'Réf.',               w:10 },
+    { key:'pieces',    hdr:'Pièce(s)',           w:20 },
+    { key:'nom',       hdr:'Item / Description', w:34 },
+    { key:'fabricant', hdr:'Fournisseur',        w:20 },
+    { key:'modele',    hdr:'Modèle',             w:16 },
+    { key:'sku',       hdr:'Code',               w:14 },
+    { key:'qte',       hdr:'Qté',                w:8  },
+    { key:'couleur',   hdr:'Couleur/Fini',       w:16 },
+    { key:'dims',      hdr:'Dimensions',         w:16 },
+    { key:'caract',    hdr:'Caractéristiques',   w:24 },
+    { key:'photo',     hdr:'Photo',              w:22 },
+    { key:'lien',      hdr:'Lien',               w:20 },
+  ];
+  const COLS = mode === 'client' ? COLS_CLIENT : COLS_CHANTIER;
+
+  function buildRowArray(row) {
+    return COLS.map(c => {
+      if (c.key === 'photo')      return '';
+      if (c.key === 'prix_u')     return row.prix_u     != null ? row.prix_u.toLocaleString('fr-CA', { style:'currency', currency:'CAD' }) : '';
+      if (c.key === 'prix_total') return row.prix_total != null ? row.prix_total.toLocaleString('fr-CA', { style:'currency', currency:'CAD' }) : '';
+      if (c.key === 'statut')     return row.statut === 'approuvé' ? 'Approuvé' : row.statut === 'à_revoir' ? 'À revoir' : 'En attente';
+      return row[c.key] ?? '';
+    });
+  }
+
+  function dessinerPhoto(data, rowLookup) {
+    if (data.section !== 'body') return;
+    if (COLS[data.column.index]?.key !== 'photo') return;
+    const rowData = rowLookup(data.row.index);
+    const b64 = rowData && photoMap[rowData.photo_url];
+    if (!b64) return;
+    const pad = 1;
+    const size = Math.min(data.cell.width, data.cell.height) - pad * 2;
+    try { doc.addImage(b64, 'JPEG', data.cell.x + pad, data.cell.y + pad, size, size); } catch(e) {}
+  }
+
+  // ── Une ou plusieurs pages par catégorie, triées, avec photos ──
+  let firstPage = true;
+  for (const { cat, scMap } of sortedCats) {
+    if (!firstPage) doc.addPage(); else firstPage = false;
     const catNom = cat.nom || 'Général';
-    const ws = wb.addWorksheet(catNom.substring(0, 31), {
-      pageSetup: { orientation: 'landscape', paperSize: 9, fitToPage: true, fitToWidth: 1, fitToHeight: 0 }
-    });
-    ws.columns = COLS.map(c => ({ width: c.w }));
 
-    // ── Ligne 1 : Titre + contact CMPG ──
-    const lastInfoCol = Math.max(NC - 3, 1);
-    merge(ws, 1, 1, 1, lastInfoCol, `SÉLECTION — ${catNom.toUpperCase()}`, {
-      bg: T_BEIGE, fg: T_TEXT, bold: true, sz: 11, h: 'left', wrap: false, bdColor: T_BORD
-    });
-    if (NC > 3) {
-      merge(ws, 1, lastInfoCol + 1, 1, NC, '450 455-6006  |  info@conceptionmpg.ca', {
-        bg: T_DARK, fg: T_CARAMEL, sz: 9, h: 'right', wrap: false, bdColor: T_BORD
-      });
-    }
-    ws.getRow(1).height = 26;
+    const scEntries  = Object.values(scMap).sort((a, b) => (a.scOrdre || 0) - (b.scOrdre || 0));
+    const flatRows   = scEntries.flatMap(s => s.rows);
+    const estimTotal = flatRows.reduce((s, r) => s + (r.prix_total || 0), 0);
+    const nbAttente  = flatRows.filter(r => r.statut === 'en_attente').length;
 
-    // ── Lignes 2-4 : Info projet ──
-    const c3 = Math.max(1, Math.floor(NC / 3));
-    const c23 = Math.max(c3 + 1, Math.floor(NC * 2 / 3));
-    merge(ws, 2, 1, 2, c3, `Designer :  ${projet?.responsable_nom || '—'}`, { bg: T_BEIGE, sz: 9, bdColor: T_BORD });
-    if (c3 < c23 - 1) merge(ws, 2, c3 + 1, 2, c23, `Client :  ${nomClient || '—'}`, { bg: T_BEIGE, sz: 9, bdColor: T_BORD });
-    if (c23 < NC) merge(ws, 2, c23 + 1, 2, NC, `No. dossier :  —`, { bg: T_BEIGE, sz: 9, h: 'right', bdColor: T_BORD });
-    ws.getRow(2).height = 16;
-
-    merge(ws, 3, 1, 3, c23, `Adresse :  ${projet?.adresse || '—'}`, { bg: T_BEIGE, sz: 9, bdColor: T_BORD });
-    if (c23 < NC) merge(ws, 3, c23 + 1, 3, NC, `Date / Rév. :  ${dateStr}`, { bg: T_BEIGE, sz: 9, h: 'right', bdColor: T_BORD });
-    ws.getRow(3).height = 16;
-
-    merge(ws, 4, 1, 4, NC, `Projet :  ${nomProjet}`, { bg: T_BEIGE, sz: 9, bdColor: T_BORD });
-    ws.getRow(4).height = 16;
-
-    // ── Ligne 5 : Estimation ──
-    const allRows = Object.values(scMap).flatMap(s => s.rows);
-    const estimTotal = allRows.reduce((sum, r) => sum + (r.prix_total || 0), 0);
-    const nbAttente  = allRows.filter(r => !r.isApprouved).length;
-    const estimFmt   = estimTotal.toLocaleString('fr-CA', { style: 'currency', currency: 'CAD' });
-    if (mode === 'client') {
-      merge(ws, 5, 1, 5, c3, `ESTIMATION (avant taxes) :  ${estimFmt}`, { bg: T_BEIGE, bold: true, sz: 9, bdColor: T_BORD });
-      if (c3 < c23 - 1) merge(ws, 5, c3 + 1, 5, c23, '', { bg: T_BEIGE, sz: 9, bdColor: T_BORD });
-      if (c23 < NC) merge(ws, 5, c23 + 1, 5, NC, `⚠  Items en attente : ${nbAttente}`, { bg: T_BEIGE, fg: T_WARNTX, bold: true, sz: 9, h: 'right', bdColor: T_BORD });
-    } else {
-      merge(ws, 5, 1, 5, NC, '', { bg: T_BEIGE, bdColor: T_BORD });
-    }
-    ws.getRow(5).height = 16;
-
-    // ── Ligne 6 : Avertissement ──
-    merge(ws, 6, 1, 6, NC,
-      '⚠  Les estimations sont des prix de référence avant taxes. Les coûts finaux peuvent varier selon les fournisseurs et les conditions du marché.',
-      { bg: T_WARNBG, fg: 'FFEFEBE6', sz: 8, italic: true, h: 'left', bdColor: T_BORD });
-    ws.getRow(6).height = 16;
-
-    // ── Ligne 7 : En-têtes colonnes ──
-    COLS.forEach((col, ci) => sc(ws, 7, ci + 1, col.hdr, {
-      bg: T_DARK, fg: 'FFFFFFFF', bold: true, sz: col.sz || 9, h: col.h || 'left', wrap: true, bdColor: T_BORD
-    }));
-    ws.getRow(7).height = 32;
-    ws.views = [{ state: 'frozen', ySplit: 7, xSplit: 2 }];
-
-    // ── Données par sous-catégorie ──
-    let cr = 8;
-    let altBg = false;
-    const scEntries = Object.values(scMap).sort((a, b) => (a.scOrdre || 0) - (b.scOrdre || 0));
-
-    for (const { scNom, rows } of scEntries) {
-      if (scNom) {
-        ws.mergeCells(cr, 1, cr, NC);
-        sc(ws, cr, 1, `  ${scNom.toUpperCase()}`, {
-          bg: T_SUBCAT, fg: 'FFFFFFFF', bold: true, sz: 9, h: 'left', bdColor: T_BORD
-        });
-        ws.getRow(cr).height = 18;
-        cr++;
+    const body = [];
+    const subcatRowIndexes = [];
+    scEntries.forEach(s => {
+      if (s.scNom) {
+        subcatRowIndexes.push(body.length);
+        body.push([{ content: s.scNom.toUpperCase(), colSpan: COLS.length,
+          styles: { fillColor: T_SUBCAT, textColor: '#FFFFFF', fontStyle: 'bold', halign: 'left' } }]);
       }
-      for (const row of rows) {
-        const bg = altBg ? T_ALT : T_WHITE;
-        COLS.forEach((col, ci) => {
-          let val;
-          if (col.key === 'photo') {
-            val = row.photo_url ? 'Voir lien' : '';
-          } else {
-            val = row[col.key] ?? '';
-          }
-          const opts = { bg, fg: T_TEXT, sz: col.sz || 9, h: col.h || 'left', wrap: true, bdColor: T_BORD };
-          if (col.key === 'choix_faire' && val) { opts.fg = T_WARNTX; opts.bold = true; }
-          if (col.key === 'approbation' && val === 'Approuvé') { opts.fg = T_GREEN; opts.bold = true; }
-          if (col.key === 'lien' && val) opts.fg = T_CARAMEL;
-          sc(ws, cr, ci + 1, val, opts);
-          if ((col.key === 'prix_u' || col.key === 'prix_total') && val) {
-            ws.getCell(cr, ci + 1).numFmt = PFMT;
-          }
-        });
-        ws.getRow(cr).height = 18;
-        altBg = !altBg;
-        cr++;
-      }
-    }
+      s.rows.forEach(r => body.push(buildRowArray(r)));
+    });
+
+    doc.autoTable({
+      startY: HEADER_H,
+      margin: { top: HEADER_H, left: MARGIN, right: MARGIN, bottom: 10 },
+      head: [COLS.map(c => c.hdr)],
+      body,
+      styles: { font: 'helvetica', fontSize: 7.5, cellPadding: 1.2, textColor: T_TEXT, lineColor: T_BORD, minCellHeight: 16 },
+      headStyles: { fillColor: T_DARK, textColor: '#FFFFFF', fontStyle: 'bold', fontSize: 7.5 },
+      columnStyles: Object.fromEntries(COLS.map((c, i) => [i, { cellWidth: c.w }])),
+      didDrawCell(data) {
+        if (subcatRowIndexes.includes(data.row.index)) return;
+        dessinerPhoto(data, (idx) => flatRows[idx - subcatRowIndexes.filter(i => i < idx).length]);
+      },
+      didDrawPage() {
+        drawHeader(`SÉLECTION — ${catNom.toUpperCase()}`,
+          mode === 'client' ? estimTotal : undefined,
+          mode === 'client' ? nbAttente  : undefined);
+      },
+    });
+  }
+
+  // ── Historique des options non retenues (mode client seulement, à la fin) ──
+  if (mode === 'client' && historiqueRows.length > 0) {
+    doc.addPage();
+    const COLS_HIST = [
+      { key:'catNom',      hdr:'Catégorie',    w:26 },
+      { key:'ref',         hdr:'Réf.',         w:10 },
+      { key:'nom',         hdr:'Item',         w:34 },
+      { key:'fabricant',   hdr:'Fournisseur',  w:22 },
+      { key:'modele',      hdr:'Modèle',       w:18 },
+      { key:'photo',       hdr:'Photo',        w:20 },
+      { key:'remplacePar', hdr:'Remplacé par', w:30 },
+    ];
+    const bodyHist = historiqueRows.map(r => COLS_HIST.map(c => c.key === 'photo' ? '' : (r[c.key] || '—')));
+
+    doc.autoTable({
+      startY: HEADER_H,
+      margin: { top: HEADER_H, left: MARGIN, right: MARGIN, bottom: 10 },
+      head: [COLS_HIST.map(c => c.hdr)],
+      body: bodyHist,
+      styles: { font: 'helvetica', fontSize: 7.5, cellPadding: 1.2, textColor: T_TEXT, lineColor: T_BORD, minCellHeight: 16 },
+      headStyles: { fillColor: T_DARK, textColor: '#FFFFFF', fontStyle: 'bold', fontSize: 7.5 },
+      columnStyles: Object.fromEntries(COLS_HIST.map((c, i) => [i, { cellWidth: c.w }])),
+      didDrawCell(data) {
+        if (data.section !== 'body') return;
+        if (COLS_HIST[data.column.index]?.key !== 'photo') return;
+        const rowData = historiqueRows[data.row.index];
+        const b64 = rowData && photoMap[rowData.photo_url];
+        if (!b64) return;
+        const pad = 1;
+        const size = Math.min(data.cell.width, data.cell.height) - pad * 2;
+        try { doc.addImage(b64, 'JPEG', data.cell.x + pad, data.cell.y + pad, size, size); } catch(e) {}
+      },
+      didDrawPage() {
+        doc.setFillColor(T_DARK); doc.rect(0, 0, PW, 16, 'F');
+        if (logoUrl) { try { doc.addImage(logoUrl, 'PNG', MARGIN, 2, 34, 12); } catch(e) {} }
+        doc.setTextColor('#FFFFFF'); doc.setFont('helvetica', 'bold'); doc.setFontSize(11);
+        doc.text('HISTORIQUE — OPTIONS NON RETENUES', MARGIN + 40, 10);
+        doc.setFillColor(T_BEIGE); doc.rect(0, 16, PW, 12, 'F');
+        doc.setTextColor(T_TEXT); doc.setFont('helvetica', 'normal'); doc.setFontSize(8.5);
+        doc.text(`N° ${numeroProjet}   —   ${nomProjet}`, MARGIN, 21);
+        doc.text(`Date : ${dateStr}`, PW - MARGIN, 21, { align: 'right' });
+      },
+    });
   }
 
   // ── Téléchargement ──
   const modeLabel = mode === 'client' ? 'Client' : 'Chantier';
   const safeName  = nomProjet.replace(/[^a-zA-Z0-9_\-]/g, '_');
-  const buf  = await wb.xlsx.writeBuffer();
-  const blob = new Blob([buf], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
-  const dlUrl = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = dlUrl;
-  a.download = `CMPG_${modeLabel}_${safeName}_${dateStr.replace(/\//g, '-')}.xlsx`;
-  document.body.appendChild(a);
-  a.click();
-  document.body.removeChild(a);
-  setTimeout(() => URL.revokeObjectURL(dlUrl), 10000);
-  toast(`Excel ${modeLabel} généré avec succès !`, 'success');
+  doc.save(`CMPG_${modeLabel}_${safeName}_${dateStr.replace(/\//g, '-')}.pdf`);
+  toast(`PDF ${modeLabel} généré avec succès !`, 'success');
 }
 
 // ============================================================

@@ -2328,7 +2328,10 @@ async function creerClient() {
 const SITE_BASE = 'https://portail.conceptionmpg.com';
 
 function copierLienClient(email) {
-  const lien = `${SITE_BASE}/client.html?email=${encodeURIComponent(email)}`;
+  // Pas de paramètre ?email= dans l'URL : ce paramètre n'est pas utilisé par
+  // client.html (aucun pré-remplissage), et Google Safe Browsing signale à
+  // tort les URL contenant un courriel en clair comme hameçonnage.
+  const lien = `${SITE_BASE}/client.html`;
   navigator.clipboard.writeText(lien);
   toast('Lien portail copié dans le presse-papier.', 'success');
 }

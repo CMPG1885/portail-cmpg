@@ -1,0 +1,2858 @@
+<!DOCTYPE html>
+<html lang="fr" xmlns:mso="urn:schemas-microsoft-com:office:office" xmlns:msdt="uuid:C2F41010-65B3-11d1-A29F-00AA00C14882">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>CMPG — Portail Administration</title>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/jspdf-autotable@3.8.2/dist/jspdf.plugin.autotable.min.js"></script>
+<link href="https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;500;700&family=Noto+Serif+Display:ital,wght@0,400;0,700;1,400&display=swap" rel="stylesheet">
+<style>
+/* ===== CMPG DESIGN SYSTEM ===== */
+:root {
+  --charcoal: #3A3B3A;
+  --caramel: #9A8C7E;
+  --blanc: #FFFFFF;
+  --gris: #C7C8CA;
+  --fond: #F5F4EE;
+  --fond-card: #FFFFFF;
+  --bord: #E3DFD8;
+  --texte: #3A3B3A;
+  --texte-2: #706862;
+  --success: #4B7A5C;
+  --warning: #9A8C7E;
+  --danger: #8B3A3A;
+  --shadow: 0 1px 4px rgba(58,59,58,.08), 0 4px 16px rgba(58,59,58,.06);
+}
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body { font-family: 'Roboto', sans-serif; background: var(--fond); color: var(--texte); min-height: 100vh; }
+
+/* ===== AUTH SCREEN ===== */
+#auth-screen {
+  min-height: 100vh; display: flex; align-items: center; justify-content: center;
+  background: var(--charcoal);
+}
+.auth-card {
+  background: var(--blanc); padding: 48px 40px; width: 380px;
+  box-shadow: 0 8px 40px rgba(0,0,0,.3);
+}
+.auth-logo { text-align: center; margin-bottom: 32px; }
+.auth-logo h1 { font-family: 'Noto Serif Display', serif; font-size: 28px; color: var(--charcoal); letter-spacing: 2px; }
+.auth-logo p { font-size: 11px; letter-spacing: 3px; text-transform: uppercase; color: var(--caramel); margin-top: 4px; }
+.auth-card input {
+  width: 100%; padding: 12px 14px; border: 1px solid var(--bord); font-family: 'Roboto', sans-serif;
+  font-size: 14px; margin-bottom: 14px; outline: none; transition: border .2s;
+}
+.auth-card input:focus { border-color: var(--caramel); }
+.btn-primary {
+  width: 100%; padding: 13px; background: var(--charcoal); color: var(--blanc);
+  border: none; font-family: 'Roboto', sans-serif; font-size: 13px; letter-spacing: 1.5px;
+  text-transform: uppercase; cursor: pointer; transition: background .2s;
+}
+.btn-primary:hover { background: #555; }
+#auth-error { color: #c0392b; font-size: 13px; margin-top: 8px; text-align: center; }
+
+/* ===== LAYOUT ===== */
+#app { display: none; }
+.sidebar {
+  position: fixed; left: 0; top: 0; bottom: 0; width: 220px;
+  background: var(--charcoal); display: flex; flex-direction: column;
+}
+.sidebar-logo {
+  padding: 28px 24px 20px; border-bottom: 1px solid rgba(255,255,255,.1);
+}
+.sidebar-logo h1 { font-family: 'Noto Serif Display', serif; font-size: 20px; color: var(--blanc); }
+.sidebar-logo p { font-size: 9px; letter-spacing: 3px; text-transform: uppercase; color: var(--caramel); margin-top: 2px; }
+.sidebar-nav { flex: 1; padding: 16px 0; }
+.nav-item {
+  display: flex; align-items: center; gap: 12px; padding: 11px 24px;
+  color: rgba(255,255,255,.6); font-size: 13px; cursor: pointer;
+  transition: all .15s; border-left: 3px solid transparent; text-decoration: none;
+}
+.nav-item:hover { color: var(--blanc); background: rgba(255,255,255,.05); }
+.nav-item.active { color: var(--blanc); border-left-color: var(--caramel); background: rgba(207,147,79,.1); }
+.nav-icon { width: 18px; text-align: center; font-size: 15px; }
+.sidebar-bottom { padding: 16px 24px; border-top: 1px solid rgba(255,255,255,.1); }
+.user-email { font-size: 11px; color: rgba(255,255,255,.4); margin-bottom: 8px; }
+.btn-signout { background: none; border: 1px solid rgba(255,255,255,.2); color: rgba(255,255,255,.6); padding: 7px 14px; font-size: 11px; letter-spacing: 1px; text-transform: uppercase; cursor: pointer; width: 100%; }
+.btn-signout:hover { border-color: rgba(255,255,255,.5); color: var(--blanc); }
+
+.main-content { margin-left: 220px; min-height: 100vh; }
+.page-header {
+  background: var(--blanc); border-bottom: 1px solid var(--bord);
+  padding: 24px 36px; display: flex; align-items: center; justify-content: space-between;
+}
+.page-header h2 { font-family: 'Noto Serif Display', serif; font-size: 22px; color: var(--charcoal); }
+.page-body { padding: 32px 36px; }
+
+/* ===== VIEWS ===== */
+.view { display: none; }
+.view.active { display: block; }
+
+/* ===== CARDS ===== */
+.card {
+  background: var(--fond-card); border: 1px solid var(--bord);
+  padding: 24px; margin-bottom: 20px; box-shadow: var(--shadow);
+}
+.card-grid {
+  display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 20px; margin-bottom: 24px;
+}
+.project-card {
+  background: var(--blanc); border: 1px solid var(--bord); padding: 24px;
+  cursor: pointer; transition: all .2s; box-shadow: var(--shadow);
+}
+.project-card:hover { border-color: var(--caramel); transform: translateY(-2px); box-shadow: 0 6px 24px rgba(58,59,58,.12); }
+.project-card h3 { font-family: 'Noto Serif Display', serif; font-size: 17px; margin-bottom: 4px; }
+.project-card .client-name { font-size: 12px; color: var(--caramel); letter-spacing: 1px; text-transform: uppercase; margin-bottom: 12px; }
+.project-card .address { font-size: 13px; color: var(--texte-2); margin-bottom: 14px; }
+.progress-bar { height: 3px; background: var(--bord); margin-bottom: 6px; }
+.progress-fill { height: 100%; background: var(--caramel); transition: width .3s; }
+.progress-label { font-size: 11px; color: var(--texte-2); display: flex; justify-content: space-between; }
+.status-badge {
+  display: inline-block; padding: 3px 10px; font-size: 10px; letter-spacing: 1px;
+  text-transform: uppercase; font-weight: 500;
+}
+.status-actif { background: rgba(75,122,92,.1); color: #4B7A5C; }
+.status-complété { background: rgba(58,59,58,.1); color: var(--charcoal); }
+.status-archivé { background: rgba(199,200,202,.3); color: #706862; }
+
+/* ===== FORMS ===== */
+.form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+.form-group { margin-bottom: 16px; }
+.form-group label { display: block; font-size: 11px; letter-spacing: 1.5px; text-transform: uppercase; color: var(--texte-2); margin-bottom: 6px; }
+.form-group input, .form-group select, .form-group textarea {
+  width: 100%; padding: 10px 12px; border: 1px solid var(--bord);
+  font-family: 'Roboto', sans-serif; font-size: 13px; outline: none; background: var(--blanc);
+  transition: border .2s;
+}
+.form-group input:focus, .form-group select:focus, .form-group textarea:focus { border-color: var(--caramel); }
+.form-group textarea { resize: vertical; min-height: 80px; }
+.form-full { grid-column: 1 / -1; }
+
+.btn {
+  padding: 10px 20px; font-family: 'Roboto', sans-serif; font-size: 12px;
+  letter-spacing: 1.2px; text-transform: uppercase; cursor: pointer; border: none; transition: all .2s;
+}
+.btn-dark { background: var(--charcoal); color: var(--blanc); }
+.btn-dark:hover { background: #555; }
+.btn-outline { background: transparent; color: var(--charcoal); border: 1px solid var(--charcoal); }
+.btn-outline:hover { background: var(--charcoal); color: var(--blanc); }
+.btn-caramel { background: var(--caramel); color: var(--blanc); }
+.btn-caramel:hover { background: #b87d3f; }
+.btn-sm { padding: 7px 14px; font-size: 11px; }
+.btn-danger { background: var(--danger); color: var(--blanc); }
+
+/* ===== MODAL ===== */
+.modal-overlay {
+  display: none; position: fixed; inset: 0; background: rgba(58,59,58,.5);
+  z-index: 1000; align-items: center; justify-content: center;
+}
+.modal-overlay.open { display: flex; }
+.modal {
+  background: var(--blanc); width: 580px; max-width: 95vw; max-height: 90vh;
+  overflow-y: auto; box-shadow: 0 20px 60px rgba(0,0,0,.3);
+}
+.modal-header {
+  padding: 24px 28px; border-bottom: 1px solid var(--bord);
+  display: flex; align-items: center; justify-content: space-between;
+}
+.modal-header h3 { font-family: 'Noto Serif Display', serif; font-size: 18px; }
+.modal-close { background: none; border: none; font-size: 20px; cursor: pointer; color: var(--texte-2); }
+.modal-body { padding: 28px; }
+.modal-footer { padding: 20px 28px; border-top: 1px solid var(--bord); display: flex; gap: 12px; justify-content: flex-end; }
+
+/* ===== TABLE ===== */
+.data-table { width: 100%; border-collapse: collapse; }
+.data-table th { text-align: left; padding: 10px 14px; font-size: 10px; letter-spacing: 1.5px; text-transform: uppercase; color: var(--texte-2); border-bottom: 2px solid var(--bord); }
+.data-table td { padding: 12px 14px; border-bottom: 1px solid var(--bord); font-size: 13px; vertical-align: middle; }
+.data-table tr:hover td { background: var(--fond); }
+.data-table .product-thumb { width: 44px; height: 44px; object-fit: cover; background: var(--fond); border: 1px solid var(--bord); }
+
+/* ===== BANQUE PRODUITS ===== */
+.product-bank-filters { display: flex; gap: 12px; margin-bottom: 20px; align-items: center; flex-wrap: wrap; }
+.product-bank-filters input { padding: 9px 12px; border: 1px solid var(--bord); font-size: 13px; flex: 1; min-width: 200px; outline: none; }
+.product-bank-filters input:focus { border-color: var(--caramel); }
+.product-bank-filters select { padding: 9px 12px; border: 1px solid var(--bord); font-size: 13px; outline: none; background: var(--blanc); }
+.url-import { display: flex; gap: 10px; margin-bottom: 20px; }
+.url-import input { flex: 1; padding: 10px 14px; border: 1px solid var(--bord); font-size: 13px; outline: none; }
+.url-import input:focus { border-color: var(--caramel); }
+
+/* ===== PROJET DETAIL ===== */
+.projet-tabs { display: flex; border-bottom: 2px solid var(--bord); margin-bottom: 24px; }
+.projet-tab { padding: 12px 24px; font-size: 12px; letter-spacing: 1.5px; text-transform: uppercase; cursor: pointer; color: var(--texte-2); border-bottom: 2px solid transparent; margin-bottom: -2px; }
+.projet-tab.active { color: var(--charcoal); border-bottom-color: var(--caramel); font-weight: 500; }
+/* ===== VOLETS ===== */
+.volets-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+.volet-card { border: 1px solid var(--bord); background: var(--blanc); padding: 16px; transition: border-color .15s; }
+.volet-card.actif { border-color: var(--caramel); }
+.volet-card-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 6px; }
+.volet-card-header strong { font-size: 13px; }
+.volet-desc { font-size: 11px; color: var(--texte-2); margin-bottom: 12px; }
+.volet-toggle { padding: 5px 12px; font-size: 10px; letter-spacing: 1px; text-transform: uppercase; cursor: pointer; border: 1px solid var(--bord); background: var(--fond); color: var(--texte-2); }
+.volet-toggle.on { background: var(--caramel); color: var(--blanc); border-color: var(--caramel); }
+.volet-docs { border-top: 1px solid var(--bord); padding-top: 12px; margin-top: 4px; }
+.volet-upload { display: flex; gap: 8px; margin-bottom: 10px; flex-wrap: wrap; }
+.doc-item { display: flex; align-items: center; gap: 8px; padding: 6px 0; border-bottom: 1px solid var(--fond); font-size: 12px; }
+.doc-item a { color: var(--caramel); text-decoration: none; flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.doc-item a:hover { text-decoration: underline; }
+.doc-size { font-size: 10px; color: var(--texte-2); white-space: nowrap; }
+.doc-del { background: none; border: none; color: var(--texte-2); cursor: pointer; font-size: 16px; line-height: 1; padding: 0 2px; }
+.doc-del:hover { color: var(--danger); }
+.facture-row { display: grid; grid-template-columns: 1fr 2fr 80px 80px 24px; gap: 8px; align-items: center; padding: 6px 0; border-bottom: 1px solid var(--fond); font-size: 12px; }
+.facture-row.header { font-size: 10px; text-transform: uppercase; letter-spacing: 1px; color: var(--texte-2); padding-bottom: 8px; }
+.badge-paye { background: #e6f4ec; color: var(--success); font-size: 10px; padding: 2px 6px; }
+.badge-partiel { background: #fef3e2; color: #b86c00; font-size: 10px; padding: 2px 6px; }
+.badge-attente { background: var(--fond); color: var(--texte-2); font-size: 10px; padding: 2px 6px; }
+.factures-total { margin-top: 12px; padding-top: 8px; border-top: 2px solid var(--bord); font-size: 13px; display: flex; justify-content: space-between; }
+.categorie-section { margin-bottom: 32px; }
+.categorie-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; padding-bottom: 8px; border-bottom: 1px solid var(--bord); }
+.categorie-header h4 { font-size: 11px; letter-spacing: 2px; text-transform: uppercase; color: var(--caramel); }
+.poste-card { background: var(--blanc); border: 1px solid var(--bord); margin-bottom: 12px; }
+.poste-header { padding: 12px 16px; display: flex; align-items: center; justify-content: space-between; cursor: pointer; }
+.poste-header:hover { background: var(--fond); }
+.poste-ref { font-weight: 500; font-size: 13px; margin-right: 10px; }
+.poste-piece { font-size: 12px; color: var(--texte-2); }
+.piece-chip { display:inline-flex;align-items:center;gap:5px;padding:5px 11px;border:1px solid var(--bord);background:var(--fond);font-size:12px;cursor:pointer;user-select:none;transition:all .1s; }
+.piece-chip.checked { background:var(--caramel);color:var(--blanc);border-color:var(--caramel); }
+.piece-chip input[type=checkbox] { display:none; }
+.poste-options { padding: 0 16px 16px; border-top: 1px solid var(--bord); }
+.option-row { display: grid; grid-template-columns: 60px 60px 1fr auto; gap: 12px; align-items: center; padding: 10px 0; border-bottom: 1px solid var(--bord); }
+.option-row:last-child { border-bottom: none; }
+.option-letter { font-size: 12px; font-weight: 700; color: var(--caramel); text-transform: uppercase; }
+.option-status { font-size: 11px; padding: 3px 8px; text-align: center; }
+.status-approuve { background: rgba(75,122,92,.12); color: #4B7A5C; }
+.status-a_revoir { background: rgba(139,58,58,.1); color: var(--danger); }
+.status-en_attente { background: rgba(199,200,202,.3); color: #706862; }
+
+/* ===== EMPTY STATES ===== */
+.empty-state { text-align: center; padding: 60px 20px; color: var(--texte-2); }
+.empty-state .icon { font-size: 40px; margin-bottom: 12px; }
+.empty-state h3 { font-family: 'Noto Serif Display', serif; font-size: 18px; color: var(--charcoal); margin-bottom: 8px; }
+.empty-state p { font-size: 13px; margin-bottom: 20px; }
+
+/* ===== SPINNER ===== */
+.spinner { display: inline-block; width: 16px; height: 16px; border: 2px solid var(--bord); border-top-color: var(--caramel); border-radius: 50%; animation: spin .7s linear infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
+
+/* ===== TOAST ===== */
+#toast-container { position: fixed; bottom: 24px; right: 24px; z-index: 9999; display: flex; flex-direction: column; gap: 8px; }
+.toast { padding: 12px 20px; font-size: 13px; color: var(--blanc); box-shadow: var(--shadow); animation: slideIn .2s ease; }
+.toast-success { background: #4B7A5C; }
+.toast-error { background: var(--danger); }
+.toast-info { background: var(--charcoal); }
+@keyframes slideIn { from { transform: translateX(100%); opacity: 0; } to { transform: translateX(0); opacity: 1; } }
+
+/* ===== RESPONSIVE ===== */
+@media (max-width: 768px) {
+  .sidebar { width: 100%; position: relative; }
+  .main-content { margin-left: 0; }
+  .form-grid { grid-template-columns: 1fr; }
+  .page-body { padding: 20px 16px; }
+}
+
+/* ===== NOTIFICATIONS IN-APP ===== */
+.notif-bell-wrap { margin-bottom: 10px; }
+.btn-notif-bell {
+  width: 100%; background: none; border: 1px solid rgba(255,255,255,.2);
+  color: rgba(255,255,255,.7); padding: 7px 14px; font-size: 11px;
+  letter-spacing: 1px; text-transform: uppercase; cursor: pointer;
+  display: flex; align-items: center; gap: 8px;
+}
+.btn-notif-bell:hover { border-color: rgba(255,255,255,.5); color: var(--blanc); }
+.notif-badge {
+  display: none; background: #e05252; color: white; font-size: 9px;
+  font-weight: bold; min-width: 16px; height: 16px; border-radius: 8px;
+  padding: 0 4px; line-height: 16px; text-align: center; margin-left: auto;
+}
+.notif-badge.visible { display: inline-block; }
+.notif-backdrop {
+  display: none; position: fixed; inset: 0; background: rgba(0,0,0,.25); z-index: 499;
+}
+.notif-backdrop.open { display: block; }
+.notif-panel {
+  position: fixed; top: 0; left: 220px; width: 360px; height: 100vh;
+  background: var(--blanc); border-right: 1px solid var(--bord);
+  box-shadow: 4px 0 24px rgba(0,0,0,.14); z-index: 500;
+  display: none; flex-direction: column;
+}
+.notif-panel.open { display: flex; }
+.notif-panel-header {
+  padding: 20px 20px 14px; border-bottom: 1px solid var(--bord);
+  display: flex; align-items: center; justify-content: space-between;
+}
+.notif-panel-header h3 { font-family: 'Noto Serif Display', serif; font-size: 16px; color: var(--charcoal); }
+.btn-tout-lu { font-size: 10px; letter-spacing: .5px; color: var(--caramel); background: none; border: none; cursor: pointer; text-transform: uppercase; }
+.notif-close { background: none; border: none; font-size: 20px; cursor: pointer; color: var(--texte-2); line-height: 1; }
+.notif-list { flex: 1; overflow-y: auto; }
+.notif-item { padding: 14px 20px; border-bottom: 1px solid var(--fond); transition: background .1s; }
+.notif-item:hover { background: var(--fond); }
+.notif-item.unread { border-left: 3px solid var(--caramel); }
+.notif-item.read { border-left: 3px solid transparent; }
+.notif-type { font-size: 10px; font-weight: bold; letter-spacing: .5px; text-transform: uppercase; margin-bottom: 4px; }
+.notif-type.revision { color: #b86c00; }
+.notif-type.rejet    { color: #8B3A3A; }
+.notif-type.annule   { color: #706862; }
+.notif-desc  { font-size: 12px; color: var(--charcoal); line-height: 1.4; margin-bottom: 3px; }
+.notif-meta  { font-size: 10px; color: var(--texte-2); }
+.notif-empty { padding: 48px 20px; text-align: center; color: var(--texte-2); font-size: 13px; }
+</style>
+
+<!--[if gte mso 9]><xml>
+<mso:CustomDocumentProperties>
+<mso:MediaServiceImageTags msdt:dt="string"></mso:MediaServiceImageTags>
+<mso:lcf76f155ced4ddcb4097134ff3c332f msdt:dt="string"></mso:lcf76f155ced4ddcb4097134ff3c332f>
+<mso:TaxCatchAll msdt:dt="string"></mso:TaxCatchAll>
+</mso:CustomDocumentProperties>
+</xml><![endif]-->
+</head>
+<body>
+
+<!-- AUTH -->
+<div id="auth-screen">
+  <div class="auth-card">
+    <div class="auth-logo">
+      <h1>CMPG</h1>
+      <p>Design Construction</p>
+    </div>
+    <input type="email" id="login-email" placeholder="Adresse courriel" />
+    <input type="password" id="login-password" placeholder="Mot de passe" />
+    <button class="btn-primary" onclick="login()">Se connecter</button>
+    <div id="auth-error"></div>
+  </div>
+</div>
+
+<!-- APP -->
+<div id="app">
+  <!-- Sidebar -->
+  <aside class="sidebar">
+    <div class="sidebar-logo">
+      <h1>CMPG</h1>
+      <p>Portail Admin</p>
+    </div>
+    <nav class="sidebar-nav">
+      <a class="nav-item active" onclick="showView('projets')" href="#">
+        <span class="nav-icon">📁</span> Projets
+      </a>
+      <a class="nav-item" onclick="showView('banque')" href="#">
+        <span class="nav-icon">🗃️</span> Banque produits
+      </a>
+      <a class="nav-item" onclick="showView('clients')" href="#">
+        <span class="nav-icon">👤</span> Clients
+      </a>
+    </nav>
+    <div class="sidebar-bottom">
+      <div class="user-email" id="user-email-display"></div>
+      <div class="notif-bell-wrap">
+        <button class="btn-notif-bell" onclick="toggleNotifPanel()">
+          🔔 Notifications
+          <span class="notif-badge" id="notif-badge">0</span>
+        </button>
+      </div>
+      <button class="btn-signout" onclick="logout()">Déconnexion</button>
+    </div>
+  </aside>
+
+  <!-- FOND GRISÉ NOTIFICATIONS -->
+  <div id="notif-backdrop" class="notif-backdrop" onclick="fermerNotifPanel()"></div>
+
+  <!-- PANNEAU NOTIFICATIONS -->
+  <div id="notif-panel" class="notif-panel">
+    <div class="notif-panel-header">
+      <h3>🔔 Notifications</h3>
+      <div style="display:flex;align-items:center;gap:12px">
+        <button class="btn-tout-lu" onclick="marquerToutLu()">Tout marquer lu</button>
+        <button class="notif-close" onclick="fermerNotifPanel()">×</button>
+      </div>
+    </div>
+    <div class="notif-list" id="notif-list">
+      <div class="notif-empty">Aucune notification pour l'instant.</div>
+    </div>
+  </div>
+
+  <!-- Main -->
+  <div class="main-content">
+
+    <!-- ===== VUE PROJETS ===== -->
+    <div id="view-projets" class="view active">
+      <div class="page-header">
+        <h2>Projets</h2>
+        <button class="btn btn-dark" onclick="ouvrirModalNouveauProjet()">+ Nouveau projet</button>
+      </div>
+      <div class="page-body">
+        <div id="projets-grid" class="card-grid">
+          <div class="empty-state" style="grid-column:1/-1">
+            <div class="icon">📁</div>
+            <h3>Chargement…</h3>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ===== VUE DÉTAIL PROJET ===== -->
+    <div id="view-projet-detail" class="view">
+      <div class="page-header">
+        <div>
+          <button class="btn btn-outline btn-sm" onclick="showView('projets')" style="margin-bottom:6px">← Retour</button>
+          <h2 id="detail-projet-nom">Projet</h2>
+          <div id="detail-projet-client" style="font-size:12px;color:var(--caramel);letter-spacing:1px;text-transform:uppercase;margin-top:2px"></div>
+        </div>
+        <div style="display:flex;gap:10px">
+          <button class="btn btn-outline btn-sm" onclick="genererPDFClient()">⬇ PDF Client</button>
+          <button class="btn btn-caramel btn-sm" onclick="genererPDFChantier()">⬇ PDF Chantier</button>
+        </div>
+      </div>
+      <div class="page-body">
+        <div class="projet-tabs">
+          <div class="projet-tab active" onclick="showProjetTab('postes', this)">Postes & Sélections</div>
+          <div class="projet-tab" onclick="showProjetTab('volets', this);chargerVolets()">Volets & Documents</div>
+          <div class="projet-tab" onclick="showProjetTab('progression', this)">Progression client</div>
+          <div class="projet-tab" onclick="showProjetTab('infos', this)">Informations</div>
+        </div>
+
+        <!-- TAB: Postes -->
+        <div id="tab-postes" class="projet-tab-content">
+          <div style="display:flex;justify-content:flex-end;margin-bottom:16px">
+            <button class="btn btn-dark btn-sm" onclick="openModalPoste()">+ Ajouter un poste</button>
+          </div>
+          <div id="postes-categories-list">
+            <div class="empty-state"><div class="icon">📋</div><h3>Aucun poste</h3><p>Ajoutez des postes pour commencer.</p></div>
+          </div>
+        </div>
+
+        <!-- TAB: Volets & Documents -->
+        <div id="tab-volets" class="projet-tab-content" style="display:none">
+          <div class="volets-grid" id="volets-grid">
+            <div class="empty-state" style="grid-column:1/-1"><p>Chargement des volets…</p></div>
+          </div>
+        </div>
+
+        <!-- TAB: Progression -->
+        <div id="tab-progression" class="projet-tab-content" style="display:none">
+          <div id="progression-content">
+            <div class="card">
+              <div id="progression-stats" style="display:grid;grid-template-columns:repeat(4,1fr);gap:20px;text-align:center">
+                <!-- Stats dynamiques -->
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- TAB: Infos -->
+        <div id="tab-infos" class="projet-tab-content" style="display:none">
+          <div class="card" id="infos-content"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ===== VUE BANQUE PRODUITS ===== -->
+    <div id="view-banque" class="view">
+      <div class="page-header">
+        <h2>Banque de produits</h2>
+        <button class="btn btn-dark" onclick="openModal('modal-ajout-produit')">+ Ajouter un produit</button>
+      </div>
+      <div class="page-body">
+        <!-- Import URL rapide -->
+        <div class="card">
+          <div style="font-size:11px;letter-spacing:1.5px;text-transform:uppercase;color:var(--texte-2);margin-bottom:10px">Ajout rapide par URL</div>
+          <div id="bandeau-revalidation" style="display:none;background:#eef6f0;border:1px solid var(--bord);padding:10px 14px;margin-bottom:14px;font-size:13px"></div>
+          <div style="margin-bottom:14px">
+            <button class="btn btn-outline btn-sm" onclick="revaliderPrix()">↻ Revalider les prix</button>
+            <span id="reval-status" style="font-size:12px;color:var(--texte-2);margin-left:8px"></span>
+          </div>
+          <div class="url-import">
+            <input type="url" id="url-import-input" placeholder="https://www.espaceplomberium.com/products/..." />
+            <button class="btn btn-caramel" onclick="importerParURL()">Importer</button>
+          </div>
+          <div id="url-import-status" style="font-size:12px;color:var(--texte-2);margin-top:4px"></div>
+        </div>
+
+        <!-- Filtres -->
+        <div class="product-bank-filters">
+          <input type="search" id="search-produits" placeholder="Rechercher un produit…" oninput="filtrerProduits()" />
+          <select id="filter-categorie" onchange="onCatFiltreChange()">
+            <option value="">Toutes les catégories</option>
+          </select>
+          <select id="filter-sous-cat" onchange="filtrerProduits()">
+            <option value="">Toutes les sous-catégories</option>
+          </select>
+          <select id="filter-statut" onchange="filtrerProduits()">
+            <option value="">Tous les statuts</option>
+            <option value="actif">Actif</option>
+            <option value="prix_a_verifier">Prix à vérifier</option>
+            <option value="discontinue">Discontinué</option>
+          </select>
+        </div>
+
+        <!-- Table produits -->
+        <div class="card" style="padding:0;overflow:hidden">
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th>Photo</th>
+                <th>Produit</th>
+                <th>Fabricant</th>
+                <th>Catégorie / Sous-catégorie</th>
+                <th>Prix</th>
+                <th>Statut</th>
+                <th>Actions</th>
+              </tr>
+            </thead>
+            <tbody id="produits-tbody">
+              <tr><td colspan="6" style="text-align:center;padding:40px;color:var(--texte-2)">Chargement…</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <!-- ===== VUE CLIENTS ===== -->
+    <div id="view-clients" class="view">
+      <div class="page-header">
+        <h2>Clients</h2>
+        <button class="btn btn-dark" onclick="openModal('modal-nouveau-client')">+ Nouveau client</button>
+      </div>
+      <div class="page-body">
+        <div class="card" style="padding:0;overflow:hidden">
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th>Nom</th>
+                <th>Courriel</th>
+                <th>Téléphone</th>
+                <th>Projets</th>
+                <th>Actions</th>
+              </tr>
+            </thead>
+            <tbody id="clients-tbody">
+              <tr><td colspan="5" style="text-align:center;padding:40px;color:var(--texte-2)">Chargement…</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+  </div><!-- fin main-content -->
+</div><!-- fin app -->
+
+<!-- ===== MODALS ===== -->
+
+<!-- Modal Nouveau Projet -->
+<div id="modal-nouveau-projet" class="modal-overlay">
+  <div class="modal">
+    <div class="modal-header">
+      <h3>Nouveau projet</h3>
+      <button class="modal-close" onclick="closeModal('modal-nouveau-projet')">×</button>
+    </div>
+    <div class="modal-body">
+      <div class="form-grid">
+        <div class="form-group form-full">
+          <label>Nom du projet *</label>
+          <input type="text" id="np-nom" placeholder="Résidence Tremblay — Cuisine" />
+        </div>
+        <div class="form-group form-full">
+          <label>Adresse</label>
+          <input type="text" id="np-adresse" placeholder="123 rue des Érables, Montréal" />
+        </div>
+        <div class="form-group form-full">
+          <label>Client</label>
+          <select id="np-client">
+            <option value="">-- Sélectionner un client --</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label>Budget minimum ($)</label>
+          <input type="number" id="np-budget-min" placeholder="25000" />
+        </div>
+        <div class="form-group">
+          <label>Budget maximum ($)</label>
+          <input type="number" id="np-budget-max" placeholder="40000" />
+        </div>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-outline" onclick="closeModal('modal-nouveau-projet')">Annuler</button>
+      <button class="btn btn-dark" onclick="creerProjet()">Créer le projet</button>
+    </div>
+  </div>
+</div>
+
+<!-- Modal Modifier Projet -->
+<div id="modal-modifier-projet" class="modal-overlay">
+  <div class="modal">
+    <div class="modal-header">
+      <h3>Modifier le projet</h3>
+      <button class="modal-close" onclick="closeModal('modal-modifier-projet')">×</button>
+    </div>
+    <div class="modal-body">
+      <div class="form-grid">
+        <input type="hidden" id="mp-id" />
+        <div class="form-group form-full">
+          <label>Nom du projet *</label>
+          <input type="text" id="mp-nom" />
+        </div>
+        <div class="form-group form-full">
+          <label>Adresse</label>
+          <input type="text" id="mp-adresse" />
+        </div>
+        <div class="form-group form-full">
+          <label>Client</label>
+          <select id="mp-client">
+            <option value="">-- Sélectionner un client --</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label>Budget minimum ($)</label>
+          <input type="number" id="mp-budget-min" />
+        </div>
+        <div class="form-group">
+          <label>Budget maximum ($)</label>
+          <input type="number" id="mp-budget-max" />
+        </div>
+        <div class="form-group form-full">
+          <label>Statut</label>
+          <select id="mp-statut">
+            <option value="actif">Actif</option>
+            <option value="complété">Complété</option>
+            <option value="archivé">Archivé</option>
+          </select>
+        </div>
+        <div class="form-group" style="border-top:1px solid var(--bord);padding-top:16px;margin-top:4px">
+          <label>Personne-ressource interne (nom)</label>
+          <input type="text" id="mp-responsable-nom" placeholder="Ex : Maya Tremblay" />
+        </div>
+        <div class="form-group">
+          <label>Courriel de la personne-ressource</label>
+          <input type="email" id="mp-responsable-email" placeholder="maya@conceptionmpg.ca" />
+        </div>
+        <div style="grid-column:1/-1;font-size:11px;color:var(--texte-2);margin-top:-8px">
+          📬 Cette personne recevra un courriel automatique lorsqu'un client fait une demande de révision ou un rejet.
+        </div>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-outline" onclick="closeModal('modal-modifier-projet')">Annuler</button>
+      <button class="btn btn-dark" onclick="sauvegarderProjet()">Enregistrer</button>
+    </div>
+  </div>
+</div>
+
+<!-- Modal Nouveau Client -->
+<div id="modal-nouveau-client" class="modal-overlay">
+  <div class="modal">
+    <div class="modal-header">
+      <h3>Nouveau client</h3>
+      <button class="modal-close" onclick="closeModal('modal-nouveau-client')">×</button>
+    </div>
+    <div class="modal-body">
+      <div class="form-grid">
+        <div class="form-group form-full">
+          <label>Nom complet *</label>
+          <input type="text" id="nc-nom" placeholder="Martine Tremblay" />
+        </div>
+        <div class="form-group form-full">
+          <label>Adresse courriel *</label>
+          <input type="email" id="nc-email" placeholder="martine@exemple.com" />
+        </div>
+        <div class="form-group form-full">
+          <label>Téléphone</label>
+          <input type="tel" id="nc-tel" placeholder="514 555-1234" />
+        </div>
+      </div>
+      <div style="background:var(--fond);padding:12px 16px;font-size:12px;color:var(--texte-2);margin-top:8px">
+        ℹ️ Le client recevra un lien d'accès par courriel pour se connecter au portail. L'accès Supabase Auth sera configuré séparément.
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-outline" onclick="closeModal('modal-nouveau-client')">Annuler</button>
+      <button class="btn btn-dark" onclick="creerClient()">Créer le client</button>
+    </div>
+  </div>
+</div>
+
+<!-- Modal Ajout Produit -->
+<div id="modal-ajout-produit" class="modal-overlay">
+  <div class="modal">
+    <div class="modal-header">
+      <h3>Ajouter un produit</h3>
+      <button class="modal-close" onclick="resetModalProduit();closeModal('modal-ajout-produit')">×</button>
+    </div>
+    <div class="modal-body">
+      <div class="form-grid">
+        <div class="form-group">
+          <label>Catégorie *</label>
+          <select id="ap-categorie" onchange="onCatFormChange()">
+            <option value="">-- Sélectionner --</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label>Sous-catégorie</label>
+          <select id="ap-sous-cat">
+            <option value="">-- Sélectionner une catégorie d'abord --</option>
+          </select>
+        </div>
+        <div class="form-group form-full">
+          <label>URL du produit</label>
+          <input type="url" id="ap-url" placeholder="https://..." />
+        </div>
+        <div class="form-group form-full">
+          <label>Nom / Description *</label>
+          <input type="text" id="ap-nom" placeholder="Évier Blanco Silgranit 33po" />
+        </div>
+        <div class="form-group">
+          <label>Fabricant</label>
+          <input type="text" id="ap-fabricant" placeholder="Blanco" />
+        </div>
+        <div class="form-group">
+          <label>Modèle</label>
+          <input type="text" id="ap-modele" placeholder="PRECIS II 33" />
+        </div>
+        <div class="form-group">
+          <label>SKU / Code</label>
+          <input type="text" id="ap-sku" placeholder="BL-440149" />
+        </div>
+        <div class="form-group">
+          <label>Prix ($)</label>
+          <input type="number" id="ap-prix" placeholder="749.00" step="0.01" />
+        </div>
+        <div class="form-group">
+          <label>Couleur / Fini</label>
+          <input type="text" id="ap-couleur" placeholder="Anthracite" />
+        </div>
+        <div class="form-group">
+          <label>Dimensions</label>
+          <input type="text" id="ap-dimensions" placeholder='33" x 18"' />
+        </div>
+        <div class="form-group form-full">
+          <label>Caractéristiques</label>
+          <textarea id="ap-carac" placeholder="Résine composite, 1 cuve, vidange incluse…"></textarea>
+        </div>
+        <div class="form-group form-full">
+          <label>Photo</label>
+          <div style="display:flex;gap:8px;align-items:center">
+            <input type="url" id="ap-photo" placeholder="https://… ou téléverser →" style="flex:1"
+              oninput="apercuPhotoUrl(this.value)" />
+            <label class="btn btn-outline btn-sm" style="cursor:pointer;white-space:nowrap;padding:7px 14px">
+              ↑ Téléverser
+              <input type="file" id="ap-photo-file" accept="image/jpeg,image/png,image/webp,image/gif"
+                style="display:none" onchange="telechargerPhoto(this)">
+            </label>
+          </div>
+          <div id="ap-photo-wrap" style="display:none;margin-top:10px;align-items:center;gap:12px">
+            <img id="ap-photo-img" referrerpolicy="no-referrer"
+              style="width:90px;height:68px;object-fit:contain;border:1px solid var(--bord);background:var(--fond)" />
+            <button type="button" onclick="effacerPhoto()"
+              style="font-size:11px;background:none;border:none;cursor:pointer;color:var(--danger);letter-spacing:.5px">
+              ✕ Effacer
+            </button>
+          </div>
+        </div>
+        <div class="form-group">
+          <label>Statut</label>
+          <select id="ap-statut">
+            <option value="actif">Actif</option>
+            <option value="prix_a_verifier">Prix à vérifier</option>
+            <option value="discontinue">Discontinué</option>
+          </select>
+        </div>
+        <div class="form-group form-full">
+          <label>Notes internes</label>
+          <textarea id="ap-notes" placeholder="Notes CMPG (non visibles par le client)…"></textarea>
+        </div>
+        <div class="form-group form-full" id="ap-historique-wrap" style="display:none">
+          <label>Historique des prix</label>
+          <div id="ap-historique" style="font-size:12px;color:var(--texte-2)"></div>
+        </div>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-outline" onclick="resetModalProduit();closeModal('modal-ajout-produit')">Annuler</button>
+      <button class="btn btn-dark" onclick="sauvegarderProduit()">Ajouter à la banque</button>
+    </div>
+  </div>
+</div>
+
+<!-- Modal Ajout Poste -->
+<div id="modal-ajout-poste" class="modal-overlay">
+  <div class="modal">
+    <div class="modal-header">
+      <h3>Ajouter un poste</h3>
+      <button class="modal-close" onclick="closeModal('modal-ajout-poste')">×</button>
+    </div>
+    <div class="modal-body">
+      <div class="form-grid">
+        <div class="form-group">
+          <label>Référence *</label>
+          <input type="text" id="poste-ref" placeholder="PL-01" />
+        </div>
+        <div class="form-group">
+          <label>Catégorie *</label>
+          <select id="poste-categorie" onchange="mettreAJourSousCatsPoste(this.value,'');filtrerProduitsBanqueSelect()">
+            <option value="">-- Sélectionner --</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label>Sous-catégorie</label>
+          <select id="poste-sous-cat" onchange="filtrerProduitsBanqueSelect()">
+            <option value="">-- Aucune --</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label>Type de sélection</label>
+          <select id="poste-type" onchange="onTypeSelectionChange()">
+            <option value="unique">Option unique (A)</option>
+            <option value="multiple">Options multiples (A, B, C)</option>
+          </select>
+        </div>
+        <div class="form-group" style="grid-column:1/-1">
+          <label>Pièce(s)</label>
+          <div id="pieces-checklist" style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:10px"></div>
+          <div style="display:flex;gap:8px">
+            <input type="text" id="nouvelle-piece" placeholder="Nouvelle pièce…"
+              style="flex:1;padding:8px 10px;border:1px solid var(--bord);font-size:13px;outline:none"
+              onkeydown="if(event.key==='Enter'){event.preventDefault();ajouterPiece()}" />
+            <button type="button" class="btn btn-outline btn-sm" onclick="ajouterPiece()">+ Ajouter</button>
+          </div>
+        </div>
+      </div>
+      <div id="poste-options-section">
+        <div style="font-size:11px;letter-spacing:1.5px;text-transform:uppercase;color:var(--texte-2);margin-bottom:12px">Produit(s) associé(s)</div>
+        <div id="options-slots-container"></div>
+        <div id="btn-ajouter-option-wrap" style="display:none;margin-top:6px">
+          <button type="button" class="btn btn-outline btn-sm" onclick="ajouterSlotOption()">➕ Ajouter option</button>
+        </div>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-outline" onclick="closeModal('modal-ajout-poste')">Annuler</button>
+      <button class="btn btn-dark" onclick="sauvegarderPoste()">Ajouter le poste</button>
+    </div>
+  </div>
+</div>
+
+<!-- Modal ajout option à poste existant -->
+<div id="modal-ajout-option" class="modal-overlay">
+  <div class="modal" style="width:540px">
+    <div class="modal-header">
+      <h3 id="ajout-option-titre">Ajouter une option</h3>
+      <button class="modal-close" onclick="closeModal('modal-ajout-option')">×</button>
+    </div>
+    <div class="modal-body">
+      <div id="ajout-option-info" style="margin-bottom:14px;padding:10px 12px;background:var(--fond);border:1px solid var(--bord);font-size:12px;color:var(--texte-2)"></div>
+      <div class="form-group">
+        <label>Produit (banque)</label>
+        <select id="ao-produit" onchange="mettreAJourApercuAO(this.value)">
+          <option value="">-- Choisir dans la banque --</option>
+        </select>
+      </div>
+      <div id="ao-apercu" style="display:none;margin-top:10px;align-items:center;gap:12px;padding:10px;background:var(--fond);border:1px solid var(--bord)"></div>
+      <div class="form-grid" style="margin-top:14px">
+        <div class="form-group">
+          <label>Quantité</label>
+          <input type="number" id="ao-qty" value="1" min="1" />
+        </div>
+        <div class="form-group">
+          <label>Note pour le client</label>
+          <input type="text" id="ao-note" placeholder="Optionnel" />
+        </div>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-outline" onclick="closeModal('modal-ajout-option')">Annuler</button>
+      <button class="btn btn-dark" onclick="sauvegarderNouvelleOption()">Ajouter</button>
+    </div>
+  </div>
+</div>
+
+<!-- Toast container -->
+<div id="toast-container"></div>
+
+<script>
+// ============================================================
+// CONFIG — à modifier avec vos clés Supabase
+// ============================================================
+const SUPABASE_URL = 'https://wncnagrotxkelnyeftxz.supabase.co';
+const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InduY25hZ3JvdHhrZWxueWVmdHh6Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODI0NTAzMTcsImV4cCI6MjA5ODAyNjMxN30.nVNMztoxAoKRtplqlYwJcXCRxxXEivdd6MsQLY55A6c';
+
+const { createClient } = supabase;
+const db = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
+// ============================================================
+// STATE
+// ============================================================
+let currentProjetId = null;
+let categories = [];
+let sousCategories = [];
+let postesCache = [];
+
+const PIECES_DEFAUT = [
+  'Cuisine','Salon','Salle à manger','Entrée','Couloir',
+  'SDB principale','SDB secondaire','SDB enfants','SDB parents',
+  'Chambre principale','Chambre enfant 1','Chambre enfant 2',
+  'Bureau','Sous-sol','Buanderie','Garage','Mudroom','Extérieur','Général'
+];
+let produitsCache = [];
+let editingProduitId = null;
+let editingPosteId = null;
+
+// ============================================================
+// AUTH
+// ============================================================
+async function login() {
+  const email = document.getElementById('login-email').value;
+  const password = document.getElementById('login-password').value;
+  const errEl = document.getElementById('auth-error');
+  errEl.textContent = '';
+
+  const { data, error } = await db.auth.signInWithPassword({ email, password });
+  if (error) { errEl.textContent = 'Erreur : ' + error.message; return; }
+
+  // Vérification du rôle admin
+  const role = data.user?.app_metadata?.role;
+  if (role !== 'admin') {
+    await db.auth.signOut();
+    errEl.textContent = 'Accès refusé. Ce portail est réservé à l\'équipe CMPG.';
+    return;
+  }
+  initApp(data.user);
+}
+
+async function logout() {
+  await db.auth.signOut();
+  document.getElementById('app').style.display = 'none';
+  document.getElementById('auth-screen').style.display = 'flex';
+}
+
+async function checkAuth() {
+  const { data: { session } } = await db.auth.getSession();
+  if (!session) return;
+  // Vérification du rôle admin au chargement de page
+  const role = session.user?.app_metadata?.role;
+  if (role !== 'admin') {
+    await db.auth.signOut();
+    return;
+  }
+  initApp(session.user);
+}
+
+async function initApp(user) {
+  document.getElementById('auth-screen').style.display = 'none';
+  document.getElementById('app').style.display = 'block';
+
+  const { data: { user: u } } = await db.auth.getUser();
+  if (u) document.getElementById('user-email-display').textContent = u.email;
+
+  await chargerCategories();
+  await chargerProjets();
+  initNotifications();
+}
+
+// ============================================================
+// NAVIGATION
+// ============================================================
+function showView(name) {
+  document.querySelectorAll('.view').forEach(v => v.classList.remove('active'));
+  document.getElementById('view-' + name).classList.add('active');
+
+  document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
+  const navMap = { projets: 0, banque: 1, clients: 2 };
+  const idx = navMap[name];
+  if (idx !== undefined) {
+    document.querySelectorAll('.nav-item')[idx].classList.add('active');
+  }
+
+  if (name === 'banque') chargerProduits();
+  if (name === 'clients') chargerClients();
+}
+
+function showProjetTab(tab, el) {
+  document.querySelectorAll('.projet-tab').forEach(t => t.classList.remove('active'));
+  el.classList.add('active');
+  document.querySelectorAll('.projet-tab-content').forEach(c => c.style.display = 'none');
+  document.getElementById('tab-' + tab).style.display = 'block';
+  if (tab === 'progression') chargerProgression();
+  if (tab === 'infos') chargerInfosProjet();
+}
+
+// ============================================================
+// CATÉGORIES
+// ============================================================
+async function chargerCategories() {
+  const [{ data: cats }, { data: scats }] = await Promise.all([
+    db.from('categories').select('*').order('ordre'),
+    db.from('sous_categories').select('*').order('ordre')
+  ]);
+  if (cats) {
+    categories = cats;
+    const catSelects = ['filter-categorie', 'ap-categorie', 'poste-categorie'];
+    catSelects.forEach(id => {
+      const sel = document.getElementById(id);
+      if (!sel) return;
+      const first = sel.options[0];
+      sel.innerHTML = '';
+      sel.appendChild(first);
+      categories.forEach(c => {
+        const opt = document.createElement('option');
+        opt.value = c.id;
+        opt.textContent = c.nom;
+        sel.appendChild(opt);
+      });
+    });
+  }
+  if (scats) {
+    sousCategories = scats;
+  }
+}
+
+function mettreAJourSousCats(catId, selectId, valeurActuelle) {
+  const sel = document.getElementById(selectId);
+  if (!sel) return;
+  const first = sel.options[0];
+  sel.innerHTML = '';
+  sel.appendChild(first);
+  const filtrees = sousCategories.filter(sc => sc.categorie_id === catId);
+  filtrees.forEach(sc => {
+    const opt = document.createElement('option');
+    opt.value = sc.id;
+    opt.textContent = sc.nom;
+    if (valeurActuelle && sc.id === valeurActuelle) opt.selected = true;
+    sel.appendChild(opt);
+  });
+}
+
+function onCatFiltreChange() {
+  const catId = document.getElementById('filter-categorie').value;
+  mettreAJourSousCats(catId, 'filter-sous-cat');
+  filtrerProduits();
+}
+
+function onCatFormChange() {
+  const catId = document.getElementById('ap-categorie').value;
+  mettreAJourSousCats(catId, 'ap-sous-cat');
+}
+
+// ============================================================
+// PROJETS
+// ============================================================
+async function chargerProjets() {
+  const { data: projets } = await db
+    .from('projets')
+    .select('*, clients(nom, email)')
+    .order('created_at', { ascending: false });
+
+  const grid = document.getElementById('projets-grid');
+  if (!projets || projets.length === 0) {
+    grid.innerHTML = `<div class="empty-state" style="grid-column:1/-1">
+      <div class="icon">📁</div><h3>Aucun projet</h3>
+      <p>Créez votre premier projet pour commencer.</p></div>`;
+    return;
+  }
+
+  // Charger progression pour chaque projet
+  const { data: progressions } = await db.from('vue_progression_projets').select('*');
+  const progMap = {};
+  (progressions || []).forEach(p => { progMap[p.id] = p; });
+
+  grid.innerHTML = '';
+  projets.forEach(p => {
+    const prog = progMap[p.id] || {};
+    const total = prog.total_options || 0;
+    const approuves = prog.approuves || 0;
+    const pct = total > 0 ? Math.round(approuves / total * 100) : 0;
+    const budget = prog.budget_confirme ? '$' + Number(prog.budget_confirme).toLocaleString('fr-CA') : '—';
+
+    const card = document.createElement('div');
+    card.className = 'project-card';
+    card.onclick = () => ouvrirProjet(p.id);
+    card.innerHTML = `
+      <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:8px">
+        <span class="status-badge status-${p.statut}">${p.statut}</span>
+        <div style="display:flex;gap:6px">
+          <button class="btn btn-outline btn-sm" onclick="event.stopPropagation();ouvrirModalModifierProjet('${p.id}')" title="Modifier">✏️</button>
+          <button class="btn btn-outline btn-sm" style="color:var(--danger);border-color:var(--danger)" onclick="event.stopPropagation();supprimerProjet('${p.id}','${p.nom.replace(/'/g,"\\'")}')" title="Supprimer">🗑</button>
+        </div>
+      </div>
+      <h3>${p.nom}</h3>
+      <div class="client-name">${p.clients ? p.clients.nom : '(aucun client)'}</div>
+      ${p.adresse ? `<div class="address">${p.adresse}</div>` : ''}
+      <div class="progress-bar"><div class="progress-fill" style="width:${pct}%"></div></div>
+      <div class="progress-label"><span>Approbations</span><span>${approuves}/${total} (${pct}%)</span></div>
+    `;
+    grid.appendChild(card);
+  });
+
+  // Charger clients dans le select
+  const { data: clients } = await db.from('clients').select('id, nom').order('nom');
+  const selClient = document.getElementById('np-client');
+  const firstOpt = selClient.options[0];
+  selClient.innerHTML = '';
+  selClient.appendChild(firstOpt);
+  (clients || []).forEach(c => {
+    const opt = document.createElement('option');
+    opt.value = c.id;
+    opt.textContent = c.nom;
+    selClient.appendChild(opt);
+  });
+}
+
+async function ouvrirModalNouveauProjet() {
+  // Recharger les clients à chaque ouverture
+  const { data: clients } = await db.from('clients').select('id, nom').order('nom');
+  const sel = document.getElementById('np-client');
+  sel.innerHTML = '<option value="">-- Sélectionner un client --</option>';
+  (clients || []).forEach(c => {
+    const opt = document.createElement('option');
+    opt.value = c.id;
+    opt.textContent = c.nom;
+    sel.appendChild(opt);
+  });
+  openModal('modal-nouveau-projet');
+}
+
+// Extrait le numéro de projet à partir des chiffres en début de nom
+// (ex. "2505 Mercier Thibault" → "2505"). Retourne null si le nom
+// ne commence pas par un numéro.
+function extraireNumeroProjet(nom) {
+  const m = (nom || '').trim().match(/^(\d+)/);
+  return m ? m[1] : null;
+}
+
+async function creerProjet() {
+  const nom = document.getElementById('np-nom').value.trim();
+  if (!nom) { toast('Le nom du projet est requis.', 'error'); return; }
+
+  const { error } = await db.from('projets').insert({
+    nom,
+    numero_projet: extraireNumeroProjet(nom),
+    adresse: document.getElementById('np-adresse').value.trim() || null,
+    client_id: document.getElementById('np-client').value || null,
+    budget_min: parseFloat(document.getElementById('np-budget-min').value) || null,
+    budget_max: parseFloat(document.getElementById('np-budget-max').value) || null,
+  });
+
+  if (error) { toast('Erreur : ' + error.message, 'error'); return; }
+  closeModal('modal-nouveau-projet');
+  toast('Projet créé avec succès.', 'success');
+  document.getElementById('np-nom').value = '';
+  document.getElementById('np-adresse').value = '';
+  chargerProjets();
+}
+
+async function ouvrirModalModifierProjet(projetId) {
+  const { data: clients } = await db.from('clients').select('id, nom').order('nom');
+  const sel = document.getElementById('mp-client');
+  sel.innerHTML = '<option value="">-- Aucun client --</option>';
+  (clients || []).forEach(c => {
+    const opt = document.createElement('option');
+    opt.value = c.id;
+    opt.textContent = c.nom;
+    sel.appendChild(opt);
+  });
+
+  const { data: p } = await db.from('projets').select('*').eq('id', projetId).single();
+  if (!p) return;
+
+  document.getElementById('mp-id').value                = p.id;
+  document.getElementById('mp-nom').value               = p.nom || '';
+  document.getElementById('mp-adresse').value           = p.adresse || '';
+  document.getElementById('mp-client').value            = p.client_id || '';
+  document.getElementById('mp-budget-min').value        = p.budget_min || '';
+  document.getElementById('mp-budget-max').value        = p.budget_max || '';
+  document.getElementById('mp-statut').value            = p.statut || 'actif';
+  document.getElementById('mp-responsable-nom').value   = p.responsable_nom || '';
+  document.getElementById('mp-responsable-email').value = p.responsable_email || '';
+  openModal('modal-modifier-projet');
+}
+
+async function sauvegarderProjet() {
+  const id  = document.getElementById('mp-id').value;
+  const nom = document.getElementById('mp-nom').value.trim();
+  if (!nom) { toast('Le nom du projet est requis.', 'error'); return; }
+
+  const { error } = await db.from('projets').update({
+    nom,
+    numero_projet:       extraireNumeroProjet(nom),
+    adresse:             document.getElementById('mp-adresse').value.trim() || null,
+    client_id:           document.getElementById('mp-client').value || null,
+    budget_min:          parseFloat(document.getElementById('mp-budget-min').value) || null,
+    budget_max:          parseFloat(document.getElementById('mp-budget-max').value) || null,
+    statut:              document.getElementById('mp-statut').value,
+    responsable_nom:     document.getElementById('mp-responsable-nom').value.trim() || null,
+    responsable_email:   document.getElementById('mp-responsable-email').value.trim() || null,
+    updated_at:          new Date().toISOString(),
+  }).eq('id', id);
+
+  if (error) { toast('Erreur : ' + error.message, 'error'); return; }
+  closeModal('modal-modifier-projet');
+  toast('Projet mis à jour.', 'success');
+  chargerProjets();
+}
+
+async function supprimerProjet(id, nom) {
+  if (!confirm(`Supprimer le projet "${nom}" ?\n\nTous les postes et sélections seront supprimés. Cette action est irréversible.`)) return;
+  const { error } = await db.from('projets').delete().eq('id', id);
+  if (error) { toast('Erreur : ' + error.message, 'error'); return; }
+  toast('Projet supprimé.', 'success');
+  chargerProjets();
+}
+
+async function ouvrirProjet(projetId) {
+  currentProjetId = projetId;
+
+  const { data: projet } = await db.from('projets').select('*, clients(nom)').eq('id', projetId).single();
+  document.getElementById('detail-projet-nom').textContent = projet.nom;
+  document.getElementById('detail-projet-client').textContent = projet.clients ? projet.clients.nom : '';
+
+  document.querySelectorAll('.view').forEach(v => v.classList.remove('active'));
+  document.getElementById('view-projet-detail').classList.add('active');
+
+  // Reset tabs
+  document.querySelectorAll('.projet-tab').forEach(t => t.classList.remove('active'));
+  document.querySelector('.projet-tab').classList.add('active');
+  document.querySelectorAll('.projet-tab-content').forEach(c => c.style.display = 'none');
+  document.getElementById('tab-postes').style.display = 'block';
+
+  chargerPostes();
+  chargerProduitsBanqueSelect();
+}
+
+// ============================================================
+// POSTES
+// ============================================================
+async function chargerPostes() {
+  const { data: postes } = await db
+    .from('postes')
+    .select('*, categories(nom, ordre), sous_categories(nom), options_produits(*, banque_produits(nom, fabricant, modele, prix, photo_url, couleur))')
+    .eq('projet_id', currentProjetId)
+    .order('ordre');
+
+  postesCache = postes || [];
+  const container = document.getElementById('postes-categories-list');
+  if (!postes || postes.length === 0) {
+    container.innerHTML = `<div class="empty-state"><div class="icon">📋</div><h3>Aucun poste</h3><p>Ajoutez des postes pour définir les sélections du projet.</p></div>`;
+    return;
+  }
+
+  // Grouper par catégorie
+  const byCat = {};
+  postes.forEach(p => {
+    const catNom = p.categories ? p.categories.nom : 'Autre';
+    if (!byCat[catNom]) byCat[catNom] = [];
+    byCat[catNom].push(p);
+  });
+
+  container.innerHTML = '';
+  Object.entries(byCat).forEach(([catNom, catPostes]) => {
+    const section = document.createElement('div');
+    section.className = 'categorie-section';
+    section.innerHTML = `
+      <div class="categorie-header">
+        <h4>${catNom}</h4>
+        <span style="font-size:12px;color:var(--texte-2)">${catPostes.length} poste(s)</span>
+      </div>
+    `;
+
+    catPostes.forEach(poste => {
+      const card = document.createElement('div');
+      card.className = 'poste-card';
+      const options = poste.options_produits || [];
+
+      // Lettres déjà utilisées → prochaine lettre disponible
+      const usedLetters = options.map(o => o.lettre_option);
+      const allLetters = ['A','B','C','D','E'];
+      const nextLetter = allLetters.find(l => !usedLetters.includes(l)) || '';
+      const isMultiple = poste.type_selection === 'multiple';
+
+      const activeOptions  = options.filter(o => o.statut_client !== 'annulé' && !(o.statut_client === 'à_revoir' && o.commentaire_client === 'Article non nécessaire'));
+      const retiredOptions = options.filter(o => o.statut_client === 'annulé' || (o.statut_client === 'à_revoir' && o.commentaire_client === 'Article non nécessaire'));
+
+      const renderOptRow = (opt, retired = false) => {
+              const bp = opt.banque_produits;
+              const sc = opt.statut_client || 'en_attente';
+              const statusClass = 'status-' + sc.replace('é', 'e').replace('_', '');
+              const statusLabel = { 'en_attente': 'En attente', 'approuvé': 'Approuvé', 'à_revoir': 'À revoir', 'annulé': 'Retiré' }[sc] || sc;
+              const canDelete = sc !== 'approuvé';
+              const isARevoir = sc === 'à_revoir' && !retired;
+              return `<div class="option-row" style="${isARevoir ? 'border-left:3px solid var(--caramel)' : ''}${retired ? 'opacity:.6;background:var(--fond)' : ''}">
+                <div class="option-letter">Opt. ${opt.lettre_option}</div>
+                <div class="option-status ${statusClass}">${statusLabel}</div>
+                <div style="flex:1">
+                  ${bp ? `<div style="font-size:13px;font-weight:500">${bp.nom || ''}</div>
+                  <div style="font-size:11px;color:var(--texte-2)">${[bp.fabricant, bp.modele, bp.couleur].filter(Boolean).join(' · ')}</div>` : '<div style="font-size:12px;color:var(--texte-2)">Produit non disponible</div>'}
+                  ${opt.commentaire_client && opt.commentaire_client !== '__rejete__' && opt.commentaire_client !== 'Article non nécessaire' ? `<div style="font-size:11px;color:var(--caramel);margin-top:3px">💬 ${opt.commentaire_client}</div>` : ''}
+                </div>
+                <div style="text-align:right;display:flex;flex-direction:column;align-items:flex-end;gap:4px">
+                  ${bp && bp.prix ? `<div style="font-size:13px;font-weight:500">$${Number(bp.prix * opt.quantite).toLocaleString('fr-CA')}</div>` : ''}
+                  <div style="font-size:11px;color:var(--texte-2)">Qté: ${opt.quantite}</div>
+                  ${isARevoir ? `<button class="btn btn-outline btn-sm" style="font-size:10px;padding:2px 8px;color:#1a5c2a;border-color:#1a5c2a" onclick="event.stopPropagation();remplacerOption('${opt.id}','${opt.lettre_option}',${opt.quantite})">↻ Proposer un remplacement</button>` : ''}
+                  ${!isARevoir && !retired && !opt.pre_approuve_cmpg ? `<button class="btn btn-outline btn-sm" style="font-size:10px;padding:2px 8px;color:var(--caramel);border-color:var(--caramel)" onclick="event.stopPropagation();preApprouverOption('${opt.id}',true)">✓ Pré-approuver</button>` : ''}
+                  ${opt.pre_approuve_cmpg ? `<span style="display:inline-flex;align-items:center;gap:4px;font-size:9px;background:var(--charcoal);color:var(--caramel);padding:2px 7px;letter-spacing:.5px">✓ Pré-approuvé CMPG<button onclick="event.stopPropagation();preApprouverOption('${opt.id}',false)" style="background:none;border:none;color:var(--caramel);cursor:pointer;font-size:10px;padding:0;margin-left:2px" title="Annuler la pré-approbation">✕</button></span>` : ''}
+                  ${canDelete ? `<button class="btn btn-outline btn-sm" style="font-size:10px;padding:2px 8px;color:var(--danger);border-color:var(--danger)" onclick="event.stopPropagation();supprimerOption('${opt.id}','${(bp?.nom||'ce produit').replace(/'/g,"\\'")}')">✕</button>` : ''}
+                </div>
+              </div>`;
+      };
+
+      const retiredHTML = retiredOptions.length > 0 ? `
+        <details style="border-top:1px solid var(--bord)">
+          <summary style="padding:8px 16px;font-size:11px;color:var(--texte-2);cursor:pointer;list-style:none;display:flex;align-items:center;gap:6px">
+            <span>▸</span> <span>Articles retirés (${retiredOptions.length})</span>
+          </summary>
+          ${retiredOptions.sort((a,b)=>(a.lettre_option||'A').localeCompare(b.lettre_option||'A')).map(o => renderOptRow(o, true)).join('')}
+        </details>` : '';
+
+      let optionsHTML = activeOptions.length === 0 && retiredOptions.length === 0
+        ? '<div style="padding:12px 16px;font-size:12px;color:var(--texte-2)">Aucune option — ajoutez un produit.</div>'
+        : (activeOptions.length === 0 ? '' : activeOptions
+            .sort((a, b) => (a.lettre_option || 'A').localeCompare(b.lettre_option || 'A'))
+            .map(opt => renderOptRow(opt)).join('')) + retiredHTML;
+
+      const typeBadge = isMultiple
+        ? `<span style="font-size:10px;background:rgba(207,147,79,.15);color:var(--caramel);padding:2px 7px;letter-spacing:.5px">MULTIPLE</span>`
+        : `<span style="font-size:10px;background:var(--fond);color:var(--texte-2);padding:2px 7px;letter-spacing:.5px">UNIQUE</span>`;
+
+      const btnAjouterOption = (isMultiple && nextLetter)
+        ? `<button class="btn btn-outline btn-sm" style="font-size:11px" onclick="event.stopPropagation();ouvrirModalAjoutOption('${poste.id}','${nextLetter}')" title="Ajouter option ${nextLetter}">➕ Option ${nextLetter}</button>`
+        : '';
+
+      card.innerHTML = `
+        <div class="poste-header">
+          <div style="display:flex;align-items:center;gap:8px">
+            <span class="poste-ref">${poste.reference}</span>
+            ${typeBadge}
+            <span class="poste-piece">${(poste.pieces && poste.pieces.length ? poste.pieces.join(', ') : (poste.piece || ''))}</span>
+          </div>
+          <div style="display:flex;align-items:center;gap:8px">
+            ${btnAjouterOption}
+            <button class="btn btn-outline btn-sm" onclick="event.stopPropagation();ouvrirModalEditerPoste('${poste.id}')" title="Modifier">✏️</button>
+            <button class="btn btn-outline btn-sm" style="color:var(--danger);border-color:var(--danger)" onclick="event.stopPropagation();supprimerPoste('${poste.id}','${poste.reference.replace(/'/g,"\\'")}')" title="Supprimer">🗑</button>
+          </div>
+        </div>
+        <div class="poste-options">${optionsHTML}</div>
+      `;
+      section.appendChild(card);
+    });
+
+    container.appendChild(section);
+  });
+}
+
+function peuplerCatsPoste() {
+  const sel = document.getElementById('poste-categorie');
+  const first = sel.options[0];
+  sel.innerHTML = '';
+  sel.appendChild(first);
+  categories.forEach(c => {
+    const opt = document.createElement('option');
+    opt.value = c.id;
+    opt.textContent = c.nom;
+    sel.appendChild(opt);
+  });
+}
+
+function mettreAJourSousCatsPoste(catId, valeurActuelle) {
+  const sel = document.getElementById('poste-sous-cat');
+  sel.innerHTML = '<option value="">-- Aucune --</option>';
+  if (!catId) return;
+  sousCategories.filter(sc => sc.categorie_id === catId).forEach(sc => {
+    const opt = document.createElement('option');
+    opt.value = sc.id;
+    opt.textContent = sc.nom;
+    if (sc.id === valeurActuelle) opt.selected = true;
+    sel.appendChild(opt);
+  });
+}
+
+function renderPiecesChecklist(toutesLesPieces, selectionnees) {
+  const container = document.getElementById('pieces-checklist');
+  container.innerHTML = [...toutesLesPieces].map(piece => {
+    const checked = selectionnees.includes(piece);
+    const esc = piece.replace(/"/g, '&quot;');
+    return `<div class="piece-chip ${checked ? 'checked' : ''}" onclick="this.classList.toggle('checked')" data-piece="${esc}">${piece}</div>`;
+  }).join('');
+}
+
+function getPiecesSelectionnees() {
+  return [...document.querySelectorAll('#pieces-checklist .piece-chip.checked')].map(el => el.dataset.piece);
+}
+
+function ajouterPiece() {
+  const input = document.getElementById('nouvelle-piece');
+  const nom = input.value.trim();
+  if (!nom) return;
+  const existing = [...document.querySelectorAll('#pieces-checklist .piece-chip')].find(el => el.dataset.piece === nom);
+  if (!existing) {
+    const container = document.getElementById('pieces-checklist');
+    const div = document.createElement('div');
+    div.className = 'piece-chip checked';
+    div.dataset.piece = nom;
+    div.textContent = nom;
+    div.onclick = function() { this.classList.toggle('checked'); };
+    container.appendChild(div);
+  }
+  input.value = '';
+}
+
+async function construirePiecesChecklist(selectionnees) {
+  const toutesLesPieces = new Set(PIECES_DEFAUT);
+  postesCache.forEach(p => {
+    if (p.piece) toutesLesPieces.add(p.piece);
+    if (p.pieces) p.pieces.forEach(pc => toutesLesPieces.add(pc));
+  });
+  renderPiecesChecklist(toutesLesPieces, selectionnees);
+}
+
+async function openModalPoste() {
+  editingPosteId = null;
+  document.getElementById('poste-ref').value = '';
+  document.getElementById('poste-type').value = 'unique';
+  document.getElementById('nouvelle-piece').value = '';
+
+  const titreEl = document.querySelector('#modal-ajout-poste h3');
+  if (titreEl) titreEl.textContent = 'Ajouter un poste';
+  const btnEl = document.querySelector('#modal-ajout-poste .modal-footer .btn-dark');
+  if (btnEl) btnEl.textContent = 'Ajouter le poste';
+  const sectProduit = document.getElementById('poste-options-section');
+  if (sectProduit) sectProduit.style.display = '';
+
+  peuplerCatsPoste();
+  mettreAJourSousCatsPoste('', '');
+  await construirePiecesChecklist([]);
+  // Initialiser les slots d'options
+  optionSlots = ['A'];
+  await chargerProduitsBanqueSelect();
+  renderOptionsSlots();
+  openModal('modal-ajout-poste');
+}
+
+async function chargerProduitsBanqueSelect() {
+  // Charge (ou recharge) la cache complète avec photo + catégories
+  const { data } = await db.from('banque_produits')
+    .select('id, nom, fabricant, modele, prix, photo_url, categorie_id, sous_categorie_id')
+    .order('nom');
+  produitsCache = data || [];
+  filtrerProduitsBanqueSelect();
+}
+
+// ============================================================
+// GESTION DES SLOTS D'OPTIONS (modal ajout/modif poste)
+// ============================================================
+let optionSlots = ['A']; // lettres actives
+let _editingOptionIds = {}; // lettre → id dans options_produits (mode édition)
+
+function onTypeSelectionChange() {
+  renderOptionsSlots();
+}
+
+function ajouterSlotOption() {
+  const letters = ['A','B','C','D','E'];
+  const next = letters[optionSlots.length];
+  if (!next) return;
+  optionSlots.push(next);
+  renderOptionsSlots();
+}
+
+function supprimerSlotOption(letter) {
+  if (letter === 'A') return;
+  optionSlots = optionSlots.filter(l => l !== letter);
+  renderOptionsSlots();
+}
+
+function renderOptionsSlots() {
+  const isMultiple = document.getElementById('poste-type')?.value === 'multiple';
+  const container  = document.getElementById('options-slots-container');
+  const btnWrap    = document.getElementById('btn-ajouter-option-wrap');
+  if (!container) return;
+
+  const catId    = document.getElementById('poste-categorie')?.value || '';
+  const sousCatId = document.getElementById('poste-sous-cat')?.value || '';
+  let filtered = produitsCache;
+  if (catId)     filtered = filtered.filter(p => p.categorie_id === catId);
+  if (sousCatId) filtered = filtered.filter(p => p.sous_categorie_id === sousCatId);
+  const optionsHTML = '<option value="">-- Choisir --</option>' +
+    filtered.map(p => `<option value="${p.id}">${p.fabricant ? p.fabricant + ' — ' : ''}${p.nom || ''}${p.prix ? ' ($' + p.prix + ')' : ''}</option>`).join('');
+
+  container.innerHTML = optionSlots.map((letter, idx) => `
+    <div style="margin-bottom:12px;padding:14px;background:var(--fond);border:1px solid var(--bord)">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">
+        <span style="font-size:11px;letter-spacing:1.5px;text-transform:uppercase;color:var(--caramel);font-weight:500">
+          Option ${letter}${letter === 'A' && !isMultiple ? ' — Produit' : ''}
+        </span>
+        ${idx > 0 ? `<button type="button" onclick="supprimerSlotOption('${letter}')" style="background:none;border:none;color:var(--danger);cursor:pointer;font-size:12px;padding:0">✕ Retirer</button>` : ''}
+      </div>
+      <div class="form-grid" style="grid-template-columns:2fr 80px 1fr">
+        <div class="form-group" style="margin-bottom:0">
+          <label>Produit</label>
+          <select id="slot-prod-${letter}" onchange="mettreAJourApercuSlot('${letter}',this.value)">${optionsHTML}</select>
+        </div>
+        <div class="form-group" style="margin-bottom:0">
+          <label>Qté</label>
+          <input type="number" id="slot-qty-${letter}" value="1" min="1" />
+        </div>
+        <div class="form-group" style="margin-bottom:0">
+          <label>Note client</label>
+          <input type="text" id="slot-note-${letter}" placeholder="Optionnel" />
+        </div>
+      </div>
+      <div id="slot-apercu-${letter}" style="display:none;margin-top:10px;align-items:center;gap:12px;padding:10px;background:var(--blanc);border:1px solid var(--bord)"></div>
+    </div>
+  `).join('');
+
+  // Bouton ajouter option suivante
+  if (btnWrap) {
+    const letters = ['A','B','C','D','E'];
+    const next = letters[optionSlots.length];
+    btnWrap.style.display = (isMultiple && next) ? 'block' : 'none';
+    const btn = btnWrap.querySelector('button');
+    if (btn) btn.textContent = `➕ Ajouter option ${next || ''}`;
+  }
+}
+
+function mettreAJourApercuSlot(letter, produitId) {
+  const preview = document.getElementById(`slot-apercu-${letter}`);
+  if (!preview) return;
+  if (!produitId) { preview.style.display = 'none'; return; }
+  const p = produitsCache.find(x => x.id === produitId);
+  if (!p) { preview.style.display = 'none'; return; }
+  preview.style.display = 'flex';
+  preview.innerHTML = `
+    ${p.photo_url
+      ? `<img src="${p.photo_url}" referrerpolicy="no-referrer" style="width:56px;height:56px;object-fit:contain;border:1px solid var(--bord);flex-shrink:0" onerror="this.style.display='none'" />`
+      : `<div style="width:56px;height:56px;background:var(--fond);border:1px solid var(--bord);display:flex;align-items:center;justify-content:center;font-size:20px;flex-shrink:0">📦</div>`}
+    <div>
+      <div style="font-weight:500;font-size:13px">${p.nom || '—'}</div>
+      <div style="font-size:11px;color:var(--texte-2);margin-top:2px">${[p.fabricant, p.modele].filter(Boolean).join(' · ')}</div>
+      ${p.prix ? `<div style="font-size:12px;color:var(--caramel);margin-top:4px">${Number(p.prix).toLocaleString('fr-CA',{style:'currency',currency:'CAD'})}</div>` : ''}
+    </div>`;
+}
+
+function filtrerProduitsBanqueSelect() {
+  // Re-rendre tous les slots (met à jour les selects selon catégorie/sous-cat)
+  renderOptionsSlots();
+}
+
+function mettreAJourApercuProduit(produitId) {
+  // Compatibilité — déléguer au slot A
+  mettreAJourApercuSlot('A', produitId);
+  const preview = document.getElementById('produit-apercu-a');
+  if (!preview) return;
+  if (!produitId) { preview.style.display = 'none'; return; }
+  const p = produitsCache.find(x => x.id === produitId);
+  if (!p) { preview.style.display = 'none'; return; }
+  preview.style.display = 'flex';
+  preview.innerHTML = `
+    ${p.photo_url
+      ? `<img src="${p.photo_url}" referrerpolicy="no-referrer" style="width:64px;height:64px;object-fit:contain;border:1px solid var(--bord);flex-shrink:0" onerror="this.replaceWith(Object.assign(document.createElement('div'),{style:'width:64px;height:64px;background:var(--fond);border:1px solid var(--bord);display:flex;align-items:center;justify-content:center;font-size:22px',textContent:'📦'}))" />`
+      : `<div style="width:64px;height:64px;background:var(--fond);border:1px solid var(--bord);display:flex;align-items:center;justify-content:center;font-size:22px;flex-shrink:0">📦</div>`
+    }
+    <div>
+      <div style="font-weight:500;font-size:13px">${p.nom || '—'}</div>
+      <div style="font-size:11px;color:var(--texte-2);margin-top:2px">${[p.fabricant, p.modele].filter(Boolean).join(' · ')}</div>
+      ${p.prix ? `<div style="font-size:13px;color:var(--caramel);font-weight:500;margin-top:6px">${Number(p.prix).toLocaleString('fr-CA',{style:'currency',currency:'CAD'})}</div>` : ''}
+    </div>
+  `;
+}
+
+async function sauvegarderPoste() {
+  const ref = document.getElementById('poste-ref').value.trim();
+  const catId = document.getElementById('poste-categorie').value;
+  if (!ref || !catId) { toast('Référence et catégorie sont requis.', 'error'); return; }
+
+  const pieces = getPiecesSelectionnees();
+  const payload = {
+    reference: ref,
+    pieces: pieces,
+    piece: pieces[0] || null,
+    categorie_id: catId,
+    sous_categorie_id: document.getElementById('poste-sous-cat').value || null,
+    type_selection: document.getElementById('poste-type').value
+  };
+
+  if (editingPosteId) {
+    // MODE MODIFICATION — mettre à jour le poste ET les produits associés
+    const { error } = await db.from('postes').update(payload).eq('id', editingPosteId);
+    if (error) { toast('Erreur : ' + error.message, 'error'); return; }
+
+    // Mettre à jour / ajouter les options produits
+    for (const letter of optionSlots) {
+      const produitId = document.getElementById(`slot-prod-${letter}`)?.value || null;
+      const qty = parseInt(document.getElementById(`slot-qty-${letter}`)?.value) || 1;
+      const note = document.getElementById(`slot-note-${letter}`)?.value?.trim() || null;
+      const optId = _editingOptionIds[letter];
+
+      if (optId) {
+        // Mettre à jour l'option existante
+        await db.from('options_produits').update({
+          banque_produit_id: produitId || null,
+          quantite: qty,
+          note_client: note
+        }).eq('id', optId);
+      } else if (produitId) {
+        // Nouveau slot ajouté en mode édition — insérer
+        await db.from('options_produits').insert({
+          poste_id: editingPosteId,
+          banque_produit_id: produitId,
+          lettre_option: letter,
+          quantite: qty,
+          note_client: note
+        });
+      }
+    }
+
+    closeModal('modal-ajout-poste');
+    toast('Poste modifié avec succès.', 'success');
+    editingPosteId = null;
+    _editingOptionIds = {};
+    chargerPostes();
+  } else {
+    // MODE AJOUT — on crée le poste + toutes les options remplies
+    const { data: newPoste, error } = await db.from('postes').insert({
+      ...payload,
+      projet_id: currentProjetId,
+      ordre: 0
+    }).select().single();
+
+    if (error) { toast('Erreur : ' + error.message, 'error'); return; }
+
+    // Sauvegarder chaque slot rempli
+    for (const letter of optionSlots) {
+      const produitId = document.getElementById(`slot-prod-${letter}`)?.value;
+      if (!produitId) continue;
+      await db.from('options_produits').insert({
+        poste_id: newPoste.id,
+        banque_produit_id: produitId,
+        lettre_option: letter,
+        quantite: parseInt(document.getElementById(`slot-qty-${letter}`)?.value) || 1,
+        note_client: document.getElementById(`slot-note-${letter}`)?.value?.trim() || null
+      });
+    }
+
+    closeModal('modal-ajout-poste');
+    toast('Poste ajouté avec succès.', 'success');
+    chargerPostes();
+  }
+}
+
+async function ouvrirModalEditerPoste(id) {
+  const poste = postesCache.find(p => p.id === id);
+  if (!poste) return;
+
+  editingPosteId = id;
+  document.getElementById('poste-ref').value = poste.reference;
+  document.getElementById('poste-type').value = poste.type_selection;
+  document.getElementById('nouvelle-piece').value = '';
+
+  peuplerCatsPoste();
+  document.getElementById('poste-categorie').value = poste.categorie_id;
+  mettreAJourSousCatsPoste(poste.categorie_id, poste.sous_categorie_id || '');
+
+  const selectionnees = poste.pieces && poste.pieces.length > 0
+    ? poste.pieces
+    : (poste.piece ? [poste.piece] : []);
+  await construirePiecesChecklist(selectionnees);
+
+  // Charger la banque de produits puis les options existantes du poste
+  await chargerProduitsBanqueSelect();
+  const { data: existingOpts } = await db.from('options_produits')
+    .select('id, lettre_option, banque_produit_id, quantite, note_client')
+    .eq('poste_id', id)
+    .order('lettre_option');
+
+  // Mémoriser les IDs pour sauvegarder en mode édition
+  _editingOptionIds = {};
+  (existingOpts || []).forEach(opt => {
+    _editingOptionIds[opt.lettre_option] = opt.id;
+  });
+
+  // Configurer les slots selon les options existantes
+  optionSlots = (existingOpts || []).map(o => o.lettre_option);
+  if (optionSlots.length === 0) optionSlots = ['A'];
+
+  const sectProduit = document.getElementById('poste-options-section');
+  if (sectProduit) sectProduit.style.display = '';
+  renderOptionsSlots();
+
+  // Pré-remplir chaque slot avec le produit existant
+  (existingOpts || []).forEach(opt => {
+    const sel = document.getElementById(`slot-prod-${opt.lettre_option}`);
+    if (sel) { sel.value = opt.banque_produit_id || ''; }
+    mettreAJourApercuSlot(opt.lettre_option, opt.banque_produit_id);
+    const qty = document.getElementById(`slot-qty-${opt.lettre_option}`);
+    if (qty) qty.value = opt.quantite || 1;
+    const note = document.getElementById(`slot-note-${opt.lettre_option}`);
+    if (note) note.value = opt.note_client || '';
+  });
+
+  const titreEl = document.querySelector('#modal-ajout-poste h3');
+  if (titreEl) titreEl.textContent = 'Modifier le poste';
+  const btnEl = document.querySelector('#modal-ajout-poste .modal-footer .btn-dark');
+  if (btnEl) btnEl.textContent = 'Enregistrer';
+
+  openModal('modal-ajout-poste');
+}
+
+// ── Modal ajout option sur poste existant ──────────────────
+let _aoPosteId   = null;
+let _aoLettre    = 'B';
+
+async function ouvrirModalAjoutOption(posteId, lettre) {
+  _aoRemplaceOptionId = null; // s'assurer d'être en mode ajout
+  _aoPosteId = posteId;
+  _aoLettre  = lettre || 'B';
+
+  const poste = postesCache.find(p => p.id === posteId);
+  const titreEl = document.getElementById('ajout-option-titre');
+  if (titreEl) titreEl.textContent = `Ajouter option ${_aoLettre}`;
+  const infoEl = document.getElementById('ajout-option-info');
+  if (infoEl) infoEl.textContent = `Poste : ${poste?.reference || ''} — ${(poste?.pieces || []).join(', ') || poste?.piece || ''} · Cette option sera présentée au client comme l'option ${_aoLettre}.`;
+
+  // Peupler le select avec tous les produits de la banque
+  const sel = document.getElementById('ao-produit');
+  if (sel) {
+    sel.innerHTML = '<option value="">-- Choisir dans la banque --</option>' +
+      (produitsCache || []).map(p =>
+        `<option value="${p.id}">${p.fabricant ? p.fabricant + ' — ' : ''}${p.nom || ''}${p.prix ? ' ($' + p.prix + ')' : ''}</option>`
+      ).join('');
+    sel.value = '';
+  }
+  const ap = document.getElementById('ao-apercu');
+  if (ap) ap.style.display = 'none';
+  const qtyEl = document.getElementById('ao-qty');
+  if (qtyEl) qtyEl.value = '1';
+  const noteEl = document.getElementById('ao-note');
+  if (noteEl) noteEl.value = '';
+
+  openModal('modal-ajout-option');
+}
+
+function mettreAJourApercuAO(produitId) {
+  const preview = document.getElementById('ao-apercu');
+  if (!preview) return;
+  if (!produitId) { preview.style.display = 'none'; return; }
+  const p = produitsCache.find(x => x.id === produitId);
+  if (!p) { preview.style.display = 'none'; return; }
+  preview.style.cssText = 'display:flex;align-items:center;gap:12px;margin-top:10px;padding:10px;background:var(--fond);border:1px solid var(--bord)';
+  preview.innerHTML = `
+    ${p.photo_url ? `<img src="${p.photo_url}" referrerpolicy="no-referrer" style="width:56px;height:56px;object-fit:contain;border:1px solid var(--bord);flex-shrink:0" onerror="this.style.display='none'" />` : `<div style="width:56px;height:56px;background:var(--fond);border:1px solid var(--bord);display:flex;align-items:center;justify-content:center;font-size:20px;flex-shrink:0">📦</div>`}
+    <div>
+      <div style="font-size:13px;font-weight:500">${p.nom || '—'}</div>
+      <div style="font-size:11px;color:var(--texte-2);margin-top:2px">${[p.fabricant, p.modele].filter(Boolean).join(' · ')}</div>
+      ${p.prix ? `<div style="font-size:12px;color:var(--caramel);margin-top:4px">${Number(p.prix).toLocaleString('fr-CA',{style:'currency',currency:'CAD'})}</div>` : ''}
+    </div>`;
+}
+
+async function sauvegarderNouvelleOption() {
+  const produitId = document.getElementById('ao-produit')?.value;
+  if (!produitId) { toast('Veuillez choisir un produit.', 'error'); return; }
+
+  // MODE REMPLACEMENT — on met à jour l'option existante
+  if (_aoRemplaceOptionId) {
+    const { error } = await db.from('options_produits').update({
+      banque_produit_id:  produitId,
+      quantite:           parseInt(document.getElementById('ao-qty')?.value) || 1,
+      note_client:        document.getElementById('ao-note')?.value?.trim() || null,
+      statut_client:      'en_attente',   // remet en attente pour que le client revoie
+      commentaire_client: null,           // efface l'ancien commentaire de révision
+      pre_approuve_cmpg:  false,
+    }).eq('id', _aoRemplaceOptionId);
+    if (error) { toast('Erreur : ' + error.message, 'error'); return; }
+    closeModal('modal-ajout-option');
+    toast(`Option ${_aoLettre} remplacée — le client peut maintenant revoir.`, 'success');
+    _aoRemplaceOptionId = null;
+    chargerPostes();
+    return;
+  }
+
+  // MODE AJOUT NORMAL
+  if (!_aoPosteId) return;
+  const { error } = await db.from('options_produits').insert({
+    poste_id:          _aoPosteId,
+    banque_produit_id: produitId,
+    lettre_option:     _aoLettre,
+    quantite:          parseInt(document.getElementById('ao-qty')?.value) || 1,
+    note_client:       document.getElementById('ao-note')?.value?.trim() || null
+  });
+  if (error) { toast('Erreur : ' + error.message, 'error'); return; }
+  closeModal('modal-ajout-option');
+  toast(`Option ${_aoLettre} ajoutée avec succès.`, 'success');
+  chargerPostes();
+}
+
+// ── Remplacement d'une option "à revoir" ────────────────────
+let _aoRemplaceOptionId = null;
+
+async function remplacerOption(optionId, lettre, quantiteActuelle) {
+  _aoRemplaceOptionId = optionId;
+  _aoPosteId         = null;
+  _aoLettre          = lettre;
+
+  const titreEl = document.getElementById('ajout-option-titre');
+  if (titreEl) titreEl.textContent = `Remplacer option ${lettre}`;
+  const infoEl = document.getElementById('ajout-option-info');
+  if (infoEl) infoEl.textContent = `Choisissez le nouveau produit à proposer au client pour l'option ${lettre}. Le statut sera remis en attente.`;
+
+  const sel = document.getElementById('ao-produit');
+  if (sel) {
+    sel.innerHTML = '-- Choisir dans la banque --\n' +
+      (produitsCache || []).map(p =>
+        `<option value="${p.id}">${p.fabricant ? p.fabricant + ' — ' : ''}${p.nom || ''}${p.prix ? ' ($' + p.prix + ')' : ''}</option>`
+      ).join('');
+    sel.value = '';
+  }
+  const ap = document.getElementById('ao-apercu');
+  if (ap) ap.style.display = 'none';
+  const qtyEl = document.getElementById('ao-qty');
+  if (qtyEl) qtyEl.value = quantiteActuelle || 1;
+  const noteEl = document.getElementById('ao-note');
+  if (noteEl) noteEl.value = '';
+
+  openModal('modal-ajout-option');
+}
+
+async function supprimerOption(optionId, nomProduit) {
+  if (!confirm(`Supprimer l'option "${nomProduit}" de ce poste ?`)) return;
+  const { error } = await db.from('options_produits').delete().eq('id', optionId);
+  if (error) { toast('Erreur : ' + error.message, 'error'); return; }
+  toast('Option supprimée.', 'success');
+  chargerPostes();
+}
+
+async function preApprouverOption(optionId, activer) {
+  const payload = activer
+    ? { statut_client: 'approuvé', pre_approuve_cmpg: true,  date_decision: new Date().toISOString() }
+    : { statut_client: 'en_attente', pre_approuve_cmpg: false, date_decision: null };
+  const { error } = await db.from('options_produits').update(payload).eq('id', optionId);
+  if (error) { toast('Erreur : ' + error.message, 'error'); return; }
+  toast(activer ? 'Pré-approbation CMPG enregistrée.' : 'Pré-approbation annulée.', 'success');
+  chargerPostes();
+}
+
+async function supprimerPoste(id, reference) {
+  if (!confirm(`Supprimer le poste "${reference}" ?\n\nToutes les sélections de produits associées seront aussi supprimées.`)) return;
+  const { error } = await db.from('postes').delete().eq('id', id);
+  if (error) { toast('Erreur : ' + error.message, 'error'); return; }
+  toast(`Poste "${reference}" supprimé.`, 'success');
+  chargerPostes();
+}
+
+// ============================================================
+// BANQUE PRODUITS
+// ============================================================
+async function chargerProduits() {
+  const { data } = await db
+    .from('banque_produits')
+    .select('*, categories(nom), sous_categories(nom)')
+    .order('created_at', { ascending: false });
+
+  produitsCache = data || [];
+  renderProduits(produitsCache);
+  afficherBandeauRevalidation();
+}
+
+async function afficherBandeauRevalidation() {
+  const { data } = await db.from('revalidation_etat').select('resume, termine_a').eq('id', 1).maybeSingle();
+  const r = data?.resume;
+  if (!r || (!r.mis_a_jour && !r.signales && !r.echecs)) return;
+  const el = document.getElementById('bandeau-revalidation');
+  el.innerHTML = `Dernière revalidation : <strong>${r.mis_a_jour||0}</strong> prix mis à jour, <strong>${r.signales||0}</strong> à vérifier, <strong>${r.echecs||0}</strong> échec(s).`;
+  el.style.display = 'block';
+}
+
+async function revaliderPrix() {
+  const status = document.getElementById('reval-status');
+  status.innerHTML = '<span class="spinner"></span> Revalidation en cours…';
+  const { data: { session } } = await db.auth.getSession();
+  try {
+    // Boucle par lots jusqu'à termine=true.
+    let termine = false, garde = 0;
+    while (!termine && garde++ < 100) {
+      const resp = await fetch(`${SUPABASE_URL}/functions/v1/revalider-prix`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${session?.access_token}` },
+        body: '{}',
+      });
+      const j = await resp.json();
+      if (!j.ok) { status.innerHTML = '⚠️ ' + (j.erreur || 'Erreur'); return; }
+      termine = j.termine;
+    }
+    status.innerHTML = '✅ Revalidation terminée.';
+    await afficherBandeauRevalidation();
+    chargerProduits();
+  } catch (e) {
+    status.innerHTML = '⚠️ Serveur injoignable.';
+  }
+}
+
+function badgeStatut(p) {
+  const badges = [];
+  const statut = (typeof p === 'object') ? (p.statut || 'actif') : p;
+  const prixAVerif = (typeof p === 'object') ? p.prix_a_verifier : false;
+  const discontinueSugg = (typeof p === 'object') ? p.suggerer_discontinue : false;
+  if (statut === 'discontinue')
+    badges.push(`<span style="background:#f8e0e0;color:var(--danger);font-size:10px;padding:2px 8px;letter-spacing:1px;text-transform:uppercase">Discontinué</span>`);
+  else
+    badges.push(`<span style="background:#e6f4ec;color:var(--success);font-size:10px;padding:2px 8px;letter-spacing:1px;text-transform:uppercase">Actif</span>`);
+  if (prixAVerif)
+    badges.push(`<span style="background:#fef3e2;color:#b86c00;font-size:10px;padding:2px 8px;letter-spacing:1px;text-transform:uppercase">Prix à vérifier</span>`);
+  if (discontinueSugg)
+    badges.push(`<span style="background:#f3e8f8;color:#7a4b8a;font-size:10px;padding:2px 8px;letter-spacing:1px;text-transform:uppercase">Discontinué ?</span>`);
+  return badges.join(' ');
+}
+
+function avertissementPrix(dateVerif) {
+  if (!dateVerif) return '<div style="font-size:10px;color:#b86c00;margin-top:3px">⚠ Prix non vérifié</div>';
+  const mois = (Date.now() - new Date(dateVerif)) / (1000*60*60*24*30);
+  if (mois > 6) return `<div style="font-size:10px;color:#b86c00;margin-top:3px">⚠ Vérifié il y a ${Math.round(mois)} mois</div>`;
+  return '';
+}
+
+function renderProduits(produits) {
+  const tbody = document.getElementById('produits-tbody');
+  if (!produits.length) {
+    tbody.innerHTML = '<tr><td colspan="7" style="text-align:center;padding:40px;color:var(--texte-2)">Aucun produit dans la banque.</td></tr>';
+    return;
+  }
+  tbody.innerHTML = produits.map(p => `
+    <tr style="${p.statut === 'discontinue' ? 'opacity:.5' : ''}">
+      <td>
+        <div style="position:relative;display:inline-block">
+          ${p.photo_url ? `<img src="${p.photo_url}" referrerpolicy="no-referrer" class="product-thumb" onerror="this.style.display='none'" />` : '<div class="product-thumb" style="display:inline-block"></div>'}
+          ${p.photo_url_erreur ? `<span title="Photo bloquée par le fournisseur (${p.photo_url_erreur.replace(/"/g,'&quot;')}) — à téléverser manuellement" style="position:absolute;top:-4px;right:-4px;background:var(--danger);color:#fff;border-radius:50%;width:16px;height:16px;font-size:10px;line-height:16px;text-align:center;cursor:help">!</span>` : ''}
+        </div>
+      </td>
+      <td>
+        <div style="font-weight:500;font-size:13px">${p.nom || '—'}</div>
+        <div style="font-size:11px;color:var(--texte-2)">${p.sku || ''}</div>
+        ${p.url ? `<a href="${p.url}" target="_blank" style="font-size:11px;color:var(--caramel)">↗ Voir le produit</a>` : ''}
+      </td>
+      <td style="font-size:13px">${p.fabricant || '—'}<br><span style="font-size:11px;color:var(--texte-2)">${p.modele || ''}</span></td>
+      <td style="font-size:12px">
+        ${p.categories ? p.categories.nom : '—'}
+        ${p.sous_categories ? `<div style="font-size:11px;color:var(--caramel);margin-top:2px">${p.sous_categories.nom}</div>` : ''}
+      </td>
+      <td style="font-size:13px;font-weight:500">
+        ${p.prix ? '$' + Number(p.prix).toLocaleString('fr-CA') : '—'}
+        ${avertissementPrix(p.date_verification_prix)}
+      </td>
+      <td>${badgeStatut(p)}</td>
+      <td style="white-space:nowrap">
+        <div style="display:flex;align-items:center;gap:6px">
+          <button class="btn btn-outline btn-sm" onclick="editerProduit('${p.id}')">Modifier</button>
+          <button class="btn btn-outline btn-sm" style="color:var(--danger);border-color:var(--danger)" onclick="supprimerProduit('${p.id}','${(p.nom||'').replace(/'/g,"\\'")}')">Supprimer</button>
+        </div>
+      </td>
+    </tr>
+  `).join('');
+}
+
+function filtrerProduits() {
+  const q      = document.getElementById('search-produits').value.toLowerCase();
+  const cat    = document.getElementById('filter-categorie').value;
+  const sCat   = document.getElementById('filter-sous-cat').value;
+  const statut = document.getElementById('filter-statut').value;
+  const filtered = produitsCache.filter(p => {
+    const matchQ  = !q      || [p.nom, p.fabricant, p.modele, p.sku].some(v => v && v.toLowerCase().includes(q));
+    const matchC  = !cat    || p.categorie_id === cat;
+    const matchSC = !sCat   || p.sous_categorie_id === sCat;
+    const matchSt = !statut || (p.statut || 'actif') === statut;
+    return matchQ && matchC && matchSC && matchSt;
+  });
+  renderProduits(filtered);
+}
+
+async function importerParURL() {
+  const url = document.getElementById('url-import-input').value.trim();
+  if (!url) return;
+  const statusEl = document.getElementById('url-import-status');
+  statusEl.innerHTML = '<span class="spinner"></span> Analyse en cours…';
+
+  // Doublon
+  const { data: doublon } = await db.from('banque_produits').select('id, nom').eq('url', url).maybeSingle();
+  if (doublon) {
+    statusEl.innerHTML = `⛔ Ce produit est déjà dans la banque : <strong>${doublon.nom}</strong>. Utilisez Modifier pour le mettre à jour.`;
+    return;
+  }
+
+  // Appel de la fonction Edge (extraction IA).
+  const { data: { session } } = await db.auth.getSession();
+  let resp;
+  try {
+    resp = await fetch(`${SUPABASE_URL}/functions/v1/extraire-produit`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${session?.access_token}`,
+      },
+      body: JSON.stringify({ url }),
+    });
+  } catch (e) {
+    statusEl.innerHTML = '⚠️ Serveur d\'extraction injoignable. Remplissez le formulaire manuellement.';
+    document.getElementById('ap-url').value = url;
+    openModal('modal-ajout-produit');
+    return;
+  }
+
+  const resultat = await resp.json().catch(() => ({ ok: false }));
+  if (!resultat.ok || !resultat.specs) {
+    statusEl.innerHTML = '⚠️ Extraction impossible pour ce site. Remplissez le formulaire manuellement.';
+    document.getElementById('ap-url').value = url;
+    openModal('modal-ajout-produit');
+    return;
+  }
+
+  const s = resultat.specs;
+  const set = (id, val) => { const el = document.getElementById(id); if (el && val != null && val !== '') el.value = val; };
+  set('ap-url', url);
+  set('ap-nom', s.nom);
+  set('ap-fabricant', s.fabricant);
+  set('ap-modele', s.modele);
+  set('ap-sku', s.sku);
+  set('ap-prix', s.prix_regulier);
+  set('ap-couleur', s.couleur);
+  set('ap-dimensions', s.dimensions);
+  set('ap-carac', s.caracteristiques);
+  set('ap-photo', s.photo_url);
+  if (s.photo_url) apercuPhotoUrl(s.photo_url);
+
+  openModal('modal-ajout-produit');
+  mettreEnEvidenceChampsVides();
+  statusEl.innerHTML = `✅ Importé (${resultat.source}). Vérifiez les champs surlignés puis enregistrez.`;
+  document.getElementById('url-import-input').value = '';
+}
+
+// Surligne les champs de spec restés vides pour guider la vérification.
+function mettreEnEvidenceChampsVides() {
+  ['ap-nom','ap-fabricant','ap-modele','ap-sku','ap-prix','ap-couleur','ap-dimensions','ap-carac','ap-photo']
+    .forEach(id => {
+      const el = document.getElementById(id);
+      if (!el) return;
+      el.style.background = (el.value.trim() === '') ? '#fff8e6' : '';
+    });
+}
+
+async function sauvegarderProduit() {
+  const nom   = document.getElementById('ap-nom').value.trim();
+  const catId = document.getElementById('ap-categorie').value;
+  const urlProduit = document.getElementById('ap-url').value.trim() || null;
+  if (!nom) { toast('Le nom du produit est requis.', 'error'); return; }
+
+  // Vérification doublon par URL — blocage complet
+  if (urlProduit && !editingProduitId) {
+    const { data: existe } = await db.from('banque_produits').select('id, nom').eq('url', urlProduit).maybeSingle();
+    if (existe) {
+      toast(`Ce produit existe déjà dans la banque : "${existe.nom}"`, 'error');
+      return;
+    }
+  }
+
+  // (avant payload) capturer l'ancien prix pour journaliser une édition manuelle
+  let ancienPrix = null;
+  if (editingProduitId) {
+    const p = produitsCache.find(x => x.id === editingProduitId);
+    ancienPrix = p ? p.prix : null;
+  }
+
+  const payload = {
+    categorie_id:          catId || null,
+    sous_categorie_id:     document.getElementById('ap-sous-cat').value || null,
+    url:                   urlProduit,
+    nom,
+    fabricant:             document.getElementById('ap-fabricant').value.trim() || null,
+    modele:                document.getElementById('ap-modele').value.trim() || null,
+    sku:                   document.getElementById('ap-sku').value.trim() || null,
+    prix:                  parseFloat(document.getElementById('ap-prix').value) || null,
+    couleur:               document.getElementById('ap-couleur').value.trim() || null,
+    dimensions:            document.getElementById('ap-dimensions').value.trim() || null,
+    caracteristiques:      document.getElementById('ap-carac').value.trim() || null,
+    photo_url:             document.getElementById('ap-photo').value.trim() || null,
+    notes_internes:        document.getElementById('ap-notes').value.trim() || null,
+    statut:                document.getElementById('ap-statut').value || 'actif',
+    date_verification_prix: new Date().toISOString(),
+    prix_a_verifier:       false,   // toute sauvegarde manuelle résout le drapeau
+    photo_url_erreur:      null,    // toute sauvegarde manuelle résout aussi le badge photo
+  };
+
+  const wasEditing = !!editingProduitId;
+  let error;
+  if (wasEditing) {
+    ({ error } = await db.from('banque_produits').update(payload).eq('id', editingProduitId));
+  } else {
+    ({ error } = await db.from('banque_produits').insert(payload));
+  }
+
+  if (error) {
+    if (error.code === '23505') {
+      toast('Ce produit existe déjà dans la banque (URL en double).', 'error');
+    } else {
+      toast('Erreur : ' + error.message, 'error');
+    }
+    return;
+  }
+
+  const nouveauPrix = parseFloat(document.getElementById('ap-prix').value) || null;
+  if (wasEditing && nouveauPrix !== ancienPrix) {
+    await db.from('historique_prix').insert({
+      produit_id: editingProduitId, ancien_prix: ancienPrix, nouveau_prix: nouveauPrix,
+      devise: 'CAD', ecart_pct: null, source: 'manuel', applique: true,
+    });
+  } else if (!wasEditing && nouveauPrix != null) {
+    // Première ligne d'historique à la création (spec §4.2 : ancien_prix = null).
+    const { data: cree } = await db.from('banque_produits').select('id').eq('url', urlProduit).maybeSingle();
+    if (cree) {
+      await db.from('historique_prix').insert({
+        produit_id: cree.id, ancien_prix: null, nouveau_prix: nouveauPrix,
+        devise: 'CAD', ecart_pct: null, source: 'import', applique: true,
+      });
+    }
+  }
+
+  resetModalProduit();
+  closeModal('modal-ajout-produit');
+  toast(wasEditing ? 'Produit modifié.' : 'Produit ajouté à la banque.', 'success');
+  chargerProduits();
+}
+
+function resetModalProduit() {
+  editingProduitId = null;
+  document.querySelector('#modal-ajout-produit .modal-header h3').textContent = 'Ajouter un produit';
+  document.querySelector('#modal-ajout-produit .modal-footer .btn-dark').textContent = 'Ajouter à la banque';
+  ['ap-categorie','ap-sous-cat','ap-url','ap-nom','ap-fabricant','ap-modele','ap-sku',
+   'ap-prix','ap-couleur','ap-dimensions','ap-carac','ap-photo','ap-notes']
+    .forEach(id => { const el = document.getElementById(id); if(el) el.value = ''; });
+  const statutEl = document.getElementById('ap-statut');
+  if (statutEl) statutEl.value = 'actif';
+  const histWrap = document.getElementById('ap-historique-wrap');
+  if (histWrap) histWrap.style.display = 'none';
+  effacerPhoto();
+}
+
+async function supprimerProduit(id, nom) {
+  if (!confirm(`Supprimer "${nom}" de la banque de produits ?\n\nCette action est irréversible.`)) return;
+  const { error } = await db.from('banque_produits').delete().eq('id', id);
+  if (error) { toast('Erreur : ' + error.message, 'error'); return; }
+  toast('Produit supprimé.', 'success');
+  chargerProduits();
+}
+
+async function editerProduit(id) {
+  const p = produitsCache.find(x => x.id === id);
+  if (!p) return;
+  editingProduitId = id;
+  document.getElementById('ap-categorie').value   = p.categorie_id || '';
+  mettreAJourSousCats(p.categorie_id, 'ap-sous-cat', p.sous_categorie_id);
+  document.getElementById('ap-url').value         = p.url || '';
+  document.getElementById('ap-nom').value         = p.nom || '';
+  document.getElementById('ap-fabricant').value   = p.fabricant || '';
+  document.getElementById('ap-modele').value      = p.modele || '';
+  document.getElementById('ap-sku').value         = p.sku || '';
+  document.getElementById('ap-prix').value        = p.prix || '';
+  document.getElementById('ap-couleur').value     = p.couleur || '';
+  document.getElementById('ap-dimensions').value  = p.dimensions || '';
+  document.getElementById('ap-carac').value       = p.caracteristiques || '';
+  document.getElementById('ap-photo').value       = p.photo_url || '';
+  document.getElementById('ap-notes').value       = p.notes_internes || '';
+  document.getElementById('ap-statut').value      = p.statut || 'actif';
+  apercuPhotoUrl(p.photo_url || '');
+  document.querySelector('#modal-ajout-produit .modal-header h3').textContent = 'Modifier le produit';
+  document.querySelector('#modal-ajout-produit .modal-footer .btn-dark').textContent = 'Enregistrer';
+  const wrap = document.getElementById('ap-historique-wrap');
+  const { data: hist } = await db.from('historique_prix')
+    .select('ancien_prix, nouveau_prix, source, applique, created_at')
+    .eq('produit_id', id).order('created_at', { ascending: false }).limit(5);
+  if (hist && hist.length) {
+    document.getElementById('ap-historique').innerHTML = hist.map(h =>
+      `<div>${new Date(h.created_at).toLocaleDateString('fr-CA')} — ${h.ancien_prix ?? '—'} $ → <strong>${h.nouveau_prix ?? '—'} $</strong> (${h.source}${h.applique ? '' : ', signalé'})</div>`
+    ).join('');
+    wrap.style.display = 'block';
+  } else {
+    wrap.style.display = 'none';
+  }
+  openModal('modal-ajout-produit');
+}
+
+// ============================================================
+// PHOTO UPLOAD — Supabase Storage
+// ============================================================
+function apercuPhotoUrl(url) {
+  const wrap = document.getElementById('ap-photo-wrap');
+  const img  = document.getElementById('ap-photo-img');
+  if (!wrap || !img) return;
+  if (url) {
+    img.src = url;
+    wrap.style.display = 'flex';
+  } else {
+    wrap.style.display = 'none';
+  }
+}
+
+function effacerPhoto() {
+  document.getElementById('ap-photo').value = '';
+  const fileInput = document.getElementById('ap-photo-file');
+  if (fileInput) fileInput.value = '';
+  const wrap = document.getElementById('ap-photo-wrap');
+  if (wrap) wrap.style.display = 'none';
+}
+
+async function telechargerPhoto(input) {
+  const file = input.files[0];
+  if (!file) return;
+
+  if (!file.type.startsWith('image/')) {
+    toast('Seules les images sont acceptées (jpg, png, webp…)', 'error');
+    input.value = '';
+    return;
+  }
+  if (file.size > 8 * 1024 * 1024) {
+    toast('L\'image ne doit pas dépasser 8 Mo.', 'error');
+    input.value = '';
+    return;
+  }
+
+  toast('Téléversement en cours…', 'info');
+
+  const ext    = file.name.split('.').pop().toLowerCase().replace('jpg','jpeg');
+  const chemin = `produits/${Date.now()}-${Math.random().toString(36).slice(2,8)}.${ext}`;
+
+  const { error } = await db.storage
+    .from('photos-produits')
+    .upload(chemin, file, { cacheControl: '31536000', upsert: false });
+
+  if (error) {
+    toast('Erreur : ' + error.message, 'error');
+    input.value = '';
+    return;
+  }
+
+  const { data: { publicUrl } } = db.storage
+    .from('photos-produits')
+    .getPublicUrl(chemin);
+
+  document.getElementById('ap-photo').value = publicUrl;
+  apercuPhotoUrl(publicUrl);
+  toast('✓ Photo téléversée !', 'success');
+}
+
+// ============================================================
+// CLIENTS
+// ============================================================
+async function chargerClients() {
+  const { data: clients } = await db.from('clients').select('*, projets(id)').order('nom');
+  const tbody = document.getElementById('clients-tbody');
+
+  if (!clients || clients.length === 0) {
+    tbody.innerHTML = '<tr><td colspan="5" style="text-align:center;padding:40px;color:var(--texte-2)">Aucun client enregistré.</td></tr>';
+    return;
+  }
+
+  tbody.innerHTML = clients.map(c => `
+    <tr>
+      <td style="font-weight:500">${c.nom}</td>
+      <td><a href="mailto:${c.email}" style="color:var(--caramel)">${c.email}</a></td>
+      <td>${c.telephone || '—'}</td>
+      <td>${c.projets ? c.projets.length : 0} projet(s)</td>
+      <td>
+        <button class="btn btn-outline btn-sm" onclick="copierLienClient('${c.email}')">📋 Lien portail</button>
+      </td>
+    </tr>
+  `).join('');
+}
+
+async function creerClient() {
+  const nom = document.getElementById('nc-nom').value.trim();
+  const email = document.getElementById('nc-email').value.trim();
+  if (!nom || !email) { toast('Nom et courriel sont requis.', 'error'); return; }
+
+  const { error } = await db.from('clients').insert({
+    nom,
+    email,
+    telephone: document.getElementById('nc-tel').value.trim() || null
+  });
+
+  if (error) { toast('Erreur : ' + error.message, 'error'); return; }
+  closeModal('modal-nouveau-client');
+  toast('Client créé avec succès.', 'success');
+  chargerClients();
+  chargerProjets();
+}
+
+function copierLienClient(email) {
+  const lien = window.location.href.replace('admin.html', 'client.html') + '?email=' + encodeURIComponent(email);
+  navigator.clipboard.writeText(lien);
+  toast('Lien portail copié dans le presse-papier.', 'success');
+}
+
+// ============================================================
+// PROGRESSION
+// ============================================================
+async function chargerProgression() {
+  const { data } = await db.from('vue_progression_projets').select('*').eq('id', currentProjetId).single();
+  if (!data) return;
+
+  document.getElementById('progression-stats').innerHTML = `
+    <div>
+      <div style="font-family:'Noto Serif Display',serif;font-size:36px;color:var(--charcoal)">${data.approuves || 0}</div>
+      <div style="font-size:11px;letter-spacing:1.5px;text-transform:uppercase;color:var(--success);margin-top:4px">Approuvés</div>
+    </div>
+    <div>
+      <div style="font-family:'Noto Serif Display',serif;font-size:36px;color:var(--danger)">${data.a_revoir || 0}</div>
+      <div style="font-size:11px;letter-spacing:1.5px;text-transform:uppercase;color:var(--danger);margin-top:4px">À revoir</div>
+    </div>
+    <div>
+      <div style="font-family:'Noto Serif Display',serif;font-size:36px;color:var(--texte-2)">${data.en_attente || 0}</div>
+      <div style="font-size:11px;letter-spacing:1.5px;text-transform:uppercase;color:var(--texte-2);margin-top:4px">En attente</div>
+    </div>
+    <div>
+      <div style="font-family:'Noto Serif Display',serif;font-size:24px;color:var(--caramel)">${data.budget_confirme ? '$' + Number(data.budget_confirme).toLocaleString('fr-CA') : '—'}</div>
+      <div style="font-size:11px;letter-spacing:1.5px;text-transform:uppercase;color:var(--caramel);margin-top:4px">Budget confirmé</div>
+    </div>
+  `;
+}
+
+async function chargerInfosProjet() {
+  const { data: p } = await db.from('projets').select('*, clients(nom, email, telephone)').eq('id', currentProjetId).single();
+  if (!p) return;
+  document.getElementById('infos-content').innerHTML = `
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:24px">
+      <div>
+        <div style="font-size:11px;letter-spacing:1.5px;text-transform:uppercase;color:var(--texte-2);margin-bottom:4px">Projet</div>
+        <div style="font-size:15px;font-weight:500;margin-bottom:2px">${p.nom}</div>
+        <div style="font-size:13px;color:var(--texte-2)">${p.adresse || '—'}</div>
+        <div style="margin-top:12px;font-size:12px;color:var(--texte-2)">Statut : <span class="status-badge status-${p.statut}">${p.statut}</span></div>
+        <div style="margin-top:12px;font-size:12px">Budget : ${p.budget_min ? '$' + Number(p.budget_min).toLocaleString('fr-CA') : '—'} – ${p.budget_max ? '$' + Number(p.budget_max).toLocaleString('fr-CA') : '—'}</div>
+      </div>
+      <div>
+        <div style="font-size:11px;letter-spacing:1.5px;text-transform:uppercase;color:var(--texte-2);margin-bottom:4px">Client</div>
+        ${p.clients ? `
+          <div style="font-size:15px;font-weight:500;margin-bottom:2px">${p.clients.nom}</div>
+          <div style="font-size:13px;color:var(--caramel)">${p.clients.email}</div>
+          <div style="font-size:13px;color:var(--texte-2)">${p.clients.telephone || ''}</div>
+          <button class="btn btn-outline btn-sm" style="margin-top:14px" onclick="copierLienClient('${p.clients.email}')">📋 Copier lien portail</button>
+        ` : '<div style="font-size:13px;color:var(--texte-2)">Aucun client associé</div>'}
+      </div>
+    </div>
+  `;
+}
+
+// ============================================================
+// GÉNÉRATION PDF — Devis de spécification Design
+// ============================================================
+
+// Logo CMPG blanc (SVG en base64)
+const LOGO_SVG_B64 = 'PD94bWwgdmVyc2lvbj0iMS4wIiBlbmNvZGluZz0idXRmLTgiPz4KPCEtLSBHZW5lcmF0b3I6IEFkb2JlIElsbHVzdHJhdG9yIDI2LjAuMywgU1ZHIEV4cG9ydCBQbHVnLUluIC4gU1ZHIFZlcnNpb246IDYuMDAgQnVpbGQgMCkgIC0tPgo8c3ZnIHZlcnNpb249IjEuMSIgaWQ9IkxheWVyXzEiIHhtbG5zPSJodHRwOi8vd3d3LnczLm9yZy8yMDAwL3N2ZyIgeG1sbnM6eGxpbms9Imh0dHA6Ly93d3cudzMub3JnLzE5OTkveGxpbmsiIHg9IjBweCIgeT0iMHB4IgoJIHZpZXdCb3g9IjAgMCAyOTIuMzIgMTI3LjAzIiBzdHlsZT0iZW5hYmxlLWJhY2tncm91bmQ6bmV3IDAgMCAyOTIuMzIgMTI3LjAzOyIgeG1sOnNwYWNlPSJwcmVzZXJ2ZSI+CjxzdHlsZSB0eXBlPSJ0ZXh0L2NzcyI+Cgkuc3Qwe2ZpbGw6I0ZGRkZGRjt9Cjwvc3R5bGU+CjxnPgoJPHBhdGggY2xhc3M9InN0MCIgZD0iTTEyLjM0LDExNC4wM2MtMC4xNiwwLjQ3LTAuMzksMC44Ni0wLjY5LDEuMThjLTAuMywwLjMyLTAuNjYsMC41Ny0xLjA4LDAuNzRjLTAuNDIsMC4xNy0wLjg5LDAuMjYtMS40MSwwLjI2CgkJaC0yLjN2LTcuNTVoMi4zYzAuNTIsMCwwLjk5LDAuMDksMS40MSwwLjI2YzAuNDIsMC4xNywwLjc4LDAuNDIsMS4wOCwwLjc0YzAuMywwLjMyLDAuNTMsMC43MiwwLjY5LDEuMTkKCQljMC4xNiwwLjQ3LDAuMjQsMSwwLjI0LDEuNTlTMTIuNSwxMTMuNTYsMTIuMzQsMTE0LjAzIE0xMi42MSwxMDguOTNjLTAuNDItMC40My0wLjkyLTAuNzUtMS41MS0wLjk5CgkJYy0wLjU5LTAuMjMtMS4yMy0wLjM1LTEuOTQtMC4zNUg1LjU0djkuNjdoMy42MmMwLjcxLDAsMS4zNi0wLjEyLDEuOTQtMC4zNWMwLjU5LTAuMjMsMS4wOS0wLjU2LDEuNTEtMC45OAoJCWMwLjQyLTAuNDIsMC43NC0wLjkzLDAuOTctMS41M2MwLjIzLTAuNTksMC4zNC0xLjI1LDAuMzQtMS45OGMwLTAuNzItMC4xMi0xLjM4LTAuMzQtMS45OEMxMy4zNSwxMDkuODcsMTMuMDIsMTA5LjM2LDEyLjYxLDEwOC45MwoJCSIvPgoJPHBvbHlnb24gY2xhc3M9InN0MCIgcG9pbnRzPSIxOC4zNCwxMDcuNiAxOC4zNCwxMTcuMjcgMjQuMywxMTcuMjcgMjQuMywxMTYuMiAxOS42NSwxMTYuMiAxOS42NSwxMTIuOSAyMy40MSwxMTIuOSAyMy40MSwxMTEuODggCgkJMTkuNjUsMTExLjg4IDE5LjY1LDEwOC42NiAyNC4zLDEwOC42NiAyNC4zLDEwNy42IAkiLz4KCTxwYXRoIGNsYXNzPSJzdDAiIGQ9Ik0zMy41NywxMTIuNjNjLTAuMjItMC4xOS0wLjQ3LTAuMzUtMC43NC0wLjQ3Yy0wLjI4LTAuMTItMC41Ni0wLjI0LTAuODUtMC4zM3MtMC41Ny0wLjE5LTAuODUtMC4yOQoJCXMtMC41Mi0wLjItMC43NC0wLjMzYy0wLjIyLTAuMTMtMC4zOS0wLjI4LTAuNTMtMC40NmMtMC4xMy0wLjE4LTAuMi0wLjQtMC4yLTAuNjdjMC0wLjIxLDAuMDQtMC40MSwwLjEyLTAuNTkKCQljMC4wOC0wLjE4LDAuMTktMC4zNCwwLjM0LTAuNDhjMC4xNS0wLjEzLDAuMzQtMC4yNCwwLjU2LTAuMzJjMC4yMi0wLjA4LDAuNDgtMC4xMiwwLjc4LTAuMTJjMC4zMSwwLDAuNTgsMC4wNCwwLjc5LDAuMTEKCQljMC4yMiwwLjA4LDAuNDEsMC4xNiwwLjU2LDAuMjVjMC4xNiwwLjA5LDAuMjgsMC4xOCwwLjM4LDAuMjVjMC4xLDAuMDgsMC4xOSwwLjExLDAuMjcsMC4xMWMwLjA3LDAsMC4xMy0wLjAyLDAuMTgtMC4wNQoJCWMwLjA1LTAuMDMsMC4wOS0wLjA4LDAuMTMtMC4xNWwwLjMyLTAuNjJjLTAuMzMtMC4zMi0wLjcyLTAuNTctMS4xNy0wLjc0Yy0wLjQ1LTAuMTctMC45NC0wLjI2LTEuNDgtMC4yNgoJCWMtMC40OCwwLTAuOTEsMC4wNy0xLjI4LDAuMjJjLTAuMzcsMC4xNS0wLjY4LDAuMzUtMC45NCwwLjU5Yy0wLjI1LDAuMjUtMC40NCwwLjUzLTAuNTgsMC44NWMtMC4xMywwLjMyLTAuMiwwLjY1LTAuMiwwLjk5CgkJYzAsMC40MywwLjA3LDAuNzksMC4yLDEuMDhjMC4xMywwLjI5LDAuMzEsMC41MywwLjUyLDAuNzNjMC4yMiwwLjE5LDAuNDYsMC4zNSwwLjc0LDAuNDdjMC4yOCwwLjEyLDAuNTYsMC4yMywwLjg1LDAuMzIKCQlzMC41NywwLjE4LDAuODUsMC4yN2MwLjI4LDAuMDksMC41MiwwLjE5LDAuNzQsMC4zMnMwLjM5LDAuMjgsMC41MiwwLjQ3YzAuMTMsMC4xOSwwLjIsMC40MywwLjIsMC43MmMwLDAuMjctMC4wNCwwLjUxLTAuMTQsMC43MgoJCWMtMC4wOSwwLjIyLTAuMjIsMC40LTAuMzksMC41NmMtMC4xNywwLjE2LTAuMzcsMC4yOC0wLjYyLDAuMzZjLTAuMjQsMC4wOS0wLjUyLDAuMTMtMC44MywwLjEzYy0wLjM3LDAtMC42OS0wLjA1LTAuOTUtMC4xNQoJCWMtMC4yNi0wLjEtMC40OC0wLjIxLTAuNjYtMC4zM2MtMC4xOC0wLjEyLTAuMzMtMC4yMy0wLjQ2LTAuMzNjLTAuMTItMC4xLTAuMjMtMC4xNS0wLjMyLTAuMTVjLTAuMDYsMC0wLjEyLDAuMDItMC4xNywwLjA1CgkJYy0wLjA1LDAuMDMtMC4xLDAuMDgtMC4xMywwLjEzbC0wLjM4LDAuNjJjMC4zNiwwLjM5LDAuOCwwLjY5LDEuMzIsMC45MmMwLjUyLDAuMjMsMS4wOSwwLjM0LDEuNzEsMC4zNAoJCWMwLjUxLDAsMC45Ny0wLjA4LDEuMzctMC4yNGMwLjQtMC4xNiwwLjc0LTAuMzcsMS4wMi0wLjY1YzAuMjgtMC4yNywwLjQ5LTAuNiwwLjYzLTAuOTdjMC4xNC0wLjM3LDAuMjItMC43NywwLjIyLTEuMTkKCQljMC0wLjQtMC4wNy0wLjc0LTAuMi0xLjAxQzMzLjk3LDExMy4wNSwzMy43OSwxMTIuODIsMzMuNTcsMTEyLjYzIi8+Cgk8cmVjdCB4PSIzOC44NCIgeT0iMTA3LjYiIGNsYXNzPSJzdDAiIHdpZHRoPSIxLjMxIiBoZWlnaHQ9IjkuNjciLz4KCTxwYXRoIGNsYXNzPSJzdDAiIGQ9Ik01MC4zLDExMy4zNmMwLDAuMDcsMC4wMywwLjEzLDAuMDgsMC4xOGMwLjA1LDAuMDUsMC4xMiwwLjA3LDAuMiwwLjA3aDEuNXYyLjEzCgkJYy0wLjE3LDAuMDktMC4zNCwwLjE3LTAuNTEsMC4yNGMtMC4xNywwLjA3LTAuMzUsMC4xMy0wLjU1LDAuMThjLTAuMTksMC4wNS0wLjQsMC4wOS0wLjYyLDAuMTFjLTAuMjIsMC4wMi0wLjQ2LDAuMDQtMC43MiwwLjA0CgkJYy0wLjUyLDAtMS0wLjA5LTEuNDMtMC4yNmMtMC40My0wLjE4LTAuODEtMC40My0xLjEyLTAuNzZjLTAuMzItMC4zMy0wLjU2LTAuNzQtMC43My0xLjIyYy0wLjE3LTAuNDgtMC4yNi0xLjAyLTAuMjYtMS42NAoJCWMwLTAuNTksMC4wOC0xLjExLDAuMjUtMS41OGMwLjE3LTAuNDcsMC40MS0wLjg3LDAuNzItMS4yYzAuMzEtMC4zMywwLjY5LTAuNTksMS4xMy0wLjc2czAuOTMtMC4yNywxLjQ4LTAuMjcKCQljMC4zNywwLDAuNywwLjAzLDAuOTcsMC4wOWMwLjI3LDAuMDYsMC41MSwwLjEzLDAuNzEsMC4yMWMwLjIsMC4wOCwwLjM3LDAuMTcsMC41MSwwLjI2YzAuMTQsMC4wOSwwLjI2LDAuMTcsMC4zOCwwLjIzCgkJYzAuMDksMC4wNSwwLjE2LDAuMDcsMC4yNCwwLjA3YzAuMTIsMCwwLjIyLTAuMDYsMC4zLTAuMThsMC4zNy0wLjU5Yy0wLjIxLTAuMTktMC40My0wLjM2LTAuNjctMC41MQoJCWMtMC4yNC0wLjE1LTAuNS0wLjI4LTAuNzgtMC4zOWMtMC4yOC0wLjExLTAuNTktMC4xOS0wLjkyLTAuMjRjLTAuMzMtMC4wNi0wLjY4LTAuMDgtMS4wNy0wLjA4Yy0wLjc2LDAtMS40NCwwLjEyLTIuMDUsMC4zNgoJCWMtMC42MSwwLjI0LTEuMTMsMC41OC0xLjU2LDEuMDFjLTAuNDMsMC40My0wLjc2LDAuOTYtMC45OSwxLjU2Yy0wLjIzLDAuNjEtMC4zNSwxLjI4LTAuMzUsMi4wMmMwLDAuNzMsMC4xMiwxLjQsMC4zNSwyCgkJYzAuMjQsMC42MSwwLjU3LDEuMTMsMC45OSwxLjU2YzAuNDIsMC40MywwLjkzLDAuNzcsMS41MSwxLjAxYzAuNTksMC4yNCwxLjIzLDAuMzYsMS45MywwLjM2YzAuNCwwLDAuNzctMC4wMiwxLjExLTAuMDYKCQljMC4zNC0wLjA0LDAuNjYtMC4xMSwwLjk2LTAuMmMwLjMtMC4wOSwwLjU4LTAuMiwwLjg0LTAuMzNjMC4yNi0wLjEzLDAuNTItMC4yOCwwLjc2LTAuNDZ2LTMuNzFINTAuM1YxMTMuMzZ6Ii8+Cgk8cGF0aCBjbGFzcz0ic3QwIiBkPSJNNjQuNjEsMTE0LjQ1YzAsMC4xLDAsMC4yMSwwLjAxLDAuMzJjMCwwLjExLDAuMDEsMC4yMiwwLjAzLDAuMzRsLTUuNi03LjI5Yy0wLjA3LTAuMDktMC4xNC0wLjE1LTAuMTktMC4xOAoJCWMtMC4wNi0wLjAzLTAuMTQtMC4wNC0wLjI2LTAuMDRoLTAuNjd2OS42N2gxLjE1di02Ljg5YzAtMC4wOSwwLTAuMTktMC4wMS0wLjNjMC0wLjExLTAuMDEtMC4yMi0wLjAyLTAuMzNsNS42LDcuMjgKCQljMC4wNywwLjA4LDAuMTQsMC4xNSwwLjIxLDAuMThjMC4wNywwLjA0LDAuMTYsMC4wNSwwLjI2LDAuMDVoMC42NnYtOS42N2gtMS4xNVYxMTQuNDV6Ii8+Cgk8cGF0aCBjbGFzcz0ic3QwIiBkPSJNODcuMDgsMTE1LjE1Yy0wLjA3LDAtMC4xNSwwLjAzLTAuMjIsMC4xYy0wLjE3LDAuMTUtMC4zNCwwLjI4LTAuNTEsMC4zOWMtMC4xNywwLjExLTAuMzUsMC4yLTAuNTUsMC4yNwoJCWMtMC4yLDAuMDctMC40MSwwLjEzLTAuNjQsMC4xNmMtMC4yMywwLjAzLTAuNDksMC4wNS0wLjc4LDAuMDVjLTAuNDcsMC0wLjkxLTAuMDktMS4zMi0wLjI2Yy0wLjQxLTAuMTctMC43Ni0wLjQyLTEuMDYtMC43NQoJCWMtMC4zLTAuMzMtMC41NC0wLjczLTAuNzEtMS4yYy0wLjE3LTAuNDctMC4yNi0xLjAxLTAuMjYtMS42MWMwLTAuNTksMC4wOS0xLjExLDAuMjYtMS41OWMwLjE3LTAuNDcsMC40MS0wLjg3LDAuNzMtMS4yCgkJYzAuMzEtMC4zMywwLjY4LTAuNTgsMS4xMS0wLjc2YzAuNDMtMC4xOCwwLjktMC4yNywxLjQyLTAuMjdjMC4yOSwwLDAuNTQsMC4wMiwwLjc2LDAuMDZjMC4yMiwwLjA0LDAuNDEsMC4xLDAuNTgsMC4xNgoJCWMwLjE3LDAuMDYsMC4zMSwwLjEzLDAuNDMsMC4yYzAuMTIsMC4wNywwLjIzLDAuMTQsMC4zMiwwLjJjMC4wOSwwLjA2LDAuMTcsMC4xMiwwLjIzLDAuMTZjMC4wNywwLjA0LDAuMTMsMC4wNiwwLjE5LDAuMDYKCQljMC4wOCwwLDAuMTMtMC4wMSwwLjE4LTAuMDRjMC4wNC0wLjAzLDAuMDgtMC4wNywwLjExLTAuMTFsMC40My0wLjZjLTAuNC0wLjM4LTAuODYtMC42OC0xLjM3LTAuOWMtMC41Mi0wLjIyLTEuMTMtMC4zMy0xLjg0LTAuMzMKCQljLTAuNzIsMC0xLjM4LDAuMTItMS45NywwLjM2Yy0wLjYsMC4yNC0xLjExLDAuNTgtMS41NCwxLjAyYy0wLjQzLDAuNDQtMC43NiwwLjk2LTAuOTksMS41N2MtMC4yNCwwLjYxLTAuMzUsMS4yOC0wLjM1LDIKCQljMCwwLjczLDAuMTEsMS40LDAuMzMsMmMwLjIyLDAuNjEsMC41MywxLjEzLDAuOTMsMS41NmMwLjQsMC40MywwLjg4LDAuNzcsMS40NSwxLjAxYzAuNTcsMC4yNCwxLjIsMC4zNiwxLjksMC4zNgoJCWMwLjgsMCwxLjQ4LTAuMTMsMi4wNC0wLjM4YzAuNTctMC4yNiwxLjA1LTAuNjEsMS40NC0xLjA3bC0wLjUxLTAuNTZDODcuMjIsMTE1LjE4LDg3LjE2LDExNS4xNSw4Ny4wOCwxMTUuMTUiLz4KCTxwYXRoIGNsYXNzPSJzdDAiIGQ9Ik05OS41NCwxMTMuOTFjLTAuMTYsMC40Ny0wLjM5LDAuODctMC42OSwxLjE5Yy0wLjMsMC4zMy0wLjY2LDAuNTgtMS4wOCwwLjc1Yy0wLjQyLDAuMTctMC45LDAuMjYtMS40MiwwLjI2CgkJYy0wLjUyLDAtMC45OS0wLjA5LTEuNDEtMC4yNmMtMC40Mi0wLjE3LTAuNzgtMC40Mi0xLjA4LTAuNzVjLTAuMy0wLjMzLTAuNTMtMC43Mi0wLjY5LTEuMTljLTAuMTYtMC40Ny0wLjI0LTEtMC4yNC0xLjYKCQljMC0wLjU5LDAuMDgtMS4xMywwLjI0LTEuNmMwLjE2LTAuNDcsMC4zOS0wLjg3LDAuNjktMS4yYzAuMy0wLjMzLDAuNjYtMC41OCwxLjA4LTAuNzVjMC40Mi0wLjE4LDAuODktMC4yNiwxLjQxLTAuMjYKCQljMC41MiwwLDAuOTksMC4wOSwxLjQyLDAuMjZjMC40MiwwLjE4LDAuNzgsMC40MywxLjA4LDAuNzVjMC4zLDAuMzMsMC41MywwLjczLDAuNjksMS4yYzAuMTYsMC40NywwLjI0LDEsMC4yNCwxLjYKCQlDOTkuNzksMTEyLjkxLDk5LjcxLDExMy40NCw5OS41NCwxMTMuOTEgTTk5LjgxLDEwOC43NWMtMC40Mi0wLjQ0LTAuOTItMC43OC0xLjUxLTEuMDJjLTAuNTktMC4yNC0xLjI0LTAuMzYtMS45NS0wLjM2CgkJcy0xLjM2LDAuMTItMS45NCwwLjM2Yy0wLjU5LDAuMjQtMS4wOSwwLjU4LTEuNTEsMS4wMmMtMC40MiwwLjQ0LTAuNzQsMC45Ni0wLjk3LDEuNTdjLTAuMjMsMC42LTAuMzQsMS4yNy0wLjM0LDEuOTkKCQljMCwwLjczLDAuMTIsMS4zOSwwLjM0LDJjMC4yMywwLjYsMC41NSwxLjEzLDAuOTcsMS41NmMwLjQyLDAuNDQsMC45MiwwLjc4LDEuNTEsMS4wMmMwLjU5LDAuMjQsMS4yMywwLjM2LDEuOTQsMC4zNgoJCXMxLjM2LTAuMTIsMS45NS0wLjM2YzAuNTktMC4yNCwxLjA5LTAuNTgsMS41MS0xLjAyYzAuNDItMC40NCwwLjc0LTAuOTYsMC45Ny0xLjU2YzAuMjMtMC42LDAuMzQtMS4yNywwLjM0LTIKCQljMC0wLjcyLTAuMTItMS4zOS0wLjM0LTEuOTlDMTAwLjU2LDEwOS43MiwxMDAuMjMsMTA5LjE5LDk5LjgxLDEwOC43NSIvPgoJPHBhdGggY2xhc3M9InN0MCIgZD0iTTExMi4yNSwxMTQuMzNjMCwwLjEsMCwwLjIxLDAuMDEsMC4zMmMwLDAuMTEsMC4wMSwwLjIyLDAuMDMsMC4zNGwtNS42LTcuMjljLTAuMDctMC4wOS0wLjE0LTAuMTUtMC4xOS0wLjE4CgkJYy0wLjA2LTAuMDMtMC4xNC0wLjA0LTAuMjYtMC4wNGgtMC42N3Y5LjY3aDEuMTV2LTYuODljMC0wLjA5LDAtMC4xOS0wLjAxLTAuM2MwLTAuMTEtMC4wMS0wLjIyLTAuMDItMC4zM2w1LjYsNy4yOAoJCWMwLjA3LDAuMDksMC4xNCwwLjE1LDAuMjEsMC4xOGMwLjA3LDAuMDQsMC4xNiwwLjA1LDAuMjYsMC4wNWgwLjY2di05LjY3aC0xLjE1VjExNC4zM3oiLz4KCTxwYXRoIGNsYXNzPSJzdDAiIGQ9Ik0xMjMuMTUsMTEyLjVjLTAuMjItMC4xOS0wLjQ3LTAuMzUtMC43NC0wLjQ3Yy0wLjI4LTAuMTItMC41Ni0wLjIzLTAuODUtMC4zM2MtMC4yOS0wLjEtMC41Ny0wLjE5LTAuODUtMC4yOQoJCWMtMC4yOC0wLjA5LTAuNTItMC4yLTAuNzQtMC4zM2MtMC4yMi0wLjEzLTAuMzktMC4yOC0wLjUzLTAuNDZjLTAuMTMtMC4xOC0wLjItMC40LTAuMi0wLjY3YzAtMC4yMSwwLjA0LTAuNDEsMC4xMi0wLjU5CgkJYzAuMDgtMC4xOCwwLjE5LTAuMzQsMC4zNC0wLjQ4YzAuMTUtMC4xNCwwLjM0LTAuMjQsMC41Ni0wLjMyYzAuMjItMC4wOCwwLjQ4LTAuMTIsMC43OC0wLjEyYzAuMzEsMCwwLjU4LDAuMDQsMC43OSwwLjEyCgkJYzAuMjIsMC4wOCwwLjQxLDAuMTYsMC41NiwwLjI1YzAuMTYsMC4wOSwwLjI4LDAuMTgsMC4zOCwwLjI1YzAuMSwwLjA4LDAuMTksMC4xMSwwLjI3LDAuMTFjMC4wNywwLDAuMTMtMC4wMiwwLjE4LTAuMDUKCQljMC4wNS0wLjAzLDAuMDktMC4wOCwwLjEzLTAuMTVsMC4zMi0wLjYyYy0wLjMzLTAuMzItMC43Mi0wLjU3LTEuMTctMC43NGMtMC40NS0wLjE3LTAuOTQtMC4yNi0xLjQ4LTAuMjYKCQljLTAuNDgsMC0wLjkxLDAuMDctMS4yOCwwLjIyYy0wLjM3LDAuMTUtMC42OCwwLjM1LTAuOTMsMC41OWMtMC4yNSwwLjI1LTAuNDQsMC41My0wLjU4LDAuODVjLTAuMTMsMC4zMi0wLjIsMC42NS0wLjIsMC45OQoJCWMwLDAuNDMsMC4wNywwLjc5LDAuMiwxLjA4YzAuMTMsMC4yOSwwLjMxLDAuNTMsMC41MiwwLjcyYzAuMjIsMC4xOSwwLjQ2LDAuMzUsMC43NCwwLjQ3YzAuMjgsMC4xMiwwLjU2LDAuMjMsMC44NSwwLjMyCgkJYzAuMjksMC4wOSwwLjU3LDAuMTgsMC44NSwwLjI3YzAuMjgsMC4wOSwwLjUyLDAuMTksMC43NCwwLjMyYzAuMjIsMC4xMywwLjM5LDAuMjgsMC41MiwwLjQ3YzAuMTMsMC4xOSwwLjIsMC40MywwLjIsMC43MgoJCWMwLDAuMjctMC4wNCwwLjUxLTAuMTQsMC43MmMtMC4wOSwwLjIyLTAuMjIsMC40LTAuMzksMC41NmMtMC4xNywwLjE2LTAuMzcsMC4yOC0wLjYyLDAuMzZjLTAuMjQsMC4wOS0wLjUyLDAuMTMtMC44MywwLjEzCgkJYy0wLjM3LDAtMC42OS0wLjA1LTAuOTUtMC4xNXMtMC40OC0wLjIxLTAuNjYtMC4zM2MtMC4xOC0wLjEyLTAuMzMtMC4yMy0wLjQ2LTAuMzNjLTAuMTItMC4xLTAuMjMtMC4xNS0wLjMyLTAuMTUKCQljLTAuMDYsMC0wLjEyLDAuMDItMC4xNywwLjA1Yy0wLjA1LDAuMDMtMC4xLDAuMDgtMC4xMywwLjEybC0wLjM4LDAuNjJjMC4zNiwwLjM5LDAuOCwwLjY5LDEuMzIsMC45MgoJCWMwLjUyLDAuMjMsMS4wOSwwLjM0LDEuNzEsMC4zNGMwLjUxLDAsMC45Ny0wLjA4LDEuMzctMC4yNGMwLjQtMC4xNiwwLjc0LTAuMzcsMS4wMi0wLjY1YzAuMjgtMC4yNywwLjQ5LTAuNiwwLjYzLTAuOTcKCQljMC4xNC0wLjM3LDAuMjItMC43NywwLjIyLTEuMTljMC0wLjQtMC4wNy0wLjc0LTAuMi0xLjAxQzEyMy41NCwxMTIuOTIsMTIzLjM3LDExMi42OSwxMjMuMTUsMTEyLjUiLz4KCTxwb2x5Z29uIGNsYXNzPSJzdDAiIHBvaW50cz0iMTI3LjE5LDEwNy40OCAxMjcuMTksMTA4LjU4IDEzMC4zMywxMDguNTggMTMwLjMzLDExNy4xNSAxMzEuNjQsMTE3LjE1IDEzMS42NCwxMDguNTggMTM0Ljc2LDEwOC41OCAKCQkxMzQuNzYsMTA3LjQ4IAkiLz4KCTxwYXRoIGNsYXNzPSJzdDAiIGQ9Ik0xNDEuNTgsMTEyLjE2aC0xLjM3di0zLjY1aDEuNDNjMC43NSwwLDEuMzIsMC4xNSwxLjcsMC40NGMwLjM4LDAuMjksMC41NywwLjczLDAuNTcsMS4zCgkJYzAsMC4yOC0wLjA1LDAuNTQtMC4xNSwwLjc4cy0wLjI1LDAuNDMtMC40NCwwLjZjLTAuMiwwLjE3LTAuNDQsMC4zLTAuNzMsMC4zOUMxNDIuMywxMTIuMTEsMTQxLjk2LDExMi4xNiwxNDEuNTgsMTEyLjE2CgkJIE0xNDIuOCwxMTIuOWMwLjM3LTAuMDksMC43MS0wLjIxLDEtMC4zOGMwLjI5LTAuMTcsMC41NC0wLjM3LDAuNzUtMC42YzAuMi0wLjI0LDAuMzYtMC41LDAuNDctMC44YzAuMTEtMC4zLDAuMTYtMC42MiwwLjE2LTAuOTYKCQljMC0wLjQxLTAuMDctMC43OC0wLjIxLTEuMTFjLTAuMTQtMC4zMy0wLjM1LTAuNjEtMC42NC0wLjg1Yy0wLjI5LTAuMjMtMC42Ni0wLjQxLTEuMS0wLjU0Yy0wLjQ1LTAuMTItMC45Ny0wLjE5LTEuNTktMC4xOWgtMi43MwoJCXY5LjY3aDEuM3YtNC4wNGgwLjk5YzAuMTgsMCwwLjMxLDAuMDIsMC40MSwwLjA3YzAuMDksMC4wNSwwLjE3LDAuMTMsMC4yNSwwLjIzbDIuNTEsMy40NmMwLjExLDAuMTksMC4yOSwwLjI4LDAuNTMsMC4yOGgxLjE2CgkJbC0yLjgyLTMuODRDMTQzLjExLDExMy4xMywxNDIuOTYsMTEyLjk5LDE0Mi44LDExMi45Ii8+Cgk8cGF0aCBjbGFzcz0ic3QwIiBkPSJNMTU2LjEyLDExMy4zNWMwLDAuNC0wLjA2LDAuNzgtMC4xNywxLjExYy0wLjEyLDAuMzQtMC4yOCwwLjYzLTAuNSwwLjg3Yy0wLjIyLDAuMjQtMC40OSwwLjQzLTAuOCwwLjU3CgkJYy0wLjMyLDAuMTQtMC42NywwLjItMS4wNywwLjJjLTAuNCwwLTAuNzYtMC4wNy0xLjA4LTAuMjFjLTAuMzItMC4xNC0wLjU5LTAuMzMtMC44LTAuNTdjLTAuMjItMC4yNC0wLjM4LTAuNTMtMC41LTAuODcKCQljLTAuMTEtMC4zNC0wLjE3LTAuNzEtMC4xNy0xLjExdi01Ljg3aC0xLjN2NS44OGMwLDAuNTYsMC4wOSwxLjA4LDAuMjcsMS41NWMwLjE4LDAuNDgsMC40MywwLjg5LDAuNzcsMS4yNAoJCWMwLjMzLDAuMzUsMC43NCwwLjYyLDEuMjEsMC44MmMwLjQ4LDAuMiwxLjAxLDAuMywxLjYxLDAuM2MwLjU5LDAsMS4xMy0wLjEsMS42MS0wLjNjMC40OC0wLjIsMC44OC0wLjQ3LDEuMjEtMC44MgoJCWMwLjMzLTAuMzUsMC41OC0wLjc2LDAuNzYtMS4yNGMwLjE4LTAuNDgsMC4yNy0wLjk5LDAuMjctMS41NXYtNS44OGgtMS4zVjExMy4zNXoiLz4KCTxwYXRoIGNsYXNzPSJzdDAiIGQ9Ik0xNjkuMTIsMTE1LjE1Yy0wLjA3LDAtMC4xNSwwLjAzLTAuMjIsMC4xYy0wLjE3LDAuMTUtMC4zNCwwLjI4LTAuNTEsMC4zOWMtMC4xNywwLjExLTAuMzUsMC4yLTAuNTUsMC4yNwoJCWMtMC4xOSwwLjA3LTAuNDEsMC4xMy0wLjY0LDAuMTZjLTAuMjMsMC4wMy0wLjQ5LDAuMDUtMC43OCwwLjA1Yy0wLjQ3LDAtMC45MS0wLjA5LTEuMzItMC4yNmMtMC40MS0wLjE3LTAuNzYtMC40Mi0xLjA2LTAuNzUKCQljLTAuMy0wLjMzLTAuNTQtMC43My0wLjcxLTEuMmMtMC4xNy0wLjQ3LTAuMjYtMS4wMS0wLjI2LTEuNjFjMC0wLjU5LDAuMDktMS4xMSwwLjI2LTEuNTljMC4xNy0wLjQ3LDAuNDEtMC44NywwLjczLTEuMgoJCWMwLjMxLTAuMzMsMC42OC0wLjU4LDEuMTEtMC43NmMwLjQzLTAuMTgsMC45LTAuMjcsMS40Mi0wLjI3YzAuMjksMCwwLjU0LDAuMDIsMC43NiwwLjA2YzAuMjIsMC4wNCwwLjQxLDAuMSwwLjU4LDAuMTYKCQljMC4xNywwLjA2LDAuMzEsMC4xMywwLjQzLDAuMmMwLjEyLDAuMDcsMC4yMywwLjE0LDAuMzIsMC4yYzAuMDksMC4wNiwwLjE3LDAuMTIsMC4yMywwLjE2YzAuMDcsMC4wNCwwLjEzLDAuMDYsMC4xOSwwLjA2CgkJYzAuMDgsMCwwLjE0LTAuMDEsMC4xOC0wLjA0YzAuMDQtMC4wMywwLjA4LTAuMDcsMC4xMS0wLjExbDAuNDMtMC42Yy0wLjQtMC4zOC0wLjg2LTAuNjgtMS4zNy0wLjljLTAuNTEtMC4yMi0xLjEzLTAuMzMtMS44NC0wLjMzCgkJYy0wLjcyLDAtMS4zOCwwLjEyLTEuOTcsMC4zNmMtMC42LDAuMjQtMS4xMSwwLjU4LTEuNTQsMS4wMmMtMC40MywwLjQ0LTAuNzYsMC45Ni0wLjk5LDEuNTdjLTAuMjQsMC42MS0wLjM1LDEuMjgtMC4zNSwyCgkJYzAsMC43MywwLjExLDEuNCwwLjMzLDJjMC4yMiwwLjYxLDAuNTMsMS4xMywwLjkzLDEuNTZjMC40LDAuNDMsMC44OCwwLjc3LDEuNDUsMS4wMWMwLjU3LDAuMjQsMS4yLDAuMzYsMS45LDAuMzYKCQljMC44LDAsMS40OC0wLjEzLDIuMDQtMC4zOGMwLjU2LTAuMjYsMS4wNC0wLjYxLDEuNDQtMS4wN2wtMC41MS0wLjU2QzE2OS4yNSwxMTUuMTgsMTY5LjE5LDExNS4xNSwxNjkuMTIsMTE1LjE1Ii8+Cgk8cG9seWdvbiBjbGFzcz0ic3QwIiBwb2ludHM9IjE3My4xOSwxMDcuNDggMTczLjE5LDEwOC41OCAxNzYuMzMsMTA4LjU4IDE3Ni4zMywxMTcuMTUgMTc3LjY0LDExNy4xNSAxNzcuNjQsMTA4LjU4IDE4MC43NywxMDguNTggCgkJMTgwLjc3LDEwNy40OCAJIi8+Cgk8cmVjdCB4PSIxODUuMDIiIHk9IjEwNy40OCIgY2xhc3M9InN0MCIgd2lkdGg9IjEuMzEiIGhlaWdodD0iOS42NyIvPgoJPHBhdGggY2xhc3M9InN0MCIgZD0iTTE5OC45NSwxMTMuOTFjLTAuMTYsMC40Ny0wLjM5LDAuODctMC42OSwxLjE5Yy0wLjMsMC4zMy0wLjY2LDAuNTgtMS4wOCwwLjc1Yy0wLjQyLDAuMTctMC45LDAuMjYtMS40MiwwLjI2CgkJYy0wLjUyLDAtMC45OS0wLjA5LTEuNDEtMC4yNmMtMC40Mi0wLjE3LTAuNzgtMC40Mi0xLjA4LTAuNzVjLTAuMy0wLjMzLTAuNTMtMC43Mi0wLjY5LTEuMTljLTAuMTYtMC40Ny0wLjI0LTEtMC4yNC0xLjYKCQljMC0wLjU5LDAuMDgtMS4xMywwLjI0LTEuNmMwLjE2LTAuNDcsMC4zOS0wLjg3LDAuNjktMS4yYzAuMy0wLjMzLDAuNjYtMC41OCwxLjA4LTAuNzVjMC40Mi0wLjE4LDAuODktMC4yNiwxLjQxLTAuMjYKCQljMC41MiwwLDAuOTksMC4wOSwxLjQyLDAuMjZjMC40MiwwLjE4LDAuNzgsMC40MywxLjA4LDAuNzVjMC4zLDAuMzMsMC41MywwLjczLDAuNjksMS4yYzAuMTYsMC40NywwLjI0LDEsMC4yNCwxLjYKCQlDMTk5LjE5LDExMi45MSwxOTkuMTEsMTEzLjQ0LDE5OC45NSwxMTMuOTEgTTE5OS4yMiwxMDguNzVjLTAuNDItMC40NC0wLjkyLTAuNzgtMS41MS0xLjAyYy0wLjU5LTAuMjQtMS4yNC0wLjM2LTEuOTUtMC4zNgoJCXMtMS4zNiwwLjEyLTEuOTQsMC4zNmMtMC41OSwwLjI0LTEuMDksMC41OC0xLjUsMS4wMmMtMC40MiwwLjQ0LTAuNzQsMC45Ni0wLjk3LDEuNTdjLTAuMjMsMC42LTAuMzQsMS4yNy0wLjM0LDEuOTkKCQljMCwwLjczLDAuMTEsMS4zOSwwLjM0LDJjMC4yMywwLjYsMC41NSwxLjEzLDAuOTcsMS41NmMwLjQyLDAuNDQsMC45MiwwLjc4LDEuNSwxLjAyYzAuNTksMC4yNCwxLjIzLDAuMzYsMS45NCwwLjM2CgkJczEuMzYtMC4xMiwxLjk1LTAuMzZjMC41OS0wLjI0LDEuMDktMC41OCwxLjUxLTEuMDJjMC40Mi0wLjQ0LDAuNzQtMC45NiwwLjk3LTEuNTZjMC4yMy0wLjYsMC4zNC0xLjI3LDAuMzQtMgoJCWMwLTAuNzItMC4xMi0xLjM5LTAuMzQtMS45OUMxOTkuOTYsMTA5LjcyLDE5OS42NCwxMDkuMTksMTk5LjIyLDEwOC43NSIvPgoJPHBhdGggY2xhc3M9InN0MCIgZD0iTTIxMS42NSwxMTQuMzNjMCwwLjEsMCwwLjIxLDAuMDEsMC4zMmMwLDAuMTEsMC4wMSwwLjIyLDAuMDMsMC4zNGwtNS42LTcuMjljLTAuMDctMC4wOS0wLjE0LTAuMTUtMC4xOS0wLjE4CgkJYy0wLjA2LTAuMDMtMC4xNC0wLjA0LTAuMjYtMC4wNGgtMC42OHY5LjY3aDEuMTV2LTYuODljMC0wLjA5LDAtMC4xOS0wLjAxLTAuM3MtMC4wMS0wLjIyLTAuMDItMC4zM2w1LjYsNy4yOAoJCWMwLjA3LDAuMDksMC4xNCwwLjE1LDAuMjEsMC4xOGMwLjA3LDAuMDQsMC4xNiwwLjA1LDAuMjYsMC4wNWgwLjY2di05LjY3aC0xLjE1VjExNC4zM3oiLz4KCTxwYXRoIGNsYXNzPSJzdDAiIGQ9Ik03My4yNSwxMTUuNTJjLTAuNDcsMC0wLjg1LDAuMzgtMC44NSwwLjg1YzAsMC40NywwLjM4LDAuODUsMC44NSwwLjg1czAuODUtMC4zOCwwLjg1LTAuODUKCQlDNzQuMSwxMTUuOSw3My43MiwxMTUuNTIsNzMuMjUsMTE1LjUyIi8+Cgk8Zz4KCQk8Zz4KCQkJPHBhdGggY2xhc3M9InN0MCIgZD0iTTQ0LjAxLDEwLjc3Yy0yMi40MywwLTQwLjY5LDE4LjI1LTQwLjY5LDQwLjY5YzAsMjIuNDMsMTguMjUsNDAuNjgsNDAuNjksNDAuNjgKCQkJCWM5Ljc4LDAsMTkuMjMtMy41MiwyNi42Mi05LjkybC0yLjQxLTIuNjljLTYuNzMsNS44LTE1LjMxLDktMjQuMiw5Yy0yMC40NCwwLTM3LjA3LTE2LjYzLTM3LjA3LTM3LjA3CgkJCQljMC0yMC40NCwxNi42My0zNy4wNywzNy4wNy0zNy4wN2M4Ljg5LDAsMTcuNDgsMy4xOSwyNC4yLDlsMi40MS0yLjY5QzYzLjI0LDE0LjI5LDUzLjgsMTAuNzcsNDQuMDEsMTAuNzd6Ii8+CgkJPC9nPgoJPC9nPgoJPGc+CgkJPGc+CgkJCTxwYXRoIGNsYXNzPSJzdDAiIGQ9Ik04Mi41NCw5MS40M2gzLjYxVjE5LjJsMzQuODIsNTkuMDVsMzkuMzgtNjYuNzdoLTQuMmwtMzUuMTgsNTkuNjZsLTAuMjMtMC4zOEw4NS43OSwxMS40OGgtMy4yNlY5MS40M3oiLz4KCQk8L2c+Cgk8L2c+Cgk8Zz4KCQk8Zz4KCQkJPHBhdGggY2xhc3M9InN0MCIgZD0iTTE2Ny44OCw5MS40M2gzLjYyVjU4LjQ3aDE4Ljk2YzEyLjk2LDAsMjMuNS0xMC41NCwyMy41LTIzLjVzLTEwLjU0LTIzLjUtMjMuNS0yMy41aC0yMi41N3YzLjYxaDIyLjU3CgkJCQljMTAuOTYsMCwxOS44OCw4LjkyLDE5Ljg4LDE5Ljg4YzAsMTAuOTYtOC45MiwxOS44OC0xOS44OCwxOS44OGgtMjIuNTdMMTY3Ljg4LDkxLjQzeiIvPgoJCTwvZz4KCTwvZz4KCTxnPgoJCTxnPgoJCQk8cGF0aCBjbGFzcz0ic3QwIiBkPSJNMjYwLjksMTAuNzdjLTIyLjQzLDAtNDAuNjksMTguMjUtNDAuNjksNDAuNjljMCwyMi40MywxOC4yNSw0MC42OCw0MC42OSw0MC42OAoJCQkJYzEwLjcxLDAsMjAuODItNC4xMywyOC40OC0xMS42M2wwLjU0LTAuNTNsMC0yNC4xMWgtMTkuOTZ2My42MWgxNi4zNWwwLDE4Ljk3bC0wLjIzLDAuMjFjLTYuODYsNi4zNi0xNS44LDkuODYtMjUuMTcsOS44NgoJCQkJYy0yMC40NCwwLTM3LjA3LTE2LjYzLTM3LjA3LTM3LjA3YzAtMjAuNDQsMTYuNjMtMzcuMDcsMzcuMDctMzcuMDdjOC44OSwwLDE3LjQ3LDMuMTksMjQuMiw5bDIuNDEtMi42OQoJCQkJQzI4MC4xMywxNC4yOSwyNzAuNjksMTAuNzcsMjYwLjksMTAuNzd6Ii8+CgkJPC9nPgoJPC9nPgoJPHJlY3QgeD0iMjIwLjg4IiB5PSIxMTQuNjIiIGNsYXNzPSJzdDAiIHdpZHRoPSI2OS43NSIgaGVpZ2h0PSIyLjUyIi8+CjwvZz4KPC9zdmc+Cg==';
+
+// Convertir le SVG en image PNG sur fond charcoal pour jsPDF
+async function getLogoDataUrl() {
+  return new Promise(resolve => {
+    const img = new Image();
+    img.onload = () => {
+      const W = 584, H = 254; // 2x pour la résolution
+      const canvas = document.createElement('canvas');
+      canvas.width = W; canvas.height = H;
+      const ctx = canvas.getContext('2d');
+      ctx.fillStyle = '#3A3B3A';
+      ctx.fillRect(0, 0, W, H);
+      ctx.drawImage(img, 0, 0, W, H);
+      resolve(canvas.toDataURL('image/png'));
+    };
+    img.onerror = () => resolve(null);
+    img.src = 'data:image/svg+xml;base64,' + LOGO_SVG_B64;
+  });
+}
+
+// Charger une image produit en base64 (avec cache)
+const _imgCache = {};
+async function chargerImageProduit(url) {
+  if (!url) return null;
+  if (_imgCache[url]) return _imgCache[url];
+  return new Promise(resolve => {
+    const img = new Image();
+    img.crossOrigin = 'anonymous';
+    img.onload = () => {
+      try {
+        const canvas = document.createElement('canvas');
+        canvas.width = img.naturalWidth || 200;
+        canvas.height = img.naturalHeight || 200;
+        canvas.getContext('2d').drawImage(img, 0, 0);
+        const b64 = canvas.toDataURL('image/jpeg', 0.7);
+        _imgCache[url] = b64;
+        resolve(b64);
+      } catch (e) {
+        // Le navigateur bloque la lecture des pixels d'une image hébergée
+        // sur un domaine externe qui n'autorise pas le CORS (courant pour
+        // les photos "hotlinkées" chez un fournisseur/fabricant). Afficher
+        // l'image (<img src>) fonctionne quand même ailleurs dans l'admin,
+        // mais l'intégrer dans un PDF nécessite de lire ses pixels, ce que
+        // le CORS bloque ici.
+        console.warn('[PDF] Photo bloquée (CORS, domaine externe sans autorisation) :', url);
+        resolve(null);
+      }
+    };
+    img.onerror = () => {
+      console.warn('[PDF] Photo introuvable ou serveur injoignable :', url);
+      resolve(null);
+    };
+    img.src = url;
+  });
+}
+
+function genererPDFClient()   { genererPDF_base('client'); }
+function genererPDFChantier() { genererPDF_base('chantier'); }
+
+// Extrait les chiffres en début de référence pour un tri numérique fiable
+// même si le format mélange lettres et chiffres (ex. "P-2" avant "P-10").
+function comparerReferences(a, b) {
+  return String(a || '').localeCompare(String(b || ''), 'fr', { numeric: true, sensitivity: 'base' });
+}
+
+// ─────────────────────────────────────────────────────────────
+// GÉNÉRATION PDF — remplace l'ancien export Excel (jamais fonctionnel)
+// ─────────────────────────────────────────────────────────────
+async function genererPDF_base(mode) {
+  if (!currentProjetId) { toast('Aucun projet sélectionné.', 'error'); return; }
+  if (typeof window.jspdf === 'undefined' || typeof window.jspdf.jsPDF === 'undefined') {
+    toast('Bibliothèque PDF non chargée. Rechargez la page.', 'error'); return;
+  }
+
+  toast('Génération du PDF…', 'info');
+
+  // ── Données Supabase ──
+  const { data: projet } = await db.from('projets')
+    .select('nom, numero_projet, adresse, responsable_nom, clients(nom, email)')
+    .eq('id', currentProjetId).single();
+
+  const { data: postesAll } = await db.from('postes')
+    .select(`
+      id, reference, pieces, piece, ordre,
+      categories(id, nom, ordre),
+      sous_categories(id, nom, ordre),
+      options_produits(
+        id, statut_client, quantite, note_client, commentaire_client, lettre_option, date_decision,
+        banque_produits(id, nom, fabricant, modele, sku, couleur, dimensions, caracteristiques, prix, photo_url, url)
+      )
+    `)
+    .eq('projet_id', currentProjetId);
+
+  // ── Regrouper par catégorie → sous-catégorie, en séparant les options
+  //    "non retenues" (mode client) vers l'historique de fin de document ──
+  const catMap = {};
+  const historiqueRows = []; // rempli seulement en mode client
+
+  (postesAll || []).forEach(poste => {
+    const cat = poste.categories;
+    if (!cat) return;
+    const allOpts = poste.options_produits || [];
+
+    // Produit approuvé pour ce poste (référencé dans l'historique : "remplacé par")
+    const approuve    = allOpts.find(o => o.statut_client === 'approuvé');
+    const nomApprouve = approuve?.banque_produits?.nom || '';
+
+    // Chantier : uniquement les options approuvées.
+    // Client : tout sauf les postes entièrement annulés ("article non nécessaire").
+    const opts = mode === 'chantier'
+      ? allOpts.filter(o => o.statut_client === 'approuvé')
+      : allOpts.filter(o => o.statut_client !== 'annulé');
+    if (opts.length === 0) return;
+
+    const piecesStr = (poste.pieces || []).join(', ') || poste.piece || '';
+
+    opts.forEach(opt => {
+      const bp = opt.banque_produits;
+      if (!bp) return;
+
+      const isNonRetenu = mode === 'client'
+        && opt.statut_client === 'à_revoir'
+        && opt.commentaire_client === 'Option non retenue';
+
+      const row = {
+        ref:         poste.reference || '',
+        pieces:      piecesStr,
+        nom:         bp.nom || '',
+        fabricant:   bp.fabricant || '',
+        modele:      bp.modele || '',
+        sku:         bp.sku || '',
+        qte:         opt.quantite || 1,
+        couleur:     bp.couleur || '',
+        dims:        bp.dimensions || '',
+        caract:      bp.caracteristiques || '',
+        photo_url:   bp.photo_url || '',
+        prix_u:      bp.prix ? Number(bp.prix) : null,
+        prix_total:  bp.prix ? Number(bp.prix) * (opt.quantite || 1) : null,
+        statut:      opt.statut_client || '',
+        date_conf:   opt.date_decision ? new Date(opt.date_decision).toLocaleDateString('fr-CA') : '',
+        lien:        bp.url || '',
+        catNom:      cat.nom || 'Général',
+        remplacePar: nomApprouve,
+      };
+
+      if (isNonRetenu) { historiqueRows.push(row); return; }
+
+      const scNode  = poste.sous_categories;
+      const scKey   = scNode ? scNode.id : '__none__';
+      const scNom   = scNode ? scNode.nom : null;
+      const scOrdre = scNode ? (scNode.ordre ?? 999) : 0;
+      if (!catMap[cat.id]) catMap[cat.id] = { cat, scMap: {} };
+      if (!catMap[cat.id].scMap[scKey]) catMap[cat.id].scMap[scKey] = { scNom, scOrdre, rows: [] };
+      catMap[cat.id].scMap[scKey].rows.push(row);
+    });
+  });
+
+  const sortedCats = Object.values(catMap).sort((a, b) => (a.cat.ordre || 0) - (b.cat.ordre || 0));
+
+  if (sortedCats.length === 0 && historiqueRows.length === 0) {
+    toast('Aucune donnée à exporter.', 'info'); return;
+  }
+
+  // ── Tri en ordre chronologique de référence (dans chaque sous-catégorie) ──
+  sortedCats.forEach(({ scMap }) => {
+    Object.values(scMap).forEach(s => s.rows.sort((a, b) => comparerReferences(a.ref, b.ref)));
+  });
+  historiqueRows.sort((a, b) => comparerReferences(a.ref, b.ref));
+
+  // ── Précharger le logo + les photos produits (client ET chantier) ──
+  const logoUrl = await getLogoDataUrl();
+  const allRowsForPhotos = [
+    ...sortedCats.flatMap(({ scMap }) => Object.values(scMap).flatMap(s => s.rows)),
+    ...historiqueRows,
+  ];
+  const photoUrls = [...new Set(allRowsForPhotos.map(r => r.photo_url).filter(Boolean))];
+  const photoMap = {};
+  await Promise.all(photoUrls.map(async url => { photoMap[url] = await chargerImageProduit(url); }));
+  const nbPhotosOk = photoUrls.filter(u => photoMap[u]).length;
+
+  // ── Couleurs de marque CMPG (le charcoal correspond au fond réel du logo) ──
+  const T_DARK    = '#3A3B3A';
+  const T_BEIGE   = '#EFEBE6';
+  const T_SUBCAT  = '#ACA298';
+  const T_BORD    = '#C8C2BB';
+  const T_TEXT    = '#302F24';
+  const T_WARN    = '#7A5C00';
+  const T_LIEN    = '#9A8C7E';
+
+  const { jsPDF } = window.jspdf;
+  const doc = new jsPDF({ orientation: 'landscape', unit: 'mm', format: 'letter' });
+  const PW = doc.internal.pageSize.getWidth();
+  const MARGIN = 8;
+  const BAND1_H = 17; // bandeau charcoal (logo + titre) — agrandi pour que le logo respire
+  const BAND2_H = 14; // bandeau info projet
+  const ESTIM_H = 7;  // ligne estimation (client seulement)
+  const HEADER_H      = mode === 'client' ? BAND1_H + BAND2_H + ESTIM_H : BAND1_H + BAND2_H;
+  const HEADER_H_HIST = BAND1_H + BAND2_H;
+
+  const nomProjet    = projet?.nom || 'Projet';
+  const numeroProjet = projet?.numero_projet || '—';
+  const nomClient    = projet?.clients?.nom || '—';
+  const adresse      = projet?.adresse || '—';
+  const dateStr      = new Date().toLocaleDateString('fr-CA');
+
+  // Bandeau réutilisé pour les pages de catégorie ET la page historique
+  function drawHeader(titre, estimTotal, nbAttente) {
+    doc.setFillColor(T_DARK);
+    doc.rect(0, 0, PW, BAND1_H, 'F');
+    if (logoUrl) { try { doc.addImage(logoUrl, 'PNG', MARGIN, 1.5, 40, 14); } catch(e) {} }
+    doc.setTextColor('#FFFFFF');
+    doc.setFont('helvetica', 'bold'); doc.setFontSize(11);
+    doc.text(titre, MARGIN + 45, 10);
+    doc.setFont('helvetica', 'normal'); doc.setFontSize(7.5);
+    doc.text('450 455-6006  |  info@conceptionmpg.ca', PW - MARGIN, 10, { align: 'right' });
+
+    doc.setFillColor(T_BEIGE);
+    doc.rect(0, BAND1_H, PW, BAND2_H, 'F');
+    doc.setTextColor(T_TEXT);
+    doc.setFontSize(8);
+    doc.text(`N° ${numeroProjet}   —   ${nomProjet}`, MARGIN, BAND1_H + 6);
+    doc.text(`Client : ${nomClient}`, MARGIN, BAND1_H + 11);
+    doc.text(`Adresse : ${adresse}`, PW / 2, BAND1_H + 6);
+    doc.text(`Date : ${dateStr}`, PW - MARGIN, BAND1_H + 6, { align: 'right' });
+
+    if (mode === 'client' && estimTotal !== undefined) {
+      const yEstim = BAND1_H + BAND2_H + 5;
+      doc.setFont('helvetica', 'bold');
+      doc.text(`ESTIMATION (avant taxes) : ${estimTotal.toLocaleString('fr-CA', { style: 'currency', currency: 'CAD' })}`, MARGIN, yEstim);
+      if (nbAttente > 0) {
+        doc.setTextColor(T_WARN);
+        doc.text(`Items en attente : ${nbAttente}`, PW - MARGIN, yEstim, { align: 'right' });
+        doc.setTextColor(T_TEXT);
+      }
+      doc.setFont('helvetica', 'normal');
+    }
+  }
+
+  // Étire proportionnellement les colonnes pour remplir exactement la
+  // largeur imprimable (marges égales des deux côtés → tableau centré).
+  function ajusterLargeurs(cols) {
+    const usable = PW - 2 * MARGIN;
+    const total = cols.reduce((s, c) => s + c.w, 0);
+    const k = usable / total;
+    return cols.map(c => ({ ...c, w: Math.round(c.w * k * 100) / 100 }));
+  }
+
+  // ── Colonnes selon mode (Caractéristiques retirée — trop encombrant) ──
+  const COLS_CLIENT = ajusterLargeurs([
+    { key:'ref',        hdr:'Réf.',               w:12 },
+    { key:'pieces',     hdr:'Pièce(s)',           w:16 },
+    { key:'nom',        hdr:'Description',        w:32 },
+    { key:'fabricant',  hdr:'Fournisseur',        w:20 },
+    { key:'modele',     hdr:'Modèle',             w:16 },
+    { key:'sku',        hdr:'Code',               w:13 },
+    { key:'qte',        hdr:'Qté',                w:8  },
+    { key:'couleur',    hdr:'Couleur',            w:15 },
+    { key:'dims',       hdr:'Dimensions',         w:15 },
+    { key:'photo',      hdr:'Photo',              w:22 },
+    { key:'prix_u',     hdr:'Prix unit.',         w:16 },
+    { key:'prix_total', hdr:'Prix total',         w:16 },
+    { key:'statut',     hdr:'Statut',             w:15 },
+    { key:'date_conf',  hdr:'Date',               w:13 },
+    { key:'lien',       hdr:'Lien',               w:16 },
+  ]);
+  const COLS_CHANTIER = ajusterLargeurs([
+    { key:'ref',       hdr:'Réf.',               w:13 },
+    { key:'pieces',    hdr:'Pièce(s)',           w:20 },
+    { key:'nom',       hdr:'Description',        w:36 },
+    { key:'fabricant', hdr:'Fournisseur',        w:22 },
+    { key:'modele',    hdr:'Modèle',             w:17 },
+    { key:'sku',       hdr:'Code',               w:15 },
+    { key:'qte',       hdr:'Qté',                w:9  },
+    { key:'couleur',   hdr:'Couleur',            w:17 },
+    { key:'dims',      hdr:'Dimensions',         w:17 },
+    { key:'photo',     hdr:'Photo',              w:24 },
+    { key:'lien',      hdr:'Lien',               w:22 },
+  ]);
+  const COLS = mode === 'client' ? COLS_CLIENT : COLS_CHANTIER;
+
+  function buildRowArray(cols, row) {
+    return cols.map(c => {
+      if (c.key === 'photo')      return '';
+      if (c.key === 'lien')       return row.lien ? 'Voir plus' : '';
+      if (c.key === 'prix_u')     return row.prix_u     != null ? row.prix_u.toLocaleString('fr-CA', { style:'currency', currency:'CAD' }) : '';
+      if (c.key === 'prix_total') return row.prix_total != null ? row.prix_total.toLocaleString('fr-CA', { style:'currency', currency:'CAD' }) : '';
+      if (c.key === 'statut')     return row.statut === 'approuvé' ? 'Approuvé' : row.statut === 'à_revoir' ? 'À revoir' : 'En attente';
+      return row[c.key] ?? '';
+    });
+  }
+
+  // Dessine la photo intégrée et rend le lien produit cliquable
+  function makeCellDrawer(cols, rowLookup) {
+    return function(data) {
+      if (data.section !== 'body') return;
+      const colKey = cols[data.column.index]?.key;
+      if (colKey !== 'photo' && colKey !== 'lien') return;
+      const rowData = rowLookup(data.row.index);
+      if (!rowData) return;
+      if (colKey === 'photo') {
+        const b64 = photoMap[rowData.photo_url];
+        if (!b64) return;
+        const pad = 1;
+        const size = Math.min(data.cell.width, data.cell.height) - pad * 2;
+        try { doc.addImage(b64, 'JPEG', data.cell.x + pad, data.cell.y + pad, size, size); } catch(e) {}
+      } else if (colKey === 'lien' && rowData.lien) {
+        doc.link(data.cell.x, data.cell.y, data.cell.width, data.cell.height, { url: rowData.lien });
+      }
+    };
+  }
+
+  const columnStylesFor = (cols) => {
+    const styles = Object.fromEntries(cols.map((c, i) => [i, { cellWidth: c.w }]));
+    const lienIdx = cols.findIndex(c => c.key === 'lien');
+    if (lienIdx >= 0) styles[lienIdx].textColor = T_LIEN;
+    return styles;
+  };
+
+  // ── Une ou plusieurs pages par catégorie, triées, avec photos ──
+  let firstPage = true;
+  for (const { cat, scMap } of sortedCats) {
+    if (!firstPage) doc.addPage(); else firstPage = false;
+    const catNom = cat.nom || 'Général';
+
+    const scEntries  = Object.values(scMap).sort((a, b) => (a.scOrdre || 0) - (b.scOrdre || 0));
+    const flatRows   = scEntries.flatMap(s => s.rows);
+    const estimTotal = flatRows.reduce((s, r) => s + (r.prix_total || 0), 0);
+    const nbAttente  = flatRows.filter(r => r.statut === 'en_attente').length;
+
+    const body = [];
+    const subcatRowIndexes = [];
+    scEntries.forEach(s => {
+      if (s.scNom) {
+        subcatRowIndexes.push(body.length);
+        body.push([{ content: s.scNom.toUpperCase(), colSpan: COLS.length,
+          styles: { fillColor: T_SUBCAT, textColor: '#FFFFFF', fontStyle: 'bold', halign: 'left', minCellHeight: 6, cellPadding: 1.5 } }]);
+      }
+      s.rows.forEach(r => body.push(buildRowArray(COLS, r)));
+    });
+
+    const drawCatCell = makeCellDrawer(COLS, (idx) => flatRows[idx - subcatRowIndexes.filter(i => i < idx).length]);
+
+    doc.autoTable({
+      startY: HEADER_H,
+      margin: { top: HEADER_H, left: MARGIN, right: MARGIN, bottom: 10 },
+      tableWidth: PW - 2 * MARGIN,
+      head: [COLS.map(c => c.hdr)],
+      body,
+      styles: { font: 'helvetica', fontSize: 7.5, cellPadding: 1.2, textColor: T_TEXT, lineColor: T_BORD, minCellHeight: 20 },
+      headStyles: { fillColor: T_DARK, textColor: '#FFFFFF', fontStyle: 'bold', fontSize: 7, halign: 'center', valign: 'middle', minCellHeight: 12 },
+      columnStyles: columnStylesFor(COLS),
+      didDrawCell(data) {
+        if (subcatRowIndexes.includes(data.row.index)) return;
+        drawCatCell(data);
+      },
+      didDrawPage() {
+        drawHeader(`SÉLECTION — ${catNom.toUpperCase()}`,
+          mode === 'client' ? estimTotal : undefined,
+          mode === 'client' ? nbAttente  : undefined);
+      },
+    });
+  }
+
+  // ── Historique des options non retenues (mode client seulement, à la fin) ──
+  if (mode === 'client' && historiqueRows.length > 0) {
+    doc.addPage();
+    const COLS_HIST = ajusterLargeurs([
+      { key:'catNom',      hdr:'Catégorie',    w:26 },
+      { key:'ref',         hdr:'Réf.',         w:12 },
+      { key:'nom',         hdr:'Item',         w:34 },
+      { key:'fabricant',   hdr:'Fournisseur',  w:22 },
+      { key:'modele',      hdr:'Modèle',       w:18 },
+      { key:'photo',       hdr:'Photo',        w:22 },
+      { key:'remplacePar', hdr:'Remplacé par', w:30 },
+    ]);
+    const bodyHist = historiqueRows.map(r => COLS_HIST.map(c => c.key === 'photo' ? '' : (r[c.key] || '—')));
+    const drawHistCell = makeCellDrawer(COLS_HIST, (idx) => historiqueRows[idx]);
+
+    doc.autoTable({
+      startY: HEADER_H_HIST,
+      margin: { top: HEADER_H_HIST, left: MARGIN, right: MARGIN, bottom: 10 },
+      tableWidth: PW - 2 * MARGIN,
+      head: [COLS_HIST.map(c => c.hdr)],
+      body: bodyHist,
+      styles: { font: 'helvetica', fontSize: 7.5, cellPadding: 1.2, textColor: T_TEXT, lineColor: T_BORD, minCellHeight: 20 },
+      headStyles: { fillColor: T_DARK, textColor: '#FFFFFF', fontStyle: 'bold', fontSize: 7, halign: 'center', valign: 'middle', minCellHeight: 12 },
+      columnStyles: columnStylesFor(COLS_HIST),
+      didDrawCell: drawHistCell,
+      didDrawPage() {
+        drawHeader('HISTORIQUE — OPTIONS NON RETENUES');
+      },
+    });
+  }
+
+  // ── Téléchargement ──
+  const modeLabel = mode === 'client' ? 'Client' : 'Chantier';
+  const safeName  = nomProjet.replace(/[^a-zA-Z0-9_\-]/g, '_');
+  doc.save(`CMPG_${modeLabel}_${safeName}_${dateStr.replace(/\//g, '-')}.pdf`);
+  const photoMsg = photoUrls.length > 0 ? ` (${nbPhotosOk}/${photoUrls.length} photos intégrées)` : '';
+  toast(`PDF ${modeLabel} généré avec succès !${photoMsg}`, 'success');
+}
+
+// ============================================================
+// NOTIFICATIONS EN TEMPS RÉEL
+// ============================================================
+let _notifPanelOpen = false;
+
+function getLastSeenNotif() {
+  return localStorage.getItem('cmpg_notif_last_seen') || '1970-01-01T00:00:00Z';
+}
+
+async function initNotifications() {
+  await rafraichirNotifications();
+  db.channel('notif_realtime')
+    .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'notifications_log' },
+      () => { rafraichirNotifications(); })
+    .subscribe();
+}
+
+async function rafraichirNotifications() {
+  const { data } = await db.from('notifications_log')
+    .select('*, projets(nom)').order('created_at', { ascending: false }).limit(50);
+  if (!data) return;
+  const lastSeen = getLastSeenNotif();
+  const nonLus   = data.filter(n => n.created_at > lastSeen).length;
+  const badge    = document.getElementById('notif-badge');
+  if (badge) {
+    badge.textContent = nonLus > 9 ? '9+' : String(nonLus);
+    badge.classList.toggle('visible', nonLus > 0);
+  }
+  if (_notifPanelOpen) _renderNotifList(data, lastSeen);
+}
+
+async function toggleNotifPanel() {
+  if (_notifPanelOpen) { fermerNotifPanel(); return; }
+  _notifPanelOpen = true;
+  document.getElementById('notif-panel')?.classList.add('open');
+  document.getElementById('notif-backdrop')?.classList.add('open');
+  const { data } = await db.from('notifications_log')
+    .select('*, projets(nom)').order('created_at', { ascending: false }).limit(50);
+  // Marquer automatiquement comme lues à l'ouverture du panneau
+  localStorage.setItem('cmpg_notif_last_seen', new Date().toISOString());
+  const badge = document.getElementById('notif-badge');
+  if (badge) { badge.textContent = '0'; badge.classList.remove('visible'); }
+  _renderNotifList(data || [], getLastSeenNotif());
+}
+
+function fermerNotifPanel() {
+  _notifPanelOpen = false;
+  document.getElementById('notif-panel')?.classList.remove('open');
+  document.getElementById('notif-backdrop')?.classList.remove('open');
+}
+
+function marquerToutLu() {
+  localStorage.setItem('cmpg_notif_last_seen', new Date().toISOString());
+  const badge = document.getElementById('notif-badge');
+  if (badge) { badge.textContent = '0'; badge.classList.remove('visible'); }
+  db.from('notifications_log').select('*, projets(nom)').order('created_at', { ascending: false }).limit(50)
+    .then(({ data }) => _renderNotifList(data || [], getLastSeenNotif()));
+}
+
+function _renderNotifList(data, lastSeen) {
+  const list = document.getElementById('notif-list');
+  if (!list) return;
+  if (!data || data.length === 0) {
+    list.innerHTML = '<div class="notif-empty">Aucune notification pour l\'instant.</div>';
+    return;
+  }
+  const TYPE_LABELS = {
+    revision: { label: 'Révision demandée',     cls: 'revision' },
+    rejet:    { label: "Rejet d'un produit",     cls: 'rejet'    },
+    annule:   { label: 'Article non nécessaire', cls: 'annule'   },
+  };
+  list.innerHTML = data.map(n => {
+    const unread   = n.created_at > lastSeen;
+    const tl       = TYPE_LABELS[n.type] || { label: n.type || 'Notification', cls: '' };
+    const date     = new Date(n.created_at).toLocaleString('fr-CA', { dateStyle: 'medium', timeStyle: 'short' });
+    const projetNom = n.projets?.nom || n.contenu?.projet_nom || '';
+    const produit   = n.contenu?.nom_produit || '';
+    const commentaire = n.contenu?.commentaire || '';
+    const projetId  = n.projet_id || '';
+    const clickable = projetId ? `onclick="fermerNotifPanel();ouvrirProjet('${projetId}')" style="cursor:pointer"` : '';
+    return `<div class="notif-item ${unread ? 'unread' : 'read'}" ${clickable}>
+      <div class="notif-type ${tl.cls}">${tl.label}</div>
+      ${produit    ? `<div class="notif-desc" style="font-weight:500">📦 ${produit}</div>` : ''}
+      ${commentaire ? `<div class="notif-desc" style="font-style:italic;color:var(--texte-2)">💬 "${commentaire}"</div>` : ''}
+      <div class="notif-meta">
+        ${projetNom ? `<span style="color:var(--caramel)">📁 ${projetNom}</span> · ` : ''}${date}
+      </div>
+    </div>`;
+  }).join('');
+}
+
+// ============================================================
+// UTILITAIRES — Toast / Modals
+// ============================================================
+function toast(msg, type = 'info') {
+  const t = document.createElement('div');
+  t.className = 'toast toast-' + type;
+  t.textContent = msg;
+  document.body.appendChild(t);
+  setTimeout(() => t.classList.add('show'), 10);
+  setTimeout(() => { t.classList.remove('show'); setTimeout(() => t.remove(), 300); }, 3500);
+}
+
+function openModal(id) {
+  document.getElementById(id)?.classList.add('open');
+}
+
+function closeModal(id) {
+  document.getElementById(id)?.classList.remove('open');
+}
+
+// ── Démarrage ─────────────────────────────────────────────
+checkAuth();
+</script>
+</body>
+</html>

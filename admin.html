@@ -2525,9 +2525,9 @@ async function genererPDF_base(mode) {
   const doc = new jsPDF({ orientation: 'landscape', unit: 'mm', format: 'letter' });
   const PW = doc.internal.pageSize.getWidth();
   const MARGIN = 8;
-  const BAND1_H = 11; // bandeau charcoal (logo + titre)
-  const BAND2_H = 9;  // bandeau info projet
-  const ESTIM_H = 6;  // ligne estimation (client seulement)
+  const BAND1_H = 17; // bandeau charcoal (logo + titre) — agrandi pour que le logo respire
+  const BAND2_H = 14; // bandeau info projet
+  const ESTIM_H = 7;  // ligne estimation (client seulement)
   const HEADER_H      = mode === 'client' ? BAND1_H + BAND2_H + ESTIM_H : BAND1_H + BAND2_H;
   const HEADER_H_HIST = BAND1_H + BAND2_H;
 
@@ -2541,24 +2541,24 @@ async function genererPDF_base(mode) {
   function drawHeader(titre, estimTotal, nbAttente) {
     doc.setFillColor(T_DARK);
     doc.rect(0, 0, PW, BAND1_H, 'F');
-    if (logoUrl) { try { doc.addImage(logoUrl, 'PNG', MARGIN, 1, 26, 9); } catch(e) {} }
+    if (logoUrl) { try { doc.addImage(logoUrl, 'PNG', MARGIN, 1.5, 40, 14); } catch(e) {} }
     doc.setTextColor('#FFFFFF');
-    doc.setFont('helvetica', 'bold'); doc.setFontSize(10);
-    doc.text(titre, MARGIN + 30, 7);
-    doc.setFont('helvetica', 'normal'); doc.setFontSize(7);
-    doc.text('450 455-6006  |  info@conceptionmpg.ca', PW - MARGIN, 7, { align: 'right' });
+    doc.setFont('helvetica', 'bold'); doc.setFontSize(11);
+    doc.text(titre, MARGIN + 45, 10);
+    doc.setFont('helvetica', 'normal'); doc.setFontSize(7.5);
+    doc.text('450 455-6006  |  info@conceptionmpg.ca', PW - MARGIN, 10, { align: 'right' });
 
     doc.setFillColor(T_BEIGE);
     doc.rect(0, BAND1_H, PW, BAND2_H, 'F');
     doc.setTextColor(T_TEXT);
-    doc.setFontSize(7.5);
-    doc.text(`N° ${numeroProjet}   —   ${nomProjet}`, MARGIN, BAND1_H + 4);
-    doc.text(`Client : ${nomClient}`, MARGIN, BAND1_H + 8);
-    doc.text(`Adresse : ${adresse}`, PW / 2, BAND1_H + 4);
-    doc.text(`Date : ${dateStr}`, PW - MARGIN, BAND1_H + 4, { align: 'right' });
+    doc.setFontSize(8);
+    doc.text(`N° ${numeroProjet}   —   ${nomProjet}`, MARGIN, BAND1_H + 6);
+    doc.text(`Client : ${nomClient}`, MARGIN, BAND1_H + 11);
+    doc.text(`Adresse : ${adresse}`, PW / 2, BAND1_H + 6);
+    doc.text(`Date : ${dateStr}`, PW - MARGIN, BAND1_H + 6, { align: 'right' });
 
     if (mode === 'client' && estimTotal !== undefined) {
-      const yEstim = BAND1_H + BAND2_H + 4;
+      const yEstim = BAND1_H + BAND2_H + 5;
       doc.setFont('helvetica', 'bold');
       doc.text(`ESTIMATION (avant taxes) : ${estimTotal.toLocaleString('fr-CA', { style: 'currency', currency: 'CAD' })}`, MARGIN, yEstim);
       if (nbAttente > 0) {
@@ -2583,12 +2583,12 @@ async function genererPDF_base(mode) {
   const COLS_CLIENT = ajusterLargeurs([
     { key:'ref',        hdr:'Réf.',               w:12 },
     { key:'pieces',     hdr:'Pièce(s)',           w:16 },
-    { key:'nom',        hdr:'Item / Description', w:32 },
+    { key:'nom',        hdr:'Description',        w:32 },
     { key:'fabricant',  hdr:'Fournisseur',        w:20 },
     { key:'modele',     hdr:'Modèle',             w:16 },
     { key:'sku',        hdr:'Code',               w:13 },
     { key:'qte',        hdr:'Qté',                w:8  },
-    { key:'couleur',    hdr:'Couleur/Fini',       w:15 },
+    { key:'couleur',    hdr:'Couleur',            w:15 },
     { key:'dims',       hdr:'Dimensions',         w:15 },
     { key:'photo',      hdr:'Photo',              w:22 },
     { key:'prix_u',     hdr:'Prix unit.',         w:16 },
@@ -2600,12 +2600,12 @@ async function genererPDF_base(mode) {
   const COLS_CHANTIER = ajusterLargeurs([
     { key:'ref',       hdr:'Réf.',               w:13 },
     { key:'pieces',    hdr:'Pièce(s)',           w:20 },
-    { key:'nom',       hdr:'Item / Description', w:36 },
+    { key:'nom',       hdr:'Description',        w:36 },
     { key:'fabricant', hdr:'Fournisseur',        w:22 },
     { key:'modele',    hdr:'Modèle',             w:17 },
     { key:'sku',       hdr:'Code',               w:15 },
     { key:'qte',       hdr:'Qté',                w:9  },
-    { key:'couleur',   hdr:'Couleur/Fini',       w:17 },
+    { key:'couleur',   hdr:'Couleur',            w:17 },
     { key:'dims',      hdr:'Dimensions',         w:17 },
     { key:'photo',     hdr:'Photo',              w:24 },
     { key:'lien',      hdr:'Lien',               w:22 },
@@ -2681,7 +2681,7 @@ async function genererPDF_base(mode) {
       head: [COLS.map(c => c.hdr)],
       body,
       styles: { font: 'helvetica', fontSize: 7.5, cellPadding: 1.2, textColor: T_TEXT, lineColor: T_BORD, minCellHeight: 20 },
-      headStyles: { fillColor: T_DARK, textColor: '#FFFFFF', fontStyle: 'bold', fontSize: 7.5 },
+      headStyles: { fillColor: T_DARK, textColor: '#FFFFFF', fontStyle: 'bold', fontSize: 7, halign: 'center', valign: 'middle', minCellHeight: 12 },
       columnStyles: columnStylesFor(COLS),
       didDrawCell(data) {
         if (subcatRowIndexes.includes(data.row.index)) return;
@@ -2717,7 +2717,7 @@ async function genererPDF_base(mode) {
       head: [COLS_HIST.map(c => c.hdr)],
       body: bodyHist,
       styles: { font: 'helvetica', fontSize: 7.5, cellPadding: 1.2, textColor: T_TEXT, lineColor: T_BORD, minCellHeight: 20 },
-      headStyles: { fillColor: T_DARK, textColor: '#FFFFFF', fontStyle: 'bold', fontSize: 7.5 },
+      headStyles: { fillColor: T_DARK, textColor: '#FFFFFF', fontStyle: 'bold', fontSize: 7, halign: 'center', valign: 'middle', minCellHeight: 12 },
       columnStyles: columnStylesFor(COLS_HIST),
       didDrawCell: drawHistCell,
       didDrawPage() {

@@ -2369,9 +2369,21 @@ async function chargerImageProduit(url) {
         const b64 = canvas.toDataURL('image/jpeg', 0.7);
         _imgCache[url] = b64;
         resolve(b64);
-      } catch { resolve(null); }
+      } catch (e) {
+        // Le navigateur bloque la lecture des pixels d'une image hébergée
+        // sur un domaine externe qui n'autorise pas le CORS (courant pour
+        // les photos "hotlinkées" chez un fournisseur/fabricant). Afficher
+        // l'image (<img src>) fonctionne quand même ailleurs dans l'admin,
+        // mais l'intégrer dans un PDF nécessite de lire ses pixels, ce que
+        // le CORS bloque ici.
+        console.warn('[PDF] Photo bloquée (CORS, domaine externe sans autorisation) :', url);
+        resolve(null);
+      }
     };
-    img.onerror = () => resolve(null);
+    img.onerror = () => {
+      console.warn('[PDF] Photo introuvable ou serveur injoignable :', url);
+      resolve(null);
+    };
     img.src = url;
   });
 }
@@ -2498,20 +2510,26 @@ async function genererPDF_base(mode) {
   const photoUrls = [...new Set(allRowsForPhotos.map(r => r.photo_url).filter(Boolean))];
   const photoMap = {};
   await Promise.all(photoUrls.map(async url => { photoMap[url] = await chargerImageProduit(url); }));
+  const nbPhotosOk = photoUrls.filter(u => photoMap[u]).length;
 
-  // ── Couleurs de marque CMPG ──
-  const T_DARK    = '#302F24';
+  // ── Couleurs de marque CMPG (le charcoal correspond au fond réel du logo) ──
+  const T_DARK    = '#3A3B3A';
   const T_BEIGE   = '#EFEBE6';
   const T_SUBCAT  = '#ACA298';
   const T_BORD    = '#C8C2BB';
   const T_TEXT    = '#302F24';
   const T_WARN    = '#7A5C00';
+  const T_LIEN    = '#9A8C7E';
 
   const { jsPDF } = window.jspdf;
   const doc = new jsPDF({ orientation: 'landscape', unit: 'mm', format: 'letter' });
   const PW = doc.internal.pageSize.getWidth();
   const MARGIN = 8;
-  const HEADER_H = mode === 'client' ? 34 : 28;
+  const BAND1_H = 11; // bandeau charcoal (logo + titre)
+  const BAND2_H = 9;  // bandeau info projet
+  const ESTIM_H = 6;  // ligne estimation (client seulement)
+  const HEADER_H      = mode === 'client' ? BAND1_H + BAND2_H + ESTIM_H : BAND1_H + BAND2_H;
+  const HEADER_H_HIST = BAND1_H + BAND2_H;
 
   const nomProjet    = projet?.nom || 'Projet';
   const numeroProjet = projet?.numero_projet || '—';
@@ -2519,75 +2537,85 @@ async function genererPDF_base(mode) {
   const adresse      = projet?.adresse || '—';
   const dateStr      = new Date().toLocaleDateString('fr-CA');
 
+  // Bandeau réutilisé pour les pages de catégorie ET la page historique
   function drawHeader(titre, estimTotal, nbAttente) {
     doc.setFillColor(T_DARK);
-    doc.rect(0, 0, PW, 16, 'F');
-    if (logoUrl) { try { doc.addImage(logoUrl, 'PNG', MARGIN, 2, 34, 12); } catch(e) {} }
+    doc.rect(0, 0, PW, BAND1_H, 'F');
+    if (logoUrl) { try { doc.addImage(logoUrl, 'PNG', MARGIN, 1, 26, 9); } catch(e) {} }
     doc.setTextColor('#FFFFFF');
-    doc.setFont('helvetica', 'bold'); doc.setFontSize(11);
-    doc.text(titre, MARGIN + 40, 10);
-    doc.setFont('helvetica', 'normal'); doc.setFontSize(8);
-    doc.text('450 455-6006  |  info@conceptionmpg.ca', PW - MARGIN, 10, { align: 'right' });
+    doc.setFont('helvetica', 'bold'); doc.setFontSize(10);
+    doc.text(titre, MARGIN + 30, 7);
+    doc.setFont('helvetica', 'normal'); doc.setFontSize(7);
+    doc.text('450 455-6006  |  info@conceptionmpg.ca', PW - MARGIN, 7, { align: 'right' });
 
     doc.setFillColor(T_BEIGE);
-    doc.rect(0, 16, PW, 12, 'F');
+    doc.rect(0, BAND1_H, PW, BAND2_H, 'F');
     doc.setTextColor(T_TEXT);
-    doc.setFontSize(8.5);
-    doc.text(`N° ${numeroProjet}   —   ${nomProjet}`, MARGIN, 21);
-    doc.text(`Client : ${nomClient}`, MARGIN, 26);
-    doc.text(`Adresse : ${adresse}`, PW / 2, 21);
-    doc.text(`Date : ${dateStr}`, PW - MARGIN, 21, { align: 'right' });
+    doc.setFontSize(7.5);
+    doc.text(`N° ${numeroProjet}   —   ${nomProjet}`, MARGIN, BAND1_H + 4);
+    doc.text(`Client : ${nomClient}`, MARGIN, BAND1_H + 8);
+    doc.text(`Adresse : ${adresse}`, PW / 2, BAND1_H + 4);
+    doc.text(`Date : ${dateStr}`, PW - MARGIN, BAND1_H + 4, { align: 'right' });
 
     if (mode === 'client' && estimTotal !== undefined) {
+      const yEstim = BAND1_H + BAND2_H + 4;
       doc.setFont('helvetica', 'bold');
-      doc.text(`ESTIMATION (avant taxes) : ${estimTotal.toLocaleString('fr-CA', { style: 'currency', currency: 'CAD' })}`, MARGIN, 32);
+      doc.text(`ESTIMATION (avant taxes) : ${estimTotal.toLocaleString('fr-CA', { style: 'currency', currency: 'CAD' })}`, MARGIN, yEstim);
       if (nbAttente > 0) {
         doc.setTextColor(T_WARN);
-        doc.text(`⚠ Items en attente : ${nbAttente}`, PW - MARGIN, 32, { align: 'right' });
+        doc.text(`Items en attente : ${nbAttente}`, PW - MARGIN, yEstim, { align: 'right' });
         doc.setTextColor(T_TEXT);
       }
       doc.setFont('helvetica', 'normal');
     }
   }
 
-  // ── Colonnes selon mode ──
-  const COLS_CLIENT = [
-    { key:'ref',        hdr:'Réf.',               w:9  },
+  // Étire proportionnellement les colonnes pour remplir exactement la
+  // largeur imprimable (marges égales des deux côtés → tableau centré).
+  function ajusterLargeurs(cols) {
+    const usable = PW - 2 * MARGIN;
+    const total = cols.reduce((s, c) => s + c.w, 0);
+    const k = usable / total;
+    return cols.map(c => ({ ...c, w: Math.round(c.w * k * 100) / 100 }));
+  }
+
+  // ── Colonnes selon mode (Caractéristiques retirée — trop encombrant) ──
+  const COLS_CLIENT = ajusterLargeurs([
+    { key:'ref',        hdr:'Réf.',               w:12 },
     { key:'pieces',     hdr:'Pièce(s)',           w:16 },
-    { key:'nom',        hdr:'Item / Description', w:30 },
-    { key:'fabricant',  hdr:'Fournisseur',        w:18 },
-    { key:'modele',     hdr:'Modèle',             w:15 },
-    { key:'sku',        hdr:'Code',               w:12 },
-    { key:'qte',        hdr:'Qté',                w:7  },
-    { key:'couleur',    hdr:'Couleur/Fini',       w:14 },
-    { key:'dims',       hdr:'Dimensions',         w:14 },
-    { key:'caract',     hdr:'Caractéristiques',   w:18 },
-    { key:'photo',      hdr:'Photo',              w:20 },
-    { key:'prix_u',     hdr:'Prix unit.',         w:15 },
-    { key:'prix_total', hdr:'Prix total',         w:15 },
-    { key:'statut',     hdr:'Statut',             w:14 },
-    { key:'date_conf',  hdr:'Date',               w:12 },
+    { key:'nom',        hdr:'Item / Description', w:32 },
+    { key:'fabricant',  hdr:'Fournisseur',        w:20 },
+    { key:'modele',     hdr:'Modèle',             w:16 },
+    { key:'sku',        hdr:'Code',               w:13 },
+    { key:'qte',        hdr:'Qté',                w:8  },
+    { key:'couleur',    hdr:'Couleur/Fini',       w:15 },
+    { key:'dims',       hdr:'Dimensions',         w:15 },
+    { key:'photo',      hdr:'Photo',              w:22 },
+    { key:'prix_u',     hdr:'Prix unit.',         w:16 },
+    { key:'prix_total', hdr:'Prix total',         w:16 },
+    { key:'statut',     hdr:'Statut',             w:15 },
+    { key:'date_conf',  hdr:'Date',               w:13 },
     { key:'lien',       hdr:'Lien',               w:16 },
-  ];
-  const COLS_CHANTIER = [
-    { key:'ref',       hdr:'Réf.',               w:10 },
+  ]);
+  const COLS_CHANTIER = ajusterLargeurs([
+    { key:'ref',       hdr:'Réf.',               w:13 },
     { key:'pieces',    hdr:'Pièce(s)',           w:20 },
-    { key:'nom',       hdr:'Item / Description', w:34 },
-    { key:'fabricant', hdr:'Fournisseur',        w:20 },
-    { key:'modele',    hdr:'Modèle',             w:16 },
-    { key:'sku',       hdr:'Code',               w:14 },
-    { key:'qte',       hdr:'Qté',                w:8  },
-    { key:'couleur',   hdr:'Couleur/Fini',       w:16 },
-    { key:'dims',      hdr:'Dimensions',         w:16 },
-    { key:'caract',    hdr:'Caractéristiques',   w:24 },
-    { key:'photo',     hdr:'Photo',              w:22 },
-    { key:'lien',      hdr:'Lien',               w:20 },
-  ];
+    { key:'nom',       hdr:'Item / Description', w:36 },
+    { key:'fabricant', hdr:'Fournisseur',        w:22 },
+    { key:'modele',    hdr:'Modèle',             w:17 },
+    { key:'sku',       hdr:'Code',               w:15 },
+    { key:'qte',       hdr:'Qté',                w:9  },
+    { key:'couleur',   hdr:'Couleur/Fini',       w:17 },
+    { key:'dims',      hdr:'Dimensions',         w:17 },
+    { key:'photo',     hdr:'Photo',              w:24 },
+    { key:'lien',      hdr:'Lien',               w:22 },
+  ]);
   const COLS = mode === 'client' ? COLS_CLIENT : COLS_CHANTIER;
 
-  function buildRowArray(row) {
-    return COLS.map(c => {
+  function buildRowArray(cols, row) {
+    return cols.map(c => {
       if (c.key === 'photo')      return '';
+      if (c.key === 'lien')       return row.lien ? 'Voir plus' : '';
       if (c.key === 'prix_u')     return row.prix_u     != null ? row.prix_u.toLocaleString('fr-CA', { style:'currency', currency:'CAD' }) : '';
       if (c.key === 'prix_total') return row.prix_total != null ? row.prix_total.toLocaleString('fr-CA', { style:'currency', currency:'CAD' }) : '';
       if (c.key === 'statut')     return row.statut === 'approuvé' ? 'Approuvé' : row.statut === 'à_revoir' ? 'À revoir' : 'En attente';
@@ -2595,16 +2623,32 @@ async function genererPDF_base(mode) {
     });
   }
 
-  function dessinerPhoto(data, rowLookup) {
-    if (data.section !== 'body') return;
-    if (COLS[data.column.index]?.key !== 'photo') return;
-    const rowData = rowLookup(data.row.index);
-    const b64 = rowData && photoMap[rowData.photo_url];
-    if (!b64) return;
-    const pad = 1;
-    const size = Math.min(data.cell.width, data.cell.height) - pad * 2;
-    try { doc.addImage(b64, 'JPEG', data.cell.x + pad, data.cell.y + pad, size, size); } catch(e) {}
+  // Dessine la photo intégrée et rend le lien produit cliquable
+  function makeCellDrawer(cols, rowLookup) {
+    return function(data) {
+      if (data.section !== 'body') return;
+      const colKey = cols[data.column.index]?.key;
+      if (colKey !== 'photo' && colKey !== 'lien') return;
+      const rowData = rowLookup(data.row.index);
+      if (!rowData) return;
+      if (colKey === 'photo') {
+        const b64 = photoMap[rowData.photo_url];
+        if (!b64) return;
+        const pad = 1;
+        const size = Math.min(data.cell.width, data.cell.height) - pad * 2;
+        try { doc.addImage(b64, 'JPEG', data.cell.x + pad, data.cell.y + pad, size, size); } catch(e) {}
+      } else if (colKey === 'lien' && rowData.lien) {
+        doc.link(data.cell.x, data.cell.y, data.cell.width, data.cell.height, { url: rowData.lien });
+      }
+    };
   }
+
+  const columnStylesFor = (cols) => {
+    const styles = Object.fromEntries(cols.map((c, i) => [i, { cellWidth: c.w }]));
+    const lienIdx = cols.findIndex(c => c.key === 'lien');
+    if (lienIdx >= 0) styles[lienIdx].textColor = T_LIEN;
+    return styles;
+  };
 
   // ── Une ou plusieurs pages par catégorie, triées, avec photos ──
   let firstPage = true;
@@ -2623,22 +2667,25 @@ async function genererPDF_base(mode) {
       if (s.scNom) {
         subcatRowIndexes.push(body.length);
         body.push([{ content: s.scNom.toUpperCase(), colSpan: COLS.length,
-          styles: { fillColor: T_SUBCAT, textColor: '#FFFFFF', fontStyle: 'bold', halign: 'left' } }]);
+          styles: { fillColor: T_SUBCAT, textColor: '#FFFFFF', fontStyle: 'bold', halign: 'left', minCellHeight: 6, cellPadding: 1.5 } }]);
       }
-      s.rows.forEach(r => body.push(buildRowArray(r)));
+      s.rows.forEach(r => body.push(buildRowArray(COLS, r)));
     });
+
+    const drawCatCell = makeCellDrawer(COLS, (idx) => flatRows[idx - subcatRowIndexes.filter(i => i < idx).length]);
 
     doc.autoTable({
       startY: HEADER_H,
       margin: { top: HEADER_H, left: MARGIN, right: MARGIN, bottom: 10 },
+      tableWidth: PW - 2 * MARGIN,
       head: [COLS.map(c => c.hdr)],
       body,
-      styles: { font: 'helvetica', fontSize: 7.5, cellPadding: 1.2, textColor: T_TEXT, lineColor: T_BORD, minCellHeight: 16 },
+      styles: { font: 'helvetica', fontSize: 7.5, cellPadding: 1.2, textColor: T_TEXT, lineColor: T_BORD, minCellHeight: 20 },
       headStyles: { fillColor: T_DARK, textColor: '#FFFFFF', fontStyle: 'bold', fontSize: 7.5 },
-      columnStyles: Object.fromEntries(COLS.map((c, i) => [i, { cellWidth: c.w }])),
+      columnStyles: columnStylesFor(COLS),
       didDrawCell(data) {
         if (subcatRowIndexes.includes(data.row.index)) return;
-        dessinerPhoto(data, (idx) => flatRows[idx - subcatRowIndexes.filter(i => i < idx).length]);
+        drawCatCell(data);
       },
       didDrawPage() {
         drawHeader(`SÉLECTION — ${catNom.toUpperCase()}`,
@@ -2651,44 +2698,30 @@ async function genererPDF_base(mode) {
   // ── Historique des options non retenues (mode client seulement, à la fin) ──
   if (mode === 'client' && historiqueRows.length > 0) {
     doc.addPage();
-    const COLS_HIST = [
+    const COLS_HIST = ajusterLargeurs([
       { key:'catNom',      hdr:'Catégorie',    w:26 },
-      { key:'ref',         hdr:'Réf.',         w:10 },
+      { key:'ref',         hdr:'Réf.',         w:12 },
       { key:'nom',         hdr:'Item',         w:34 },
       { key:'fabricant',   hdr:'Fournisseur',  w:22 },
       { key:'modele',      hdr:'Modèle',       w:18 },
-      { key:'photo',       hdr:'Photo',        w:20 },
+      { key:'photo',       hdr:'Photo',        w:22 },
       { key:'remplacePar', hdr:'Remplacé par', w:30 },
-    ];
+    ]);
     const bodyHist = historiqueRows.map(r => COLS_HIST.map(c => c.key === 'photo' ? '' : (r[c.key] || '—')));
+    const drawHistCell = makeCellDrawer(COLS_HIST, (idx) => historiqueRows[idx]);
 
     doc.autoTable({
-      startY: HEADER_H,
-      margin: { top: HEADER_H, left: MARGIN, right: MARGIN, bottom: 10 },
+      startY: HEADER_H_HIST,
+      margin: { top: HEADER_H_HIST, left: MARGIN, right: MARGIN, bottom: 10 },
+      tableWidth: PW - 2 * MARGIN,
       head: [COLS_HIST.map(c => c.hdr)],
       body: bodyHist,
-      styles: { font: 'helvetica', fontSize: 7.5, cellPadding: 1.2, textColor: T_TEXT, lineColor: T_BORD, minCellHeight: 16 },
+      styles: { font: 'helvetica', fontSize: 7.5, cellPadding: 1.2, textColor: T_TEXT, lineColor: T_BORD, minCellHeight: 20 },
       headStyles: { fillColor: T_DARK, textColor: '#FFFFFF', fontStyle: 'bold', fontSize: 7.5 },
-      columnStyles: Object.fromEntries(COLS_HIST.map((c, i) => [i, { cellWidth: c.w }])),
-      didDrawCell(data) {
-        if (data.section !== 'body') return;
-        if (COLS_HIST[data.column.index]?.key !== 'photo') return;
-        const rowData = historiqueRows[data.row.index];
-        const b64 = rowData && photoMap[rowData.photo_url];
-        if (!b64) return;
-        const pad = 1;
-        const size = Math.min(data.cell.width, data.cell.height) - pad * 2;
-        try { doc.addImage(b64, 'JPEG', data.cell.x + pad, data.cell.y + pad, size, size); } catch(e) {}
-      },
+      columnStyles: columnStylesFor(COLS_HIST),
+      didDrawCell: drawHistCell,
       didDrawPage() {
-        doc.setFillColor(T_DARK); doc.rect(0, 0, PW, 16, 'F');
-        if (logoUrl) { try { doc.addImage(logoUrl, 'PNG', MARGIN, 2, 34, 12); } catch(e) {} }
-        doc.setTextColor('#FFFFFF'); doc.setFont('helvetica', 'bold'); doc.setFontSize(11);
-        doc.text('HISTORIQUE — OPTIONS NON RETENUES', MARGIN + 40, 10);
-        doc.setFillColor(T_BEIGE); doc.rect(0, 16, PW, 12, 'F');
-        doc.setTextColor(T_TEXT); doc.setFont('helvetica', 'normal'); doc.setFontSize(8.5);
-        doc.text(`N° ${numeroProjet}   —   ${nomProjet}`, MARGIN, 21);
-        doc.text(`Date : ${dateStr}`, PW - MARGIN, 21, { align: 'right' });
+        drawHeader('HISTORIQUE — OPTIONS NON RETENUES');
       },
     });
   }
@@ -2697,7 +2730,8 @@ async function genererPDF_base(mode) {
   const modeLabel = mode === 'client' ? 'Client' : 'Chantier';
   const safeName  = nomProjet.replace(/[^a-zA-Z0-9_\-]/g, '_');
   doc.save(`CMPG_${modeLabel}_${safeName}_${dateStr.replace(/\//g, '-')}.pdf`);
-  toast(`PDF ${modeLabel} généré avec succès !`, 'success');
+  const photoMsg = photoUrls.length > 0 ? ` (${nbPhotosOk}/${photoUrls.length} photos intégrées)` : '';
+  toast(`PDF ${modeLabel} généré avec succès !${photoMsg}`, 'success');
 }
 
 // ============================================================

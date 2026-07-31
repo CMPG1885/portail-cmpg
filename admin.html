@@ -152,16 +152,21 @@ body { font-family: 'Roboto', sans-serif; background: var(--fond); color: var(--
 .modal-overlay.open { display: flex; }
 .modal {
   background: var(--blanc); width: 580px; max-width: 95vw; max-height: 90vh;
-  overflow-y: auto; box-shadow: 0 20px 60px rgba(0,0,0,.3);
+  box-shadow: 0 20px 60px rgba(0,0,0,.3);
+  display: flex; flex-direction: column;
 }
 .modal-header {
   padding: 24px 28px; border-bottom: 1px solid var(--bord);
   display: flex; align-items: center; justify-content: space-between;
+  flex-shrink: 0;
 }
 .modal-header h3 { font-family: 'Noto Serif Display', serif; font-size: 18px; }
 .modal-close { background: none; border: none; font-size: 20px; cursor: pointer; color: var(--texte-2); }
-.modal-body { padding: 28px; }
-.modal-footer { padding: 20px 28px; border-top: 1px solid var(--bord); display: flex; gap: 12px; justify-content: flex-end; }
+.modal-body { padding: 28px; overflow-y: auto; flex: 1 1 auto; min-height: 0; }
+.modal-footer {
+  padding: 20px 28px; border-top: 1px solid var(--bord); display: flex; gap: 12px; justify-content: flex-end;
+  flex-shrink: 0;
+}
 
 /* ===== TABLE ===== */
 .data-table { width: 100%; border-collapse: collapse; }

@@ -1333,8 +1333,10 @@ async function chargerPostes() {
             ${typeBadge}
             <span class="poste-piece">${(poste.pieces && poste.pieces.length ? poste.pieces.join(', ') : (poste.piece || ''))}</span>
           </div>
-          <div style="display:flex;align-items:center;gap:8px">
+          <div style="display:flex;align-items:center;gap:6px">
             ${btnAjouterOption}
+            <button class="btn btn-outline btn-sm" onclick="event.stopPropagation();deplacerPoste('${poste.id}','haut')" title="Monter" style="padding:3px 8px;font-size:13px;line-height:1">↑</button>
+            <button class="btn btn-outline btn-sm" onclick="event.stopPropagation();deplacerPoste('${poste.id}','bas')" title="Descendre" style="padding:3px 8px;font-size:13px;line-height:1">↓</button>
             <button class="btn btn-outline btn-sm" onclick="event.stopPropagation();ouvrirModalEditerPoste('${poste.id}')" title="Modifier">✏️</button>
             <button class="btn btn-outline btn-sm" style="color:var(--danger);border-color:var(--danger)" onclick="event.stopPropagation();supprimerPoste('${poste.id}','${poste.reference.replace(/'/g,"\\'")}')" title="Supprimer">🗑</button>
           </div>
@@ -1346,6 +1348,33 @@ async function chargerPostes() {
 
     container.appendChild(section);
   });
+}
+
+async function deplacerPoste(posteId, direction) {
+  const poste = postesCache.find(p => p.id === posteId);
+  if (!poste) return;
+
+  // Postes de la même catégorie dans l'ordre actuel du cache
+  const mêmeCat = postesCache.filter(p => p.categorie_id === poste.categorie_id);
+  const idx = mêmeCat.findIndex(p => p.id === posteId);
+  const swapIdx = direction === 'haut' ? idx - 1 : idx + 1;
+  if (swapIdx < 0 || swapIdx >= mêmeCat.length) return;
+
+  const autre = mêmeCat[swapIdx];
+
+  // Si tous les ordres sont identiques (ex: 0), initialiser des valeurs séquentielles
+  const allSame = mêmeCat.every(p => (p.ordre ?? 0) === (mêmeCat[0].ordre ?? 0));
+  let ordres = mêmeCat.map((p, i) => ({ id: p.id, ordre: allSame ? i : (p.ordre ?? i) }));
+
+  // Échanger les valeurs d'ordre
+  const tmp = ordres[idx].ordre;
+  ordres[idx].ordre = ordres[swapIdx].ordre;
+  ordres[swapIdx].ordre = tmp;
+
+  await db.from('postes').update({ ordre: ordres[idx].ordre }).eq('id', ordres[idx].id);
+  await db.from('postes').update({ ordre: ordres[swapIdx].ordre }).eq('id', ordres[swapIdx].id);
+
+  chargerPostes();
 }
 
 function peuplerCatsPoste() {
@@ -1975,29 +2004,32 @@ async function importerParURL() {
   const url = document.getElementById('url-import-input').value.trim();
   if (!url) return;
   const statusEl = document.getElementById('url-import-status');
-  statusEl.innerHTML = '<span class="spinner"></span> Analyse en cours…';
+  statusEl.innerHTML = '';
 
-  // Doublon
+  // Vérifier doublon
   const { data: doublon } = await db.from('banque_produits').select('id, nom').eq('url', url).maybeSingle();
   if (doublon) {
     statusEl.innerHTML = `⛔ Ce produit est déjà dans la banque : <strong>${doublon.nom}</strong>. Utilisez Modifier pour le mettre à jour.`;
     return;
   }
 
-  // Appel de la fonction Edge (extraction IA).
+  // Pré-remplir le formulaire et ouvrir le modal directement
+  resetModalProduit();
+  document.getElementById('ap-url').value = url;
+  document.getElementById('url-import-input').value = '';
+  openModal('modal-ajout-produit');
+  return;
+
+  // (Code d'extraction IA conservé pour usage futur si Edge Function déployée)
   const { data: { session } } = await db.auth.getSession();
   let resp;
   try {
     resp = await fetch(`${SUPABASE_URL}/functions/v1/extraire-produit`, {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${session?.access_token}`,
-      },
+      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${session?.access_token}` },
       body: JSON.stringify({ url }),
     });
   } catch (e) {
-    statusEl.innerHTML = '⚠️ Serveur d\'extraction injoignable. Remplissez le formulaire manuellement.';
     document.getElementById('ap-url').value = url;
     openModal('modal-ajout-produit');
     return;
@@ -2005,7 +2037,6 @@ async function importerParURL() {
 
   const resultat = await resp.json().catch(() => ({ ok: false }));
   if (!resultat.ok || !resultat.specs) {
-    statusEl.innerHTML = '⚠️ Extraction impossible pour ce site. Remplissez le formulaire manuellement.';
     document.getElementById('ap-url').value = url;
     openModal('modal-ajout-produit');
     return;

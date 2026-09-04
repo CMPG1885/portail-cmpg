@@ -1646,10 +1646,14 @@ async function sauvegarderPoste() {
     chargerPostes();
   } else {
     // MODE AJOUT — on crée le poste + toutes les options remplies
+    // Mettre le nouveau poste à la fin de la liste
+    const maxOrdre = postesCache.length > 0
+      ? Math.max(...postesCache.map(p => p.ordre ?? 0)) + 1
+      : 0;
     const { data: newPoste, error } = await db.from('postes').insert({
       ...payload,
       projet_id: currentProjetId,
-      ordre: 0
+      ordre: maxOrdre
     }).select().single();
 
     if (error) { toast('Erreur : ' + error.message, 'error'); return; }
@@ -2004,7 +2008,6 @@ async function importerParURL() {
   const url = document.getElementById('url-import-input').value.trim();
   if (!url) return;
   const statusEl = document.getElementById('url-import-status');
-  statusEl.innerHTML = '';
 
   // Vérifier doublon
   const { data: doublon } = await db.from('banque_produits').select('id, nom').eq('url', url).maybeSingle();
@@ -2013,53 +2016,121 @@ async function importerParURL() {
     return;
   }
 
-  // Pré-remplir le formulaire et ouvrir le modal directement
-  resetModalProduit();
-  document.getElementById('ap-url').value = url;
-  document.getElementById('url-import-input').value = '';
-  openModal('modal-ajout-produit');
-  return;
+  statusEl.innerHTML = '<span class="spinner"></span> Extraction en cours…';
 
-  // (Code d'extraction IA conservé pour usage futur si Edge Function déployée)
-  const { data: { session } } = await db.auth.getSession();
-  let resp;
   try {
-    resp = await fetch(`${SUPABASE_URL}/functions/v1/extraire-produit`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${session?.access_token}` },
-      body: JSON.stringify({ url }),
-    });
+    // Proxy CORS pour accéder aux pages des fournisseurs
+    const proxyUrl = `https://api.allorigins.win/get?url=${encodeURIComponent(url)}`;
+    const resp = await fetch(proxyUrl, { signal: AbortSignal.timeout(12000) });
+    const data = await resp.json();
+
+    if (!data.contents) throw new Error('Contenu vide');
+
+    const parser = new DOMParser();
+    const doc = parser.parseFromString(data.contents, 'text/html');
+    const specs = extraireSpecsProduit(doc, url);
+
+    resetModalProduit();
+    const set = (id, val) => { if (val) { const el = document.getElementById(id); if (el) el.value = val; } };
+    set('ap-url', url);
+    set('ap-nom', specs.nom);
+    set('ap-fabricant', specs.fabricant);
+    set('ap-modele', specs.modele);
+    set('ap-sku', specs.sku);
+    set('ap-prix', specs.prix);
+    set('ap-couleur', specs.couleur);
+    set('ap-dimensions', specs.dimensions);
+    if (specs.photo) { document.getElementById('ap-photo').value = specs.photo; apercuPhotoUrl(specs.photo); }
+
+    document.getElementById('url-import-input').value = '';
+    openModal('modal-ajout-produit');
+    mettreEnEvidenceChampsVides();
+
+    const nbChamps = [specs.nom, specs.fabricant, specs.prix, specs.photo].filter(Boolean).length;
+    statusEl.innerHTML = nbChamps >= 2
+      ? `✅ Informations extraites — vérifiez les champs surlignés et enregistrez.`
+      : `⚠ Extraction partielle — complétez les champs surlignés.`;
+
   } catch (e) {
+    // Fallback : ouvrir le formulaire avec l'URL pré-remplie
+    resetModalProduit();
     document.getElementById('ap-url').value = url;
+    document.getElementById('url-import-input').value = '';
     openModal('modal-ajout-produit');
-    return;
+    statusEl.innerHTML = '⚠ Extraction impossible pour ce site — complétez le formulaire manuellement.';
+  }
+}
+
+function extraireSpecsProduit(doc, url) {
+  // Lecture OpenGraph
+  const og = (prop) =>
+    doc.querySelector(`meta[property="og:${prop}"]`)?.content ||
+    doc.querySelector(`meta[name="og:${prop}"]`)?.content || '';
+
+  // Lecture JSON-LD (format Product schema — utilisé par la plupart des e-commerces)
+  let ld = {};
+  doc.querySelectorAll('script[type="application/ld+json"]').forEach(s => {
+    try {
+      const d = JSON.parse(s.textContent);
+      const items = Array.isArray(d) ? d : [d];
+      const chercher = (obj) => {
+        if (!obj || typeof obj !== 'object') return;
+        if (obj['@type'] === 'Product') { ld = obj; return; }
+        if (obj['@graph']) obj['@graph'].forEach(chercher);
+        if (Array.isArray(obj)) obj.forEach(chercher);
+      };
+      items.forEach(chercher);
+    } catch(e) {}
+  });
+
+  // Nom
+  const nom = ld.name || og('title') ||
+    doc.querySelector('h1')?.textContent?.trim()?.split('\n')[0] || '';
+
+  // Fabricant
+  const fabricant = ld.brand?.name || og('brand') ||
+    doc.querySelector('meta[name="brand"]')?.content || '';
+
+  // Modèle
+  const modele = ld.model || '';
+
+  // SKU
+  const sku = ld.sku || ld.mpn ||
+    doc.querySelector('meta[name="sku"]')?.content ||
+    doc.querySelector('[class*="sku"] [class*="value"]')?.textContent?.trim() || '';
+
+  // Prix
+  let prix = '';
+  if (ld.offers) {
+    const offer = Array.isArray(ld.offers) ? ld.offers[0] : ld.offers;
+    prix = String(offer?.price || offer?.lowPrice || '');
+  }
+  if (!prix) prix = og('price:amount') || doc.querySelector('meta[property="product:price:amount"]')?.content || '';
+  if (!prix) {
+    const priceEl = doc.querySelector(
+      '[class*="price"]:not([class*="was"]):not([class*="old"]):not([class*="compare"])'
+    );
+    if (priceEl) prix = priceEl.textContent.replace(/[^\d.,]/g, '').replace(',', '.') || '';
   }
 
-  const resultat = await resp.json().catch(() => ({ ok: false }));
-  if (!resultat.ok || !resultat.specs) {
-    document.getElementById('ap-url').value = url;
-    openModal('modal-ajout-produit');
-    return;
+  // Photo
+  const photoRaw =
+    (Array.isArray(ld.image) ? ld.image[0] : ld.image) ||
+    og('image') || '';
+  // Rendre absolue si relative
+  let photo = '';
+  if (photoRaw) {
+    try { photo = new URL(photoRaw, url).href; } catch(e) { photo = photoRaw; }
   }
 
-  const s = resultat.specs;
-  const set = (id, val) => { const el = document.getElementById(id); if (el && val != null && val !== '') el.value = val; };
-  set('ap-url', url);
-  set('ap-nom', s.nom);
-  set('ap-fabricant', s.fabricant);
-  set('ap-modele', s.modele);
-  set('ap-sku', s.sku);
-  set('ap-prix', s.prix_regulier);
-  set('ap-couleur', s.couleur);
-  set('ap-dimensions', s.dimensions);
-  set('ap-carac', s.caracteristiques);
-  set('ap-photo', s.photo_url);
-  if (s.photo_url) apercuPhotoUrl(s.photo_url);
+  // Couleur
+  const couleur = ld.color || og('color') || '';
 
-  openModal('modal-ajout-produit');
-  mettreEnEvidenceChampsVides();
-  statusEl.innerHTML = `✅ Importé (${resultat.source}). Vérifiez les champs surlignés puis enregistrez.`;
-  document.getElementById('url-import-input').value = '';
+  // Dimensions
+  const dimensions = ld.size || og('size') ||
+    doc.querySelector('meta[name="dimensions"]')?.content || '';
+
+  return { nom, fabricant, modele, sku, prix, photo, couleur, dimensions };
 }
 
 // Surligne les champs de spec restés vides pour guider la vérification.

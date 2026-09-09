@@ -722,6 +722,19 @@ body { font-family: 'Roboto', sans-serif; background: var(--fond); color: var(--
           <input type="number" id="ap-prix" placeholder="749.00" step="0.01" />
         </div>
         <div class="form-group">
+          <label>Vendu par</label>
+          <select id="ap-unite">
+            <option value="unité">unité</option>
+            <option value="pi²">pi² (pied carré)</option>
+            <option value="pi linéaire">pi linéaire</option>
+            <option value="boîte">boîte</option>
+            <option value="gallon">gallon</option>
+          </select>
+          <div style="font-size:11px;color:var(--texte-2);margin-top:3px">
+            Le prix ci-dessus est le prix <strong>par unité choisie</strong>. La quantité se saisit dans le projet.
+          </div>
+        </div>
+        <div class="form-group">
           <label>Couleur / Fini</label>
           <input type="text" id="ap-couleur" placeholder="Anthracite" />
         </div>
@@ -861,7 +874,7 @@ body { font-family: 'Roboto', sans-serif; background: var(--fond); color: var(--
       <div class="form-grid" style="margin-top:14px">
         <div class="form-group">
           <label>Quantité</label>
-          <input type="number" id="ao-qty" value="1" min="1" />
+          <input type="number" id="ao-qty" value="1" min="0" step="0.01" />
         </div>
         <div class="form-group">
           <label>Note pour le client</label>
@@ -1234,7 +1247,7 @@ async function ouvrirProjet(projetId) {
 async function chargerPostes() {
   const { data: postes } = await db
     .from('postes')
-    .select('*, categories(nom, ordre), sous_categories(nom), options_produits(*, banque_produits(nom, fabricant, modele, prix, photo_url, couleur))')
+    .select('*, categories(nom, ordre), sous_categories(nom), options_produits(*, banque_produits(nom, fabricant, modele, prix, unite_prix, photo_url, couleur))')
     .eq('projet_id', currentProjetId)
     .order('ordre');
 
@@ -1295,7 +1308,7 @@ async function chargerPostes() {
                 </div>
                 <div style="text-align:right;display:flex;flex-direction:column;align-items:flex-end;gap:4px">
                   ${bp && bp.prix ? `<div style="font-size:13px;font-weight:500">$${Number(bp.prix * opt.quantite).toLocaleString('fr-CA')}</div>` : ''}
-                  <div style="font-size:11px;color:var(--texte-2)">Qté: ${opt.quantite}</div>
+                  <div style="font-size:11px;color:var(--texte-2)">Qté: ${qteAvecUnite(opt.quantite, bp?.unite_prix)}</div>
                   ${isARevoir ? `<button class="btn btn-outline btn-sm" style="font-size:10px;padding:2px 8px;color:#1a5c2a;border-color:#1a5c2a" onclick="event.stopPropagation();remplacerOption('${opt.id}','${opt.lettre_option}',${opt.quantite})">↻ Proposer un remplacement</button>` : ''}
                   ${!isARevoir && !retired && !opt.pre_approuve_cmpg ? `<button class="btn btn-outline btn-sm" style="font-size:10px;padding:2px 8px;color:var(--caramel);border-color:var(--caramel)" onclick="event.stopPropagation();preApprouverOption('${opt.id}',true)">✓ Pré-approuver</button>` : ''}
                   ${opt.pre_approuve_cmpg ? `<span style="display:inline-flex;align-items:center;gap:4px;font-size:9px;background:var(--charcoal);color:var(--caramel);padding:2px 7px;letter-spacing:.5px">✓ Pré-approuvé CMPG<button onclick="event.stopPropagation();preApprouverOption('${opt.id}',false)" style="background:none;border:none;color:var(--caramel);cursor:pointer;font-size:10px;padding:0;margin-left:2px" title="Annuler la pré-approbation">✕</button></span>` : ''}
@@ -1468,7 +1481,7 @@ async function openModalPoste() {
 async function chargerProduitsBanqueSelect() {
   // Charge (ou recharge) la cache complète avec photo + catégories
   const { data } = await db.from('banque_produits')
-    .select('id, nom, fabricant, modele, prix, photo_url, categorie_id, sous_categorie_id')
+    .select('id, nom, fabricant, modele, prix, unite_prix, photo_url, categorie_id, sous_categorie_id')
     .order('nom');
   produitsCache = data || [];
   filtrerProduitsBanqueSelect();
@@ -1510,7 +1523,7 @@ function renderOptionsSlots() {
   if (catId)     filtered = filtered.filter(p => p.categorie_id === catId);
   if (sousCatId) filtered = filtered.filter(p => p.sous_categorie_id === sousCatId);
   const optionsHTML = '<option value="">-- Choisir --</option>' +
-    filtered.map(p => `<option value="${p.id}">${p.fabricant ? p.fabricant + ' — ' : ''}${p.nom || ''}${p.prix ? ' ($' + p.prix + ')' : ''}</option>`).join('');
+    filtered.map(p => `<option value="${p.id}">${p.fabricant ? p.fabricant + ' — ' : ''}${p.nom || ''}${p.prix ? ' ($' + p.prix + suffixeUnite(p.unite_prix) + ')' : ''}</option>`).join('');
 
   container.innerHTML = optionSlots.map((letter, idx) => `
     <div style="margin-bottom:12px;padding:14px;background:var(--fond);border:1px solid var(--bord)">
@@ -1527,7 +1540,7 @@ function renderOptionsSlots() {
         </div>
         <div class="form-group" style="margin-bottom:0">
           <label>Qté</label>
-          <input type="number" id="slot-qty-${letter}" value="1" min="1" />
+          <input type="number" id="slot-qty-${letter}" value="1" min="0" step="0.01" />
         </div>
         <div class="form-group" style="margin-bottom:0">
           <label>Note client</label>
@@ -1562,7 +1575,7 @@ function mettreAJourApercuSlot(letter, produitId) {
     <div>
       <div style="font-weight:500;font-size:13px">${p.nom || '—'}</div>
       <div style="font-size:11px;color:var(--texte-2);margin-top:2px">${[p.fabricant, p.modele].filter(Boolean).join(' · ')}</div>
-      ${p.prix ? `<div style="font-size:12px;color:var(--caramel);margin-top:4px">${Number(p.prix).toLocaleString('fr-CA',{style:'currency',currency:'CAD'})}</div>` : ''}
+      ${p.prix ? `<div style="font-size:12px;color:var(--caramel);margin-top:4px">${Number(p.prix).toLocaleString('fr-CA',{style:'currency',currency:'CAD'})}${suffixeUnite(p.unite_prix)}</div>` : ''}
     </div>`;
 }
 
@@ -1588,7 +1601,7 @@ function mettreAJourApercuProduit(produitId) {
     <div>
       <div style="font-weight:500;font-size:13px">${p.nom || '—'}</div>
       <div style="font-size:11px;color:var(--texte-2);margin-top:2px">${[p.fabricant, p.modele].filter(Boolean).join(' · ')}</div>
-      ${p.prix ? `<div style="font-size:13px;color:var(--caramel);font-weight:500;margin-top:6px">${Number(p.prix).toLocaleString('fr-CA',{style:'currency',currency:'CAD'})}</div>` : ''}
+      ${p.prix ? `<div style="font-size:13px;color:var(--caramel);font-weight:500;margin-top:6px">${Number(p.prix).toLocaleString('fr-CA',{style:'currency',currency:'CAD'})}${suffixeUnite(p.unite_prix)}</div>` : ''}
     </div>
   `;
 }
@@ -1616,7 +1629,7 @@ async function sauvegarderPoste() {
     // Mettre à jour / ajouter les options produits
     for (const letter of optionSlots) {
       const produitId = document.getElementById(`slot-prod-${letter}`)?.value || null;
-      const qty = parseInt(document.getElementById(`slot-qty-${letter}`)?.value) || 1;
+      const qty = parseFloat(document.getElementById(`slot-qty-${letter}`)?.value) || 1;
       const note = document.getElementById(`slot-note-${letter}`)?.value?.trim() || null;
       const optId = _editingOptionIds[letter];
 
@@ -1666,7 +1679,7 @@ async function sauvegarderPoste() {
         poste_id: newPoste.id,
         banque_produit_id: produitId,
         lettre_option: letter,
-        quantite: parseInt(document.getElementById(`slot-qty-${letter}`)?.value) || 1,
+        quantite: parseFloat(document.getElementById(`slot-qty-${letter}`)?.value) || 1,
         note_client: document.getElementById(`slot-note-${letter}`)?.value?.trim() || null
       });
     }
@@ -1755,7 +1768,7 @@ async function ouvrirModalAjoutOption(posteId, lettre) {
   if (sel) {
     sel.innerHTML = '<option value="">-- Choisir dans la banque --</option>' +
       (produitsCache || []).map(p =>
-        `<option value="${p.id}">${p.fabricant ? p.fabricant + ' — ' : ''}${p.nom || ''}${p.prix ? ' ($' + p.prix + ')' : ''}</option>`
+        `<option value="${p.id}">${p.fabricant ? p.fabricant + ' — ' : ''}${p.nom || ''}${p.prix ? ' ($' + p.prix + suffixeUnite(p.unite_prix) + ')' : ''}</option>`
       ).join('');
     sel.value = '';
   }
@@ -1781,7 +1794,7 @@ function mettreAJourApercuAO(produitId) {
     <div>
       <div style="font-size:13px;font-weight:500">${p.nom || '—'}</div>
       <div style="font-size:11px;color:var(--texte-2);margin-top:2px">${[p.fabricant, p.modele].filter(Boolean).join(' · ')}</div>
-      ${p.prix ? `<div style="font-size:12px;color:var(--caramel);margin-top:4px">${Number(p.prix).toLocaleString('fr-CA',{style:'currency',currency:'CAD'})}</div>` : ''}
+      ${p.prix ? `<div style="font-size:12px;color:var(--caramel);margin-top:4px">${Number(p.prix).toLocaleString('fr-CA',{style:'currency',currency:'CAD'})}${suffixeUnite(p.unite_prix)}</div>` : ''}
     </div>`;
 }
 
@@ -1793,7 +1806,7 @@ async function sauvegarderNouvelleOption() {
   if (_aoRemplaceOptionId) {
     const { error } = await db.from('options_produits').update({
       banque_produit_id:  produitId,
-      quantite:           parseInt(document.getElementById('ao-qty')?.value) || 1,
+      quantite:           parseFloat(document.getElementById('ao-qty')?.value) || 1,
       note_client:        document.getElementById('ao-note')?.value?.trim() || null,
       statut_client:      'en_attente',   // remet en attente pour que le client revoie
       commentaire_client: null,           // efface l'ancien commentaire de révision
@@ -1813,7 +1826,7 @@ async function sauvegarderNouvelleOption() {
     poste_id:          _aoPosteId,
     banque_produit_id: produitId,
     lettre_option:     _aoLettre,
-    quantite:          parseInt(document.getElementById('ao-qty')?.value) || 1,
+    quantite:          parseFloat(document.getElementById('ao-qty')?.value) || 1,
     note_client:       document.getElementById('ao-note')?.value?.trim() || null
   });
   if (error) { toast('Erreur : ' + error.message, 'error'); return; }
@@ -1839,7 +1852,7 @@ async function remplacerOption(optionId, lettre, quantiteActuelle) {
   if (sel) {
     sel.innerHTML = '-- Choisir dans la banque --\n' +
       (produitsCache || []).map(p =>
-        `<option value="${p.id}">${p.fabricant ? p.fabricant + ' — ' : ''}${p.nom || ''}${p.prix ? ' ($' + p.prix + ')' : ''}</option>`
+        `<option value="${p.id}">${p.fabricant ? p.fabricant + ' — ' : ''}${p.nom || ''}${p.prix ? ' ($' + p.prix + suffixeUnite(p.unite_prix) + ')' : ''}</option>`
       ).join('');
     sel.value = '';
   }
@@ -1927,6 +1940,25 @@ async function revaliderPrix() {
   }
 }
 
+// Suffixe d'unité accolé au prix : rien pour « unité », « /pi² » sinon.
+function suffixeUnite(unite) {
+  return (!unite || unite === 'unité') ? '' : '/' + unite;
+}
+
+// Prix formaté avec son unité : « 639,00 $ » ou « 8,12 $/pi² ».
+function prixAvecUnite(p) {
+  if (!p || p.prix == null) return '—';
+  return Number(p.prix).toLocaleString('fr-CA', { style:'currency', currency:'CAD' })
+       + suffixeUnite(p.unite_prix);
+}
+
+// Quantité affichée avec son unité : « 3 » ou « 47,5 pi² ».
+function qteAvecUnite(quantite, unite) {
+  const q = Number(quantite ?? 1);
+  const txt = Number.isInteger(q) ? String(q) : q.toLocaleString('fr-CA');
+  return (!unite || unite === 'unité') ? txt : `${txt} ${unite}`;
+}
+
 function badgeStatut(p) {
   const badges = [];
   const statut = (typeof p === 'object') ? (p.statut || 'actif') : p;
@@ -1975,7 +2007,7 @@ function renderProduits(produits) {
         ${p.sous_categories ? `<div style="font-size:11px;color:var(--caramel);margin-top:2px">${p.sous_categories.nom}</div>` : ''}
       </td>
       <td style="font-size:13px;font-weight:500">
-        ${p.prix ? '$' + Number(p.prix).toLocaleString('fr-CA') : '—'}
+        ${prixAvecUnite(p)}
         ${avertissementPrix(p.date_verification_prix)}
       </td>
       <td>${badgeStatut(p)}</td>
@@ -2127,6 +2159,7 @@ async function sauvegarderProduit() {
     modele:                document.getElementById('ap-modele').value.trim() || null,
     sku:                   document.getElementById('ap-sku').value.trim() || null,
     prix:                  parseFloat(document.getElementById('ap-prix').value) || null,
+    unite_prix:            document.getElementById('ap-unite')?.value || 'unité',
     couleur:               document.getElementById('ap-couleur').value.trim() || null,
     dimensions:            document.getElementById('ap-dimensions').value.trim() || null,
     caracteristiques:      document.getElementById('ap-carac').value.trim() || null,
@@ -2187,6 +2220,8 @@ function resetModalProduit() {
     .forEach(id => { const el = document.getElementById(id); if(el) el.value = ''; });
   const statutEl = document.getElementById('ap-statut');
   if (statutEl) statutEl.value = 'actif';
+  const uniteEl = document.getElementById('ap-unite');
+  if (uniteEl) uniteEl.value = 'unité';
   const histWrap = document.getElementById('ap-historique-wrap');
   if (histWrap) histWrap.style.display = 'none';
   effacerPhoto();
@@ -2212,6 +2247,7 @@ async function editerProduit(id) {
   document.getElementById('ap-modele').value      = p.modele || '';
   document.getElementById('ap-sku').value         = p.sku || '';
   document.getElementById('ap-prix').value        = p.prix || '';
+  document.getElementById('ap-unite').value       = p.unite_prix || 'unité';
   document.getElementById('ap-couleur').value     = p.couleur || '';
   document.getElementById('ap-dimensions').value  = p.dimensions || '';
   document.getElementById('ap-carac').value       = p.caracteristiques || '';
@@ -2537,7 +2573,7 @@ async function genererPDF_base(mode) {
       sous_categories(id, nom, ordre),
       options_produits(
         id, statut_client, quantite, note_client, commentaire_client, lettre_option, date_decision,
-        banque_produits(id, nom, fabricant, modele, sku, couleur, dimensions, caracteristiques, prix, photo_url, url)
+        banque_produits(id, nom, fabricant, modele, sku, couleur, dimensions, caracteristiques, prix, unite_prix, photo_url, url)
       )
     `)
     .eq('projet_id', currentProjetId);
@@ -2585,6 +2621,7 @@ async function genererPDF_base(mode) {
         dims:        bp.dimensions || '',
         caract:      bp.caracteristiques || '',
         photo_url:   bp.photo_url || '',
+        unite:       bp.unite_prix || 'unité',
         prix_u:      bp.prix ? Number(bp.prix) : null,
         prix_total:  bp.prix ? Number(bp.prix) * (opt.quantite || 1) : null,
         statut:      opt.statut_client || '',
@@ -2733,8 +2770,9 @@ async function genererPDF_base(mode) {
     return cols.map(c => {
       if (c.key === 'photo')      return '';
       if (c.key === 'lien')       return row.lien ? 'Voir plus' : '';
-      if (c.key === 'prix_u')     return row.prix_u     != null ? row.prix_u.toLocaleString('fr-CA', { style:'currency', currency:'CAD' }) : '';
+      if (c.key === 'prix_u')     return row.prix_u     != null ? row.prix_u.toLocaleString('fr-CA', { style:'currency', currency:'CAD' }) + suffixeUnite(row.unite) : '';
       if (c.key === 'prix_total') return row.prix_total != null ? row.prix_total.toLocaleString('fr-CA', { style:'currency', currency:'CAD' }) : '';
+      if (c.key === 'qte')        return qteAvecUnite(row.qte, row.unite);
       if (c.key === 'statut')     return row.statut === 'approuvé' ? 'Approuvé' : row.statut === 'à_revoir' ? 'À revoir' : 'En attente';
       return row[c.key] ?? '';
     });

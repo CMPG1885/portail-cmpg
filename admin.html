@@ -2017,107 +2017,75 @@ async function importerParURL() {
   }
 
   statusEl.innerHTML = '<span class="spinner"></span> Extraction en cours…';
+  let specs = null;
 
+  // ── Shopify : tenter direct puis 2 proxies ──
   try {
-    let specs = null;
-
-    // ── Shopify : API JSON via proxy (évite les restrictions CORS) ──
     const urlObj = new URL(url);
-    const shopifyMatch = urlObj.pathname.match(/\/products\/([^/?#]+)/);
-    if (shopifyMatch) {
-      try {
-        const handle = shopifyMatch[1];
-        const jsonUrl = `${urlObj.origin}/products/${handle}.json`;
-        // On passe par corsproxy.io pour éviter les blocages CORS
-        const proxyJsonUrl = `https://corsproxy.io/?${encodeURIComponent(jsonUrl)}`;
-        const resp = await fetch(proxyJsonUrl, { signal: AbortSignal.timeout(12000) });
-        if (resp.ok) {
-          const data = await resp.json();
-          const product = data.product;
-          if (product) {
-            const variantId = urlObj.searchParams.get('variant');
-            const variant = variantId
-              ? product.variants?.find(v => String(v.id) === variantId) || product.variants?.[0]
-              : product.variants?.[0];
-            // Trouver l'image liée à cette variante spécifique
-            const variantImageId = variant?.image_id;
-            const variantImage = variantImageId
-              ? product.images?.find(img => img.id === variantImageId)
-              : null;
-            const photo = variantImage?.src || product.images?.[0]?.src || '';
-            specs = {
-              nom        : product.title || '',
-              fabricant  : product.vendor || '',
-              modele     : (variant?.title && variant.title !== 'Default Title') ? variant.title : '',
-              sku        : variant?.sku || '',
-              prix       : variant?.price ? String(parseFloat(variant.price)) : '',
-              photo      : photo,
-              couleur    : variant?.option2 || '',
-              dimensions : ''
-            };
-          }
-        }
-      } catch(e) { console.warn('Shopify API:', e.message); }
-    }
+    const match = urlObj.pathname.match(/\/products\/([^/?#]+)/);
+    if (match) {
+      const jsonUrl = `${urlObj.origin}/products/${match[1]}.json`;
+      const variantId = urlObj.searchParams.get('variant');
 
-    // ── Fallback proxy pour les sites non-Shopify ──
-    if (!specs) {
-      const proxies = [
-        async (u) => {
-          const r = await fetch(`https://corsproxy.io/?${encodeURIComponent(u)}`, { signal: AbortSignal.timeout(10000) });
-          if (!r.ok) throw new Error('corsproxy.io: ' + r.status);
-          return r.text();
-        },
-        async (u) => {
-          const r = await fetch(`https://api.allorigins.win/get?url=${encodeURIComponent(u)}`, { signal: AbortSignal.timeout(10000) });
-          const d = await r.json();
-          if (!d.contents) throw new Error('allorigins: vide');
-          return d.contents;
-        },
-        async (u) => {
-          const r = await fetch(`https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(u)}`, { signal: AbortSignal.timeout(10000) });
-          if (!r.ok) throw new Error('codetabs: ' + r.status);
-          return r.text();
-        }
+      const tentatives = [
+        () => fetch(jsonUrl,                                                              { signal: AbortSignal.timeout(8000) }),
+        () => fetch(`https://corsproxy.io/?${encodeURIComponent(jsonUrl)}`,              { signal: AbortSignal.timeout(8000) }),
+        () => fetch(`https://api.allorigins.win/get?url=${encodeURIComponent(jsonUrl)}`, { signal: AbortSignal.timeout(8000) })
+               .then(async r => { const d = await r.json(); return new Response(d.contents, {status:200}); })
       ];
-      let html = null;
-      for (const proxy of proxies) {
-        try { html = await proxy(url); if (html && html.length > 500) break; } catch(e) { console.warn('Proxy échoué:', e.message); }
+
+      for (const tentative of tentatives) {
+        try {
+          const resp  = await tentative();
+          if (!resp.ok) continue;
+          const data  = await resp.json();
+          const prod  = data.product;
+          if (!prod)  continue;
+
+          const variant = variantId
+            ? prod.variants?.find(v => String(v.id) === variantId) || prod.variants?.[0]
+            : prod.variants?.[0];
+          const varImg = variant?.image_id
+            ? prod.images?.find(i => i.id === variant.image_id)
+            : null;
+
+          specs = {
+            nom       : prod.title       || '',
+            fabricant : prod.vendor      || '',
+            modele    : (variant?.title && variant.title !== 'Default Title') ? variant.title : '',
+            sku       : variant?.sku     || '',
+            prix      : variant?.price   ? String(parseFloat(variant.price)) : '',
+            photo     : varImg?.src || prod.images?.[0]?.src || '',
+            couleur   : variant?.option2 || '',
+            dimensions: ''
+          };
+          break;
+        } catch(e) { console.warn('Tentative Shopify échouée :', e.message); }
       }
-      if (!html || html.length < 500) throw new Error('Extraction impossible');
-      const parser = new DOMParser();
-      const doc = parser.parseFromString(html, 'text/html');
-      specs = extraireSpecsProduit(doc, url);
     }
+  } catch(e) { console.warn('Shopify global :', e.message); }
 
-    resetModalProduit();
-    const set = (id, val) => { if (val) { const el = document.getElementById(id); if (el) el.value = val; } };
-    set('ap-url', url);
-    set('ap-nom', specs.nom);
-    set('ap-fabricant', specs.fabricant);
-    set('ap-modele', specs.modele);
-    set('ap-sku', specs.sku);
-    set('ap-prix', specs.prix);
-    set('ap-couleur', specs.couleur);
-    set('ap-dimensions', specs.dimensions);
+  // ── Toujours ouvrir le formulaire ──
+  resetModalProduit();
+  document.getElementById('url-import-input').value = '';
+  const setChamp = (id, val) => { if (val) { const el = document.getElementById(id); if (el) el.value = val; } };
+
+  setChamp('ap-url', url);
+
+  if (specs?.nom) {
+    setChamp('ap-nom',       specs.nom);
+    setChamp('ap-fabricant', specs.fabricant);
+    setChamp('ap-modele',    specs.modele);
+    setChamp('ap-sku',       specs.sku);
+    setChamp('ap-prix',      specs.prix);
+    setChamp('ap-couleur',   specs.couleur);
     if (specs.photo) { document.getElementById('ap-photo').value = specs.photo; apercuPhotoUrl(specs.photo); }
-
-    document.getElementById('url-import-input').value = '';
     openModal('modal-ajout-produit');
     mettreEnEvidenceChampsVides();
-
-    const nbChamps = [specs.nom, specs.fabricant, specs.prix, specs.photo].filter(Boolean).length;
-    statusEl.innerHTML = nbChamps >= 2
-      ? `✅ Informations extraites — vérifiez les champs surlignés et enregistrez.`
-      : `⚠ Extraction partielle — complétez les champs surlignés.`;
-
-  } catch (e) {
-    // Fallback : ouvrir le formulaire avec l'URL pré-remplie
-    resetModalProduit();
-    document.getElementById('ap-url').value = url;
-    document.getElementById('url-import-input').value = '';
+    statusEl.innerHTML = '✅ Informations extraites — vérifiez les champs surlignés et enregistrez.';
+  } else {
     openModal('modal-ajout-produit');
-    statusEl.innerHTML = '⚠ Extraction impossible pour ce site — complétez le formulaire manuellement.';
+    statusEl.innerHTML = '';
   }
 }
 

@@ -2017,275 +2017,73 @@ async function importerParURL() {
   }
 
   statusEl.innerHTML = '<span class="spinner"></span> Extraction en cours…';
-  let specs = null;
 
-  // ── Shopify : tenter direct puis 2 proxies ──
+  // L'extraction se fait côté serveur (fonction Edge « extraire-produit ») :
+  // le navigateur ne peut pas lire une page d'un autre domaine à cause du CORS,
+  // et les proxies publics gratuits sont devenus payants ou instables.
+  let specs = null, avertissement = '';
   try {
-    const urlObj = new URL(url);
-    const match = urlObj.pathname.match(/\/products\/([^/?#]+)/);
-    if (match) {
-      const jsonUrl = `${urlObj.origin}/products/${match[1]}.json`;
-      const variantId = urlObj.searchParams.get('variant');
+    const { data: { session } } = await db.auth.getSession();
+    const resp = await fetch(`${SUPABASE_URL}/functions/v1/extraire-produit`, {
+      method : 'POST',
+      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${session?.access_token}` },
+      body   : JSON.stringify({ url }),
+      signal : AbortSignal.timeout(45000),
+    });
 
-      const tentatives = [
-        () => fetch(jsonUrl,                                                              { signal: AbortSignal.timeout(8000) }),
-        () => fetch(`https://corsproxy.io/?${encodeURIComponent(jsonUrl)}`,              { signal: AbortSignal.timeout(8000) }),
-        () => fetch(`https://api.allorigins.win/get?url=${encodeURIComponent(jsonUrl)}`, { signal: AbortSignal.timeout(8000) })
-               .then(async r => { const d = await r.json(); return new Response(d.contents, {status:200}); })
-      ];
-
-      for (const tentative of tentatives) {
-        try {
-          const resp  = await tentative();
-          if (!resp.ok) continue;
-          const data  = await resp.json();
-          const prod  = data.product;
-          if (!prod)  continue;
-
-          const variant = variantId
-            ? prod.variants?.find(v => String(v.id) === variantId) || prod.variants?.[0]
-            : prod.variants?.[0];
-          const varImg = variant?.image_id
-            ? prod.images?.find(i => i.id === variant.image_id)
-            : null;
-
-          specs = {
-            nom       : prod.title       || '',
-            fabricant : prod.vendor      || '',
-            modele    : (variant?.title && variant.title !== 'Default Title') ? variant.title : '',
-            sku       : variant?.sku     || '',
-            prix      : variant?.price   ? String(parseFloat(variant.price)) : '',
-            photo     : varImg?.src || prod.images?.[0]?.src || '',
-            couleur   : variant?.option2 || '',
-            dimensions: ''
-          };
-          break;
-        } catch(e) { console.warn('Tentative Shopify échouée :', e.message); }
-      }
+    if (resp.status === 404) {
+      avertissement = "⚠️ La fonction d'extraction n'est pas déployée sur Supabase. Saisie manuelle pour l'instant.";
+    } else if (resp.status === 401) {
+      avertissement = '⚠️ Session expirée — reconnectez-vous pour utiliser l\'extraction.';
+    } else if (resp.status === 403) {
+      avertissement = '⚠️ Extraction réservée aux comptes administrateurs.';
+    } else {
+      const j = await resp.json();
+      if (j.ok && j.specs) specs = j.specs;
+      else avertissement = '⚠️ ' + (j.erreur || 'Extraction impossible pour ce site.');
     }
-  } catch(e) { console.warn('Shopify global :', e.message); }
-
-  // ── Fallback non-Shopify : fetch HTML via proxy, parser avec extraireSpecsProduit() ──
-  if (!specs) {
-    const proxiesHTML = [
-      () => fetch(`https://corsproxy.io/?${encodeURIComponent(url)}`, { signal: AbortSignal.timeout(12000) })
-             .then(r => r.ok ? r.text() : Promise.reject('!ok')),
-      () => fetch(`https://api.allorigins.win/get?url=${encodeURIComponent(url)}`, { signal: AbortSignal.timeout(12000) })
-             .then(async r => { const d = await r.json(); if (!d.contents) throw new Error('empty'); return d.contents; }),
-      () => fetch(`https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(url)}`, { signal: AbortSignal.timeout(12000) })
-             .then(r => r.ok ? r.text() : Promise.reject('!ok'))
-    ];
-    for (const proxyFn of proxiesHTML) {
-      try {
-        const html = await proxyFn();
-        if (!html) continue;
-        const doc = new DOMParser().parseFromString(html, 'text/html');
-        const extracted = extraireSpecsProduit(doc, url);
-        if (extracted.nom) { specs = extracted; break; }
-      } catch(e) { console.warn('Proxy HTML échoué :', e.message); }
-    }
+  } catch (e) {
+    avertissement = (e.name === 'TimeoutError')
+      ? '⚠️ Le site met trop de temps à répondre. Saisie manuelle.'
+      : '⚠️ Serveur d\'extraction injoignable. Saisie manuelle.';
   }
 
-  // ── Toujours ouvrir le formulaire ──
+  // ── Le formulaire s'ouvre toujours, extraction réussie ou non ──
   resetModalProduit();
   document.getElementById('url-import-input').value = '';
-  const setChamp = (id, val) => { if (val) { const el = document.getElementById(id); if (el) el.value = val; } };
+  const setChamp = (id, val) => {
+    if (val === null || val === undefined || val === '') return;
+    const el = document.getElementById(id);
+    if (el) el.value = String(val);
+  };
 
   setChamp('ap-url', url);
 
-  if (specs?.nom) {
-    setChamp('ap-nom',       specs.nom);
-    setChamp('ap-fabricant', specs.fabricant);
-    setChamp('ap-modele',    specs.modele);
-    setChamp('ap-sku',       specs.sku);
-    setChamp('ap-prix',      specs.prix);
-    setChamp('ap-couleur',   specs.couleur);
-    if (specs.photo) { document.getElementById('ap-photo').value = specs.photo; apercuPhotoUrl(specs.photo); }
+  if (specs && (specs.nom || specs.prix_regulier)) {
+    setChamp('ap-nom',        specs.nom);
+    setChamp('ap-fabricant',  specs.fabricant);
+    setChamp('ap-modele',     specs.modele);
+    setChamp('ap-sku',        specs.sku);
+    setChamp('ap-prix',       specs.prix_regulier);   // jamais le prix en solde
+    setChamp('ap-couleur',    specs.couleur);
+    setChamp('ap-dimensions', specs.dimensions);
+    setChamp('ap-carac',      specs.caracteristiques);
+    if (specs.photo_url) {
+      document.getElementById('ap-photo').value = specs.photo_url;
+      apercuPhotoUrl(specs.photo_url);
+    }
     openModal('modal-ajout-produit');
     mettreEnEvidenceChampsVides();
-    statusEl.innerHTML = '✅ Informations extraites — vérifiez les champs surlignés et enregistrez.';
+
+    const enSolde = specs.prix_promo != null && specs.prix_regulier != null
+                    && specs.prix_promo < specs.prix_regulier;
+    statusEl.innerHTML = '✅ Informations extraites — vérifiez les champs surlignés et enregistrez.'
+      + (enSolde ? ` <em>(en solde à ${specs.prix_promo} $ — le prix régulier a été conservé)</em>` : '');
   } else {
     openModal('modal-ajout-produit');
-    statusEl.innerHTML = '';
+    mettreEnEvidenceChampsVides();
+    statusEl.innerHTML = avertissement || '⚠️ Aucune information trouvée sur cette page. Saisie manuelle.';
   }
-}
-
-function extraireSpecsProduit(doc, url) {
-  // ── Helpers ──────────────────────────────────────────────────────────────
-  const og = (prop) =>
-    doc.querySelector(`meta[property="og:${prop}"]`)?.content ||
-    doc.querySelector(`meta[name="og:${prop}"]`)?.content || '';
-
-  // Scan générique de paires label→valeur dans les tableaux et DL
-  const scanLabel = (patterns) => {
-    const labels = doc.querySelectorAll('td, th, dt, li, [class*="label"], [class*="attribute"]');
-    for (const el of labels) {
-      const txt = el.textContent.trim().toLowerCase();
-      if (patterns.test(txt)) {
-        const next = el.nextElementSibling || el.parentElement?.nextElementSibling;
-        const val  = next?.textContent?.trim();
-        if (val && val.length < 60 && !/https?:\/\//.test(val)) return val;
-      }
-    }
-    return '';
-  };
-
-  // Nettoyage prix : gère "639,00 $", "1 234,56 $", "$1,234.56", "CAD 639"
-  const nettoyerPrix = (raw) => {
-    if (!raw && raw !== 0) return '';
-    let s = String(raw).trim();
-    // Retirer symboles monétaires et texte
-    s = s.replace(/[^\d\s,\.]/g, '').trim();
-    // Distinguer séparateur de milliers (.) et décimal (,) — format européen "1.234,56"
-    if (/^\d{1,3}(\.\d{3})+(,\d{1,2})?$/.test(s)) {
-      s = s.replace(/\./g, '').replace(',', '.');
-    } else {
-      // Format nord-américain "1,234.56" ou "1 234.56" ou "639,00"
-      s = s.replace(/\s/g, '').replace(/,(\d{2})$/, '.$1').replace(/,/g, '');
-    }
-    const n = parseFloat(s);
-    return isNaN(n) ? '' : String(n);
-  };
-
-  // ── JSON-LD Product schema ────────────────────────────────────────────────
-  let ld = {};
-  doc.querySelectorAll('script[type="application/ld+json"]').forEach(s => {
-    try {
-      const d = JSON.parse(s.textContent);
-      const items = Array.isArray(d) ? d : [d];
-      const chercher = (obj) => {
-        if (!obj || typeof obj !== 'object') return;
-        if (obj['@type'] === 'Product' || obj['@type'] === 'product') { ld = obj; return; }
-        if (obj['@graph']) obj['@graph'].forEach(chercher);
-        if (Array.isArray(obj)) obj.forEach(chercher);
-      };
-      items.forEach(chercher);
-    } catch(e) {}
-  });
-
-  // ── Titre de la page ─────────────────────────────────────────────────────
-  const titleRaw = doc.querySelector('title')?.textContent || '';
-  // Séparer sur | ou – ou — (séparateurs communs dans les titres e-commerce)
-  const titleParts = titleRaw.split(/\s*[\|–—]\s*/).map(s => s.trim()).filter(Boolean);
-
-  // ── Nom ──────────────────────────────────────────────────────────────────
-  const nom = (ld.name || og('title') ||
-    doc.querySelector('h1.product-title, h1[class*="product"], h1[itemprop="name"], h1')
-      ?.textContent?.trim()?.split('\n')[0] || '').trim();
-
-  // Sanity check : si la page ressemble à une page d'erreur ou de consentement, retourner vide
-  const nomsErreur = /^(erreur|error|404|403|accès refusé|access denied|consentement|consent|cookie|privacy|page introuvable|not found)$/i;
-  if (nom && nomsErreur.test(nom.toLowerCase())) return { nom: '', fabricant: '', modele: '', sku: '', prix: '', photo: '', couleur: '', dimensions: '' };
-
-  // ── Fabricant ────────────────────────────────────────────────────────────
-  let fabricant = ld.brand?.name || og('brand') ||
-    doc.querySelector('meta[name="brand"]')?.content ||
-    doc.querySelector('[itemprop="brand"] [itemprop="name"]')?.content ||
-    doc.querySelector('[itemprop="brand"]')?.textContent?.trim() ||
-    scanLabel(/^(fabricant|manufacturer|brand|marque|vendor|fournisseur)$/) || '';
-  // Fallback depuis le titre : 2e segment sauf si trop long ou = nom ou = domaine du site
-  if (!fabricant && titleParts.length >= 2) {
-    const domaineParts = new URL(url).hostname.replace('www.', '').split('.')[0].toLowerCase();
-    const candidat = titleParts[1];
-    if (candidat && candidat.length < 35 && candidat.toLowerCase() !== nom.toLowerCase()
-        && !candidat.toLowerCase().includes(domaineParts)) {
-      fabricant = candidat;
-    }
-  }
-
-  // ── Modèle ───────────────────────────────────────────────────────────────
-  const modele = (ld.model ||
-    scanLabel(/^(mod[eè]le?|model|numéro de mod[eè]le?|no\. de mod[eè]le?|product number)$/) || '').trim();
-
-  // ── SKU ──────────────────────────────────────────────────────────────────
-  const sku = (ld.sku || ld.mpn ||
-    doc.querySelector('meta[name="sku"]')?.content ||
-    doc.querySelector('[itemprop="sku"]')?.content ||
-    doc.querySelector('[itemprop="sku"]')?.textContent?.trim() ||
-    doc.querySelector('[class*="sku"] [class*="value"], [class*="sku-value"]')?.textContent?.trim() ||
-    scanLabel(/^(sku|article|référence|ref\.?|code produit|code article|upc|part number|numéro de pièce)$/) || '').trim();
-
-  // ── Prix ─────────────────────────────────────────────────────────────────
-  let prix = '';
-  // 1. JSON-LD offers
-  if (ld.offers) {
-    const offer = Array.isArray(ld.offers) ? ld.offers[0] : ld.offers;
-    const rawP = offer?.price ?? offer?.lowPrice;
-    if (rawP !== undefined && rawP !== null) prix = nettoyerPrix(rawP);
-  }
-  // 2. Meta tags OpenGraph / product
-  if (!prix) {
-    const metaPrix = og('price:amount') ||
-      doc.querySelector('meta[property="product:price:amount"]')?.content ||
-      doc.querySelector('meta[name="price"]')?.content || '';
-    if (metaPrix) prix = nettoyerPrix(metaPrix);
-  }
-  // 3. WooCommerce
-  if (!prix) {
-    const wooEl = doc.querySelector('.woocommerce-Price-amount bdi, .woocommerce-Price-amount');
-    if (wooEl) prix = nettoyerPrix(wooEl.textContent);
-  }
-  // 4. Sélecteur générique (dernier recours)
-  if (!prix) {
-    const priceEl = doc.querySelector(
-      '[class*="price--sale"], [class*="price-sale"], [class*="special-price"] .price,' +
-      '[itemprop="price"], [class*="current-price"], [class*="product-price"] .amount,' +
-      '[class*="price"]:not([class*="was"]):not([class*="old"]):not([class*="compare"]):not([class*="regular"])'
-    );
-    if (priceEl) prix = nettoyerPrix(priceEl.getAttribute('content') || priceEl.textContent);
-  }
-
-  // ── Photo ────────────────────────────────────────────────────────────────
-  const photoRaw =
-    (Array.isArray(ld.image) ? ld.image[0] : typeof ld.image === 'string' ? ld.image : ld.image?.url || '') ||
-    og('image') ||
-    doc.querySelector('[itemprop="image"]')?.src ||
-    doc.querySelector('[itemprop="image"]')?.content || '';
-  let photo = '';
-  if (photoRaw) {
-    try { photo = new URL(photoRaw, url).href; } catch(e) { photo = photoRaw; }
-  }
-
-  // ── Couleur / Fini ───────────────────────────────────────────────────────
-  let couleur = ld.color || og('color') ||
-    doc.querySelector('meta[name="color"]')?.content ||
-    scanLabel(/^(couleur|color|fini|finish|finition)$/) || '';
-  // Fallback : 3e segment du titre si court (ex : "Plafonnier Harper | Hinkley | Laiton")
-  if (!couleur && titleParts.length >= 3) {
-    const candidat = titleParts[2];
-    // Valide seulement si court, pas un nom de site, pas identique au nom ou fabricant
-    if (candidat && candidat.length < 25
-        && candidat.toLowerCase() !== nom.toLowerCase()
-        && candidat.toLowerCase() !== fabricant.toLowerCase()) {
-      couleur = candidat;
-    }
-  }
-
-  // ── Dimensions ───────────────────────────────────────────────────────────
-  let dimensions = ld.size || og('size') ||
-    doc.querySelector('meta[name="dimensions"]')?.content || '';
-  // Fallback : reconstruire depuis tableau Longueur/Largeur/Hauteur
-  if (!dimensions) {
-    const dims = {};
-    const labels = doc.querySelectorAll('td, th, dt');
-    for (const el of labels) {
-      const txt = el.textContent.trim().toLowerCase();
-      const next = el.nextElementSibling || el.parentElement?.nextElementSibling;
-      const val  = next?.textContent?.trim().replace(/\s+/g, ' ');
-      if (/^(longueur|length)$/.test(txt) && val) dims.l = val;
-      if (/^(largeur|width)$/.test(txt)   && val) dims.w = val;
-      if (/^(hauteur|height)$/.test(txt)  && val) dims.h = val;
-      if (/^(profondeur|depth)$/.test(txt) && val) dims.d = val;
-    }
-    const parts = [];
-    if (dims.l) parts.push(`L: ${dims.l}`);
-    if (dims.w) parts.push(`l: ${dims.w}`);
-    if (dims.h) parts.push(`H: ${dims.h}`);
-    if (dims.d) parts.push(`P: ${dims.d}`);
-    if (parts.length) dimensions = parts.join(' × ');
-  }
-
-  return { nom, fabricant, modele, sku, prix, photo, couleur, dimensions };
 }
 
 // Surligne les champs de spec restés vides pour guider la vérification.

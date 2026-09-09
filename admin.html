@@ -2019,35 +2019,76 @@ async function importerParURL() {
   statusEl.innerHTML = '<span class="spinner"></span> Extraction en cours…';
 
   try {
-    // Essayer plusieurs proxies CORS en séquence
-    const proxies = [
-      async (u) => {
-        const r = await fetch(`https://corsproxy.io/?${encodeURIComponent(u)}`, { signal: AbortSignal.timeout(10000) });
-        if (!r.ok) throw new Error('corsproxy.io: ' + r.status);
-        return r.text();
-      },
-      async (u) => {
-        const r = await fetch(`https://api.allorigins.win/get?url=${encodeURIComponent(u)}`, { signal: AbortSignal.timeout(10000) });
-        const d = await r.json();
-        if (!d.contents) throw new Error('allorigins: vide');
-        return d.contents;
-      },
-      async (u) => {
-        const r = await fetch(`https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(u)}`, { signal: AbortSignal.timeout(10000) });
-        if (!r.ok) throw new Error('codetabs: ' + r.status);
-        return r.text();
-      }
-    ];
+    let specs = null;
 
-    let html = null;
-    for (const proxy of proxies) {
-      try { html = await proxy(url); if (html && html.length > 500) break; } catch(e) { console.warn('Proxy échoué:', e.message); }
+    // ── Shopify : API JSON via proxy (évite les restrictions CORS) ──
+    const urlObj = new URL(url);
+    const shopifyMatch = urlObj.pathname.match(/\/products\/([^/?#]+)/);
+    if (shopifyMatch) {
+      try {
+        const handle = shopifyMatch[1];
+        const jsonUrl = `${urlObj.origin}/products/${handle}.json`;
+        // On passe par corsproxy.io pour éviter les blocages CORS
+        const proxyJsonUrl = `https://corsproxy.io/?${encodeURIComponent(jsonUrl)}`;
+        const resp = await fetch(proxyJsonUrl, { signal: AbortSignal.timeout(12000) });
+        if (resp.ok) {
+          const data = await resp.json();
+          const product = data.product;
+          if (product) {
+            const variantId = urlObj.searchParams.get('variant');
+            const variant = variantId
+              ? product.variants?.find(v => String(v.id) === variantId) || product.variants?.[0]
+              : product.variants?.[0];
+            // Trouver l'image liée à cette variante spécifique
+            const variantImageId = variant?.image_id;
+            const variantImage = variantImageId
+              ? product.images?.find(img => img.id === variantImageId)
+              : null;
+            const photo = variantImage?.src || product.images?.[0]?.src || '';
+            specs = {
+              nom        : product.title || '',
+              fabricant  : product.vendor || '',
+              modele     : (variant?.title && variant.title !== 'Default Title') ? variant.title : '',
+              sku        : variant?.sku || '',
+              prix       : variant?.price ? String(parseFloat(variant.price)) : '',
+              photo      : photo,
+              couleur    : variant?.option2 || '',
+              dimensions : ''
+            };
+          }
+        }
+      } catch(e) { console.warn('Shopify API:', e.message); }
     }
-    if (!html || html.length < 500) throw new Error('Tous les proxies ont échoué');
 
-    const parser = new DOMParser();
-    const doc = parser.parseFromString(html, 'text/html');
-    const specs = extraireSpecsProduit(doc, url);
+    // ── Fallback proxy pour les sites non-Shopify ──
+    if (!specs) {
+      const proxies = [
+        async (u) => {
+          const r = await fetch(`https://corsproxy.io/?${encodeURIComponent(u)}`, { signal: AbortSignal.timeout(10000) });
+          if (!r.ok) throw new Error('corsproxy.io: ' + r.status);
+          return r.text();
+        },
+        async (u) => {
+          const r = await fetch(`https://api.allorigins.win/get?url=${encodeURIComponent(u)}`, { signal: AbortSignal.timeout(10000) });
+          const d = await r.json();
+          if (!d.contents) throw new Error('allorigins: vide');
+          return d.contents;
+        },
+        async (u) => {
+          const r = await fetch(`https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(u)}`, { signal: AbortSignal.timeout(10000) });
+          if (!r.ok) throw new Error('codetabs: ' + r.status);
+          return r.text();
+        }
+      ];
+      let html = null;
+      for (const proxy of proxies) {
+        try { html = await proxy(url); if (html && html.length > 500) break; } catch(e) { console.warn('Proxy échoué:', e.message); }
+      }
+      if (!html || html.length < 500) throw new Error('Extraction impossible');
+      const parser = new DOMParser();
+      const doc = parser.parseFromString(html, 'text/html');
+      specs = extraireSpecsProduit(doc, url);
+    }
 
     resetModalProduit();
     const set = (id, val) => { if (val) { const el = document.getElementById(id); if (el) el.value = val; } };

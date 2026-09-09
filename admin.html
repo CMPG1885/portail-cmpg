@@ -1907,7 +1907,11 @@ async function chargerProduits() {
     .order('created_at', { ascending: false });
 
   produitsCache = data || [];
-  renderProduits(produitsCache);
+  // Ré-appliquer les filtres en cours plutôt que de tout ré-afficher : sinon, après
+  // une sauvegarde, la liste redevenait complète alors que le menu affichait encore
+  // « Prix à vérifier ». Re-choisir la même option ne déclenchait aucun événement,
+  // il fallait recharger la page.
+  filtrerProduits();
   afficherBandeauRevalidation();
 }
 
@@ -2027,10 +2031,11 @@ function renderProduits(produits) {
 }
 
 function filtrerProduits() {
-  const q      = document.getElementById('search-produits').value.toLowerCase();
-  const cat    = document.getElementById('filter-categorie').value;
-  const sCat   = document.getElementById('filter-sous-cat').value;
-  const statut = document.getElementById('filter-statut').value;
+  const val    = id => document.getElementById(id)?.value || '';
+  const q      = val('search-produits').toLowerCase();
+  const cat    = val('filter-categorie');
+  const sCat   = val('filter-sous-cat');
+  const statut = val('filter-statut');
   const filtered = produitsCache.filter(p => {
     const matchQ  = !q      || [p.nom, p.fabricant, p.modele, p.sku].some(v => v && v.toLowerCase().includes(q));
     const matchC  = !cat    || p.categorie_id === cat;

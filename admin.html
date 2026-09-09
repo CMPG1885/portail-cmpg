@@ -485,8 +485,10 @@ body { font-family: 'Roboto', sans-serif; background: var(--fond); color: var(--
           <select id="filter-statut" onchange="filtrerProduits()">
             <option value="">Tous les statuts</option>
             <option value="actif">Actif</option>
-            <option value="prix_a_verifier">Prix à vérifier</option>
             <option value="discontinue">Discontinué</option>
+            <option value="prix_a_verifier">⚠ Prix à vérifier</option>
+            <option value="suggerer_discontinue">⚠ Discontinué ?</option>
+            <option value="sans_prix">⚠ Sans prix</option>
           </select>
         </div>
 
@@ -776,9 +778,12 @@ body { font-family: 'Roboto', sans-serif; background: var(--fond); color: var(--
           <label>Statut</label>
           <select id="ap-statut">
             <option value="actif">Actif</option>
-            <option value="prix_a_verifier">Prix à vérifier</option>
             <option value="discontinue">Discontinué</option>
           </select>
+          <div style="font-size:11px;color:var(--texte-2);margin-top:3px">
+            « Prix à vérifier » n'est pas un statut : c'est un drapeau posé par la
+            revalidation, que toute sauvegarde efface.
+          </div>
         </div>
         <div class="form-group form-full">
           <label>Notes internes</label>
@@ -2030,7 +2035,14 @@ function filtrerProduits() {
     const matchQ  = !q      || [p.nom, p.fabricant, p.modele, p.sku].some(v => v && v.toLowerCase().includes(q));
     const matchC  = !cat    || p.categorie_id === cat;
     const matchSC = !sCat   || p.sous_categorie_id === sCat;
-    const matchSt = !statut || (p.statut || 'actif') === statut;
+    // Le menu mêle deux notions : le statut réel du produit (actif / discontinué),
+    // et les drapeaux posés par la revalidation, qui sont des colonnes booléennes
+    // distinctes. Les comparer à p.statut ne donnait jamais rien.
+    const matchSt = !statut
+      || (statut === 'prix_a_verifier'      ? !!p.prix_a_verifier
+       :  statut === 'suggerer_discontinue' ? !!p.suggerer_discontinue
+       :  statut === 'sans_prix'            ? (p.prix == null || p.prix === '')
+       :  (p.statut || 'actif') === statut);
     return matchQ && matchC && matchSC && matchSt;
   });
   renderProduits(filtered);

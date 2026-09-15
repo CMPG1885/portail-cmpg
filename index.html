@@ -1,0 +1,155 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Portail CMPG — Conception MPG</title>
+<meta name="description" content="Portail de suivi des projets de Conception MPG. Accès à l'espace client et à l'administration.">
+<meta name="robots" content="index,follow">
+<link rel="canonical" href="https://portail.conceptionmpg.com/">
+<link href="https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;500;700&family=Noto+Serif+Display:ital,wght@0,400;0,700;1,400&display=swap" rel="stylesheet">
+<style>
+:root {
+  --charcoal: #3A3B3A;
+  --taupe: #9A8C7E;
+  --blanc: #FFFFFF;
+  --fond: #F5F4EE;
+  --bord: #E3DFD8;
+  --texte: #3A3B3A;
+  --texte-2: #706862;
+}
+* { box-sizing: border-box; margin: 0; padding: 0; }
+
+body {
+  font-family: 'Roboto', sans-serif;
+  background: var(--charcoal);
+  color: var(--texte);
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+}
+
+.carte {
+  background: var(--blanc);
+  width: 100%;
+  max-width: 460px;
+  padding: 52px 44px 40px;
+  box-shadow: 0 8px 40px rgba(0,0,0,.3);
+}
+
+.logo { text-align: center; margin-bottom: 40px; }
+.logo h1 {
+  font-family: 'Noto Serif Display', serif;
+  font-size: 30px;
+  color: var(--charcoal);
+  letter-spacing: 3px;
+}
+.logo p {
+  font-size: 11px;
+  letter-spacing: 3px;
+  text-transform: uppercase;
+  color: var(--taupe);
+  margin-top: 6px;
+}
+
+.intro {
+  font-size: 14px;
+  line-height: 1.65;
+  color: var(--texte-2);
+  text-align: center;
+  margin-bottom: 34px;
+}
+
+.acces { display: flex; flex-direction: column; gap: 14px; }
+
+.lien {
+  display: block;
+  padding: 18px 20px;
+  border: 1px solid var(--bord);
+  text-decoration: none;
+  color: var(--texte);
+  transition: border-color .2s, background .2s;
+}
+.lien:hover, .lien:focus-visible {
+  border-color: var(--taupe);
+  background: var(--fond);
+  outline: none;
+}
+.lien .titre {
+  font-size: 13px;
+  letter-spacing: 1.5px;
+  text-transform: uppercase;
+  font-weight: 500;
+}
+.lien .desc {
+  font-size: 12.5px;
+  color: var(--texte-2);
+  margin-top: 5px;
+  line-height: 1.5;
+}
+.lien.principal {
+  background: var(--charcoal);
+  border-color: var(--charcoal);
+  color: var(--blanc);
+}
+.lien.principal .desc { color: #C7C8CA; }
+.lien.principal:hover, .lien.principal:focus-visible {
+  background: #4a4b4a;
+  border-color: #4a4b4a;
+}
+
+.pied {
+  margin-top: 36px;
+  padding-top: 22px;
+  border-top: 1px solid var(--bord);
+  text-align: center;
+  font-size: 12px;
+  color: var(--texte-2);
+  line-height: 1.8;
+}
+.pied a { color: var(--taupe); text-decoration: none; }
+.pied a:hover { text-decoration: underline; }
+
+@media (max-width: 520px) {
+  .carte { padding: 40px 26px 32px; }
+  .logo h1 { font-size: 25px; }
+}
+</style>
+</head>
+<body>
+
+<main class="carte">
+  <div class="logo">
+    <h1>CMPG</h1>
+    <p>Conception MPG</p>
+  </div>
+
+  <p class="intro">
+    Portail de suivi des projets de design intérieur.
+    Consultez vos sélections, approuvez les produits proposés
+    et suivez l'avancement de votre projet.
+  </p>
+
+  <nav class="acces">
+    <a class="lien principal" href="client.html">
+      <div class="titre">Espace client</div>
+      <div class="desc">Consulter et approuver les sélections de votre projet</div>
+    </a>
+
+    <a class="lien" href="admin.html">
+      <div class="titre">Administration</div>
+      <div class="desc">Réservé à l'équipe de Conception MPG</div>
+    </a>
+  </nav>
+
+  <div class="pied">
+    Conception MPG<br>
+    <a href="tel:+14504556006">450 455-6006</a> &nbsp;·&nbsp;
+    <a href="mailto:info@conceptionmpg.ca">info@conceptionmpg.ca</a>
+  </div>
+</main>
+
+</body>
+</html>

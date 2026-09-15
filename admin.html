@@ -328,6 +328,29 @@ body { font-family: 'Roboto', sans-serif; background: var(--fond); color: var(--
   </div>
 </div>
 
+<!-- ÉCRAN 2FA — s'affiche seulement si le compte a la double authentification active -->
+<div id="mfa-screen" style="display:none;min-height:100vh;align-items:center;justify-content:center;background:var(--charcoal)">
+  <div class="auth-card">
+    <div class="auth-logo">
+      <h1>CMPG</h1>
+      <p>Vérification en deux étapes</p>
+    </div>
+    <p style="font-size:13px;color:var(--texte-2);text-align:center;margin-bottom:18px;line-height:1.6">
+      Ouvrez votre application d'authentification et saisissez le code à 6 chiffres.
+    </p>
+    <input type="text" id="mfa-code" placeholder="000000" inputmode="numeric"
+           autocomplete="one-time-code" maxlength="6"
+           style="text-align:center;font-size:24px;letter-spacing:8px;font-family:monospace" />
+    <button class="btn-primary" onclick="verifierMfa()">Vérifier</button>
+    <div id="mfa-error" style="color:#c0392b;font-size:13px;margin-top:8px;text-align:center"></div>
+    <button onclick="annulerMfa()"
+            style="width:100%;margin-top:14px;padding:10px;background:none;border:none;
+                   color:var(--texte-2);font-size:12px;cursor:pointer;text-decoration:underline">
+      Annuler et revenir à la connexion
+    </button>
+  </div>
+</div>
+
 <!-- APP -->
 <div id="app">
   <!-- Sidebar -->
@@ -355,6 +378,8 @@ body { font-family: 'Roboto', sans-serif; background: var(--fond); color: var(--
           <span class="notif-badge" id="notif-badge">0</span>
         </button>
       </div>
+      <button class="btn-signout" onclick="ouvrirModalMfa()"
+              style="margin-bottom:8px" id="btn-securite">🔒 Sécurité</button>
       <button class="btn-signout" onclick="logout()">Déconnexion</button>
     </div>
   </aside>
@@ -646,6 +671,82 @@ body { font-family: 'Roboto', sans-serif; background: var(--fond); color: var(--
 </div>
 
 <!-- Modal Nouveau Client -->
+<!-- SÉCURITÉ — activation / désactivation de la double authentification -->
+<div id="modal-mfa" class="modal-overlay">
+  <div class="modal" style="max-width:460px">
+    <div class="modal-header">
+      <h3>Sécurité du compte</h3>
+      <button class="modal-close" onclick="closeModal('modal-mfa')">×</button>
+    </div>
+    <div class="modal-body">
+
+      <!-- État : 2FA déjà active -->
+      <div id="mfa-actif" style="display:none">
+        <div style="padding:16px;background:#e6f4ec;border:1px solid var(--success);margin-bottom:16px">
+          <div style="font-size:13px;font-weight:500;color:var(--success)">
+            ✓ La double authentification est active
+          </div>
+          <div style="font-size:12.5px;color:var(--texte-2);margin-top:6px;line-height:1.6">
+            Un code de votre application d'authentification vous sera demandé à
+            chaque connexion.
+          </div>
+        </div>
+        <button class="btn btn-outline" onclick="desactiverMfa()"
+                style="color:var(--danger);border-color:var(--danger)">
+          Désactiver la double authentification
+        </button>
+      </div>
+
+      <!-- État : activation en cours -->
+      <div id="mfa-inactif" style="display:none">
+        <p style="font-size:13px;color:var(--texte-2);line-height:1.65;margin-bottom:16px">
+          Sans double authentification, votre mot de passe est la seule barrière
+          entre un inconnu et l'ensemble des projets et clients de CMPG.
+          L'activer prend deux minutes.
+        </p>
+        <p style="font-size:13px;color:var(--texte-2);line-height:1.65;margin-bottom:16px">
+          <strong>1.</strong> Installez une application d'authentification sur votre
+          téléphone si vous n'en avez pas : Google Authenticator, Microsoft
+          Authenticator ou 1Password font tous l'affaire.
+        </p>
+        <button class="btn btn-dark" onclick="demarrerActivationMfa()" id="btn-demarrer-mfa">
+          Commencer l'activation
+        </button>
+
+        <!-- Code QR + vérification -->
+        <div id="mfa-enrolement" style="display:none;margin-top:20px">
+          <p style="font-size:13px;color:var(--texte-2);line-height:1.65;margin-bottom:12px">
+            <strong>2.</strong> Scannez ce code avec votre application :
+          </p>
+          <div style="text-align:center;padding:16px;background:var(--blanc);border:1px solid var(--bord)">
+            <img id="mfa-qr" alt="Code QR d'activation" style="width:200px;height:200px" />
+          </div>
+          <details style="margin-top:10px">
+            <summary style="font-size:12px;color:var(--texte-2);cursor:pointer">
+              Impossible de scanner? Saisir la clé à la main
+            </summary>
+            <div id="mfa-secret"
+                 style="font-family:monospace;font-size:12px;word-break:break-all;
+                        padding:10px;background:var(--fond);margin-top:8px;
+                        border:1px solid var(--bord)"></div>
+          </details>
+          <p style="font-size:13px;color:var(--texte-2);line-height:1.65;margin:16px 0 8px">
+            <strong>3.</strong> Saisissez le code à 6 chiffres affiché :
+          </p>
+          <input type="text" id="mfa-enrol-code" placeholder="000000" inputmode="numeric" maxlength="6"
+                 style="width:100%;padding:12px;border:1px solid var(--bord);text-align:center;
+                        font-size:22px;letter-spacing:6px;font-family:monospace" />
+          <button class="btn btn-dark" onclick="confirmerActivationMfa()" style="margin-top:12px">
+            Activer
+          </button>
+        </div>
+      </div>
+
+      <div id="mfa-modal-msg" style="font-size:13px;margin-top:12px;text-align:center"></div>
+    </div>
+  </div>
+</div>
+
 <div id="modal-nouveau-client" class="modal-overlay">
   <div class="modal">
     <div class="modal-header">
@@ -944,7 +1045,185 @@ async function login() {
     errEl.textContent = 'Accès refusé. Ce portail est réservé à l\'équipe CMPG.';
     return;
   }
+
+  // Double authentification : exigée seulement si ce compte l'a activée.
+  // Un compte sans facteur enregistré entre directement — personne n'est
+  // bloqué tant qu'il n'a pas choisi d'activer la 2FA.
+  if (await exigeMfa()) { afficherEcranMfa(); return; }
+
   initApp(data.user);
+}
+
+// Retourne true si la session doit être élevée d'un cran (aal1 -> aal2),
+// c'est-à-dire si le compte a un facteur 2FA enregistré mais pas encore vérifié
+// pour cette session.
+async function exigeMfa() {
+  try {
+    const { data, error } = await db.auth.mfa.getAuthenticatorAssuranceLevel();
+    if (error) return false;   // en cas de doute, ne pas bloquer l'accès
+    return data.nextLevel === 'aal2' && data.nextLevel !== data.currentLevel;
+  } catch (e) {
+    return false;
+  }
+}
+
+function afficherEcranMfa() {
+  document.getElementById('auth-screen').style.display = 'none';
+  document.getElementById('app').style.display = 'none';
+  const el = document.getElementById('mfa-screen');
+  el.style.display = 'flex';
+  document.getElementById('mfa-error').textContent = '';
+  const champ = document.getElementById('mfa-code');
+  champ.value = '';
+  champ.focus();
+}
+
+async function verifierMfa() {
+  const errEl = document.getElementById('mfa-error');
+  const code = document.getElementById('mfa-code').value.replace(/\D/g, '');
+  if (code.length !== 6) { errEl.textContent = 'Le code compte 6 chiffres.'; return; }
+  errEl.textContent = 'Vérification…';
+
+  try {
+    const { data: facteurs, error: errF } = await db.auth.mfa.listFactors();
+    if (errF) throw errF;
+    const totp = facteurs?.totp?.[0];
+    if (!totp) throw new Error('Aucune application d\'authentification enregistrée.');
+
+    const { data: ch, error: errC } = await db.auth.mfa.challenge({ factorId: totp.id });
+    if (errC) throw errC;
+
+    const { error: errV } = await db.auth.mfa.verify({
+      factorId: totp.id, challengeId: ch.id, code,
+    });
+    if (errV) throw errV;
+
+    document.getElementById('mfa-screen').style.display = 'none';
+    const { data: { user } } = await db.auth.getUser();
+    initApp(user);
+  } catch (e) {
+    errEl.textContent = 'Code refusé. Vérifiez l\'heure de votre téléphone et réessayez.';
+    document.getElementById('mfa-code').value = '';
+    document.getElementById('mfa-code').focus();
+  }
+}
+
+async function annulerMfa() {
+  await db.auth.signOut();
+  document.getElementById('mfa-screen').style.display = 'none';
+  document.getElementById('auth-screen').style.display = 'flex';
+}
+
+// La touche Entrée valide les champs de code, et la saisie se limite aux
+// chiffres — les codes collés depuis un gestionnaire de mots de passe
+// contiennent parfois une espace.
+document.addEventListener('DOMContentLoaded', () => {
+  const brancher = (idChamp, action) => {
+    const el = document.getElementById(idChamp);
+    if (!el) return;
+    el.addEventListener('input', () => { el.value = el.value.replace(/\D/g, ''); });
+    el.addEventListener('keydown', e => { if (e.key === 'Enter') action(); });
+  };
+  brancher('mfa-code', verifierMfa);
+  brancher('mfa-enrol-code', confirmerActivationMfa);
+});
+
+// ============================================================
+// SÉCURITÉ — activation / désactivation de la 2FA
+// ============================================================
+let _mfaFactorId = null;
+
+async function ouvrirModalMfa() {
+  document.getElementById('mfa-modal-msg').textContent = '';
+  document.getElementById('mfa-enrolement').style.display = 'none';
+  _mfaFactorId = null;
+
+  const { data } = await db.auth.mfa.listFactors();
+  // Un facteur « verified » est actif. Un facteur « unverified » est le vestige
+  // d'une activation abandonnée : on le traite comme inexistant, et on le
+  // nettoiera au prochain enrôlement.
+  const actif = data?.totp?.some(f => f.status === 'verified');
+
+  document.getElementById('mfa-actif').style.display   = actif ? 'block' : 'none';
+  document.getElementById('mfa-inactif').style.display = actif ? 'none'  : 'block';
+  openModal('modal-mfa');
+}
+
+async function demarrerActivationMfa() {
+  const msg = document.getElementById('mfa-modal-msg');
+  msg.textContent = 'Préparation…';
+  msg.style.color = 'var(--texte-2)';
+
+  try {
+    // Purger les enrôlements inachevés : Supabase refuse un nouvel enrôlement
+    // tant qu'un facteur non vérifié traîne sur le compte.
+    const { data: existants } = await db.auth.mfa.listFactors();
+    for (const f of (existants?.totp || [])) {
+      if (f.status !== 'verified') await db.auth.mfa.unenroll({ factorId: f.id });
+    }
+
+    const { data, error } = await db.auth.mfa.enroll({
+      factorType: 'totp',
+      friendlyName: 'Portail CMPG ' + Date.now(),
+    });
+    if (error) throw error;
+
+    _mfaFactorId = data.id;
+    document.getElementById('mfa-qr').src = data.totp.qr_code;
+    document.getElementById('mfa-secret').textContent = data.totp.secret;
+    document.getElementById('mfa-enrolement').style.display = 'block';
+    document.getElementById('btn-demarrer-mfa').style.display = 'none';
+    msg.textContent = '';
+    document.getElementById('mfa-enrol-code').focus();
+  } catch (e) {
+    msg.style.color = 'var(--danger)';
+    msg.textContent = 'Erreur : ' + (e.message || 'impossible de démarrer l\'activation.');
+  }
+}
+
+async function confirmerActivationMfa() {
+  const msg = document.getElementById('mfa-modal-msg');
+  const code = document.getElementById('mfa-enrol-code').value.replace(/\D/g, '');
+  if (code.length !== 6) {
+    msg.style.color = 'var(--danger)';
+    msg.textContent = 'Le code compte 6 chiffres.';
+    return;
+  }
+  msg.style.color = 'var(--texte-2)';
+  msg.textContent = 'Vérification…';
+
+  try {
+    const { data: ch, error: errC } = await db.auth.mfa.challenge({ factorId: _mfaFactorId });
+    if (errC) throw errC;
+    const { error: errV } = await db.auth.mfa.verify({
+      factorId: _mfaFactorId, challengeId: ch.id, code,
+    });
+    if (errV) throw errV;
+
+    toast('Double authentification activée.', 'success');
+    closeModal('modal-mfa');
+  } catch (e) {
+    msg.style.color = 'var(--danger)';
+    msg.textContent = 'Code refusé. Vérifiez l\'heure de votre téléphone et réessayez.';
+    document.getElementById('mfa-enrol-code').value = '';
+    document.getElementById('mfa-enrol-code').focus();
+  }
+}
+
+async function desactiverMfa() {
+  if (!confirm('Désactiver la double authentification ?\n\nVotre compte ne sera plus protégé que par son mot de passe.')) return;
+  const msg = document.getElementById('mfa-modal-msg');
+  try {
+    const { data } = await db.auth.mfa.listFactors();
+    for (const f of (data?.totp || [])) {
+      await db.auth.mfa.unenroll({ factorId: f.id });
+    }
+    toast('Double authentification désactivée.', 'success');
+    closeModal('modal-mfa');
+  } catch (e) {
+    msg.style.color = 'var(--danger)';
+    msg.textContent = 'Erreur : ' + (e.message || 'désactivation impossible.');
+  }
 }
 
 async function logout() {
@@ -962,6 +1241,11 @@ async function checkAuth() {
     await db.auth.signOut();
     return;
   }
+
+  // Sans ce contrôle, un simple rechargement de page contournerait la 2FA :
+  // la session existe déjà, mais elle est encore au niveau aal1.
+  if (await exigeMfa()) { afficherEcranMfa(); return; }
+
   initApp(session.user);
 }
 

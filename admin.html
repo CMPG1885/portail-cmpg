@@ -597,6 +597,7 @@ body { font-family: 'Roboto', sans-serif; background: var(--fond); color: var(--
             <option value="">Tous les prix</option>
             <option value="sans">⚠ Sans prix</option>
             <option value="avec">Avec prix</option>
+            <option value="archivees">🗄 Archivées</option>
           </select>
         </div>
 
@@ -1403,7 +1404,7 @@ let tachesRefCache = [];
 async function chargerReferentiel() {
   const [{ data: postes }, { data: taches }] = await Promise.all([
     db.from('ddn_postes').select('*').eq('actif', true).order('ordre'),
-    db.from('catalogue_taches').select('*').eq('actif', true).order('ordre'),
+    db.from('catalogue_taches').select('*').order('ordre'),
   ]);
   postesRefCache = postes || [];
   tachesRefCache = taches || [];
@@ -1426,6 +1427,8 @@ function filtrerReferentiel() {
                      || (t.prix_main_oeuvre != null && t.prix_main_oeuvre > 0);
 
   const filtrees = tachesRefCache.filter(t => {
+    // Une tâche archivée reste en base mais n'apparaît que sur demande.
+    if (etat === 'archivees' ? t.actif : !t.actif) return false;
     if (poste && t.poste_id !== poste) return false;
     if (q && !t.libelle.toLowerCase().includes(q)) return false;
     if (etat === 'sans' && aUnPrix(t)) return false;
@@ -1434,8 +1437,9 @@ function filtrerReferentiel() {
   });
 
   // Compteur d'avancement : combien de tâches ont déjà un prix
-  const total = tachesRefCache.length;
-  const faits = tachesRefCache.filter(aUnPrix).length;
+  const actives = tachesRefCache.filter(t => t.actif);
+  const total = actives.length;
+  const faits = actives.filter(aUnPrix).length;
   const pct = total ? Math.round(faits / total * 100) : 0;
   document.getElementById('ref-stats').innerHTML =
     `<strong>${faits}</strong> tâche(s) sur <strong>${total}</strong> ont un prix (${pct} %)` +
@@ -1502,7 +1506,13 @@ function ligneReferentiel(t) {
       <td>${champ(t.prix_materiaux, 'prix_materiaux')}</td>
       <td>${champ(t.prix_main_oeuvre, 'prix_main_oeuvre')}</td>
       <td style="font-size:12px">${maj}</td>
-      <td><button class="btn btn-outline btn-sm" onclick="ouvrirModalTache('${t.id}')" title="Modifier">✏️</button></td>
+      <td style="white-space:nowrap">
+        ${t.actif
+          ? `<button class="btn btn-outline btn-sm" onclick="ouvrirModalTache('${t.id}')" title="Modifier">✏️</button>
+             <button class="btn btn-outline btn-sm" style="color:var(--danger);border-color:var(--danger)"
+                     onclick="supprimerTache('${t.id}')" title="Supprimer">🗑</button>`
+          : `<button class="btn btn-outline btn-sm" onclick="restaurerTache('${t.id}')" title="Restaurer">↩ Restaurer</button>`}
+      </td>
     </tr>`;
 }
 
@@ -1520,6 +1530,29 @@ async function majPrixTache(id, champ, valeur) {
   const t = tachesRefCache.find(x => x.id === id);
   if (t) { t[champ] = v; t.prix_maj_le = payload.prix_maj_le; }
   filtrerReferentiel();   // met à jour le compteur d'avancement
+}
+
+// Suppression réversible : la tâche sort de la liste mais reste en base.
+// Indispensable pour la suite — quand les estimations référenceront ces tâches,
+// une suppression définitive casserait les budgets déjà montés.
+async function supprimerTache(id) {
+  const t = tachesRefCache.find(x => x.id === id);
+  if (!confirm(`Supprimer « ${t?.libelle || 'cette tâche'} » du référentiel ?\n\n`
+             + `Elle restera récupérable par le filtre « Archivées ».`)) return;
+  const { error } = await db.from('catalogue_taches').update({ actif: false }).eq('id', id);
+  if (error) { toast('Erreur : ' + error.message, 'error'); return; }
+  if (t) t.actif = false;
+  toast('Tâche supprimée.', 'success');
+  filtrerReferentiel();
+}
+
+async function restaurerTache(id) {
+  const { error } = await db.from('catalogue_taches').update({ actif: true }).eq('id', id);
+  if (error) { toast('Erreur : ' + error.message, 'error'); return; }
+  const t = tachesRefCache.find(x => x.id === id);
+  if (t) t.actif = true;
+  toast('Tâche restaurée.', 'success');
+  filtrerReferentiel();
 }
 
 let editingTacheId = null;

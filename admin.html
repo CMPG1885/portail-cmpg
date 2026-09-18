@@ -369,6 +369,9 @@ body { font-family: 'Roboto', sans-serif; background: var(--fond); color: var(--
       <a class="nav-item" onclick="showView('clients')" href="#">
         <span class="nav-icon">👤</span> Clients
       </a>
+      <a class="nav-item" onclick="showView('referentiel')" href="#">
+        <span class="nav-icon">💲</span> Référentiel budget
+      </a>
     </nav>
     <div class="sidebar-bottom">
       <div class="user-email" id="user-email-display"></div>
@@ -565,6 +568,44 @@ body { font-family: 'Roboto', sans-serif; background: var(--fond); color: var(--
       </div>
     </div>
 
+    <!-- ===== RÉFÉRENTIEL BUDGÉTAIRE ===== -->
+    <div id="view-referentiel" class="view">
+      <div class="page-header">
+        <h2>Référentiel budgétaire</h2>
+        <button class="btn btn-dark" onclick="ouvrirModalTache()">+ Nouvelle tâche</button>
+      </div>
+      <div class="page-body">
+
+        <div class="card" style="margin-bottom:20px">
+          <div style="font-size:13px;color:var(--texte-2);line-height:1.7">
+            Les prix saisis ici sont des <strong>prix de référence</strong>. Ils se
+            pré-remplissent au moment de monter une estimation, où ils restent
+            modifiables sans que le référentiel en soit affecté.
+            <br>
+            La <strong>fourniture</strong> est le coût du matériau, la <strong>pose</strong>
+            celui de la main-d'œuvre. Les deux s'entendent par unité de mesure de la tâche.
+          </div>
+        </div>
+
+        <div style="display:flex;gap:12px;margin-bottom:16px;flex-wrap:wrap">
+          <input type="text" id="ref-recherche" placeholder="Rechercher une tâche…"
+                 oninput="filtrerReferentiel()" style="flex:1;min-width:240px;padding:11px 14px;border:1px solid var(--bord)" />
+          <select id="ref-filtre-poste" onchange="filtrerReferentiel()" style="min-width:220px">
+            <option value="">Tous les postes</option>
+          </select>
+          <select id="ref-filtre-etat" onchange="filtrerReferentiel()" style="min-width:180px">
+            <option value="">Tous les prix</option>
+            <option value="sans">⚠ Sans prix</option>
+            <option value="avec">Avec prix</option>
+          </select>
+        </div>
+
+        <div id="ref-stats" style="font-size:12px;color:var(--texte-2);margin-bottom:12px"></div>
+
+        <div id="ref-contenu"></div>
+      </div>
+    </div>
+
   </div><!-- fin main-content -->
 </div><!-- fin app -->
 
@@ -671,6 +712,76 @@ body { font-family: 'Roboto', sans-serif; background: var(--fond); color: var(--
 </div>
 
 <!-- Modal Nouveau Client -->
+<!-- RÉFÉRENTIEL — ajouter ou modifier une tâche du catalogue -->
+<div id="modal-tache" class="modal-overlay">
+  <div class="modal" style="max-width:560px">
+    <div class="modal-header">
+      <h3 id="mt-titre">Nouvelle tâche</h3>
+      <button class="modal-close" onclick="closeModal('modal-tache')">×</button>
+    </div>
+    <div class="modal-body">
+      <div class="form-grid">
+        <div class="form-group form-full">
+          <label>Poste DDN *</label>
+          <select id="mt-poste"></select>
+        </div>
+        <div class="form-group form-full">
+          <label>Libellé de la tâche *</label>
+          <input type="text" id="mt-libelle" placeholder="Fournir et installer isolation de plancher" />
+        </div>
+        <div class="form-group">
+          <label>Type</label>
+          <select id="mt-type">
+            <option value="materiaux">Fourniture (matériau)</option>
+            <option value="main_oeuvre">Pose (main-d'œuvre)</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label>Unité</label>
+          <select id="mt-unite">
+            <option value="">—</option>
+            <option value="PC">PC — pied carré</option>
+            <option value="PL">PL — pied linéaire</option>
+            <option value="UN">UN — unité</option>
+            <option value="LS">LS — forfait</option>
+            <option value="M3">M3 — mètre cube</option>
+            <option value="KG">KG</option>
+            <option value="TM">TM — tonne métrique</option>
+            <option value="%">% — pourcentage</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label>Prix fourniture ($)</label>
+          <input type="number" id="mt-prix-mat" step="0.01" min="0" placeholder="3.47" />
+        </div>
+        <div class="form-group">
+          <label>Prix pose ($)</label>
+          <input type="number" id="mt-prix-mo" step="0.01" min="0" placeholder="1.13" />
+        </div>
+        <div class="form-group form-full">
+          <label>Catégorie par défaut</label>
+          <select id="mt-categorie">
+            <option value="COÛTS DE BASE">Coûts de base</option>
+            <option value="CHOIX CLIENT">Choix client</option>
+          </select>
+          <div style="font-size:11px;color:var(--texte-2);margin-top:3px">
+            Détermine la répartition dans le résumé client.
+          </div>
+        </div>
+        <div class="form-group form-full">
+          <label>Notes</label>
+          <textarea id="mt-notes" placeholder="Provenance du prix, hypothèses, fournisseur…"></textarea>
+        </div>
+      </div>
+      <div id="mt-msg" style="font-size:13px;margin-top:10px;text-align:center"></div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-outline" onclick="closeModal('modal-tache')">Annuler</button>
+      <button class="btn btn-dark" onclick="sauvegarderTache()">Enregistrer</button>
+    </div>
+  </div>
+</div>
+
 <!-- SÉCURITÉ — activation / désactivation de la double authentification -->
 <div id="modal-mfa" class="modal-overlay">
   <div class="modal" style="max-width:460px">
@@ -835,6 +946,14 @@ body { font-family: 'Roboto', sans-serif; background: var(--fond); color: var(--
           </select>
           <div style="font-size:11px;color:var(--texte-2);margin-top:3px">
             Le prix ci-dessus est le prix <strong>par unité choisie</strong>. La quantité se saisit dans le projet.
+          </div>
+        </div>
+        <div class="form-group">
+          <label>Perte par défaut (%)</label>
+          <input type="number" id="ap-perte" placeholder="10" step="0.5" min="0" max="100" />
+          <div style="font-size:11px;color:var(--texte-2);margin-top:3px">
+            Surplus à commander pour les coupes et la casse. Laisser à 0 pour ce
+            qui se vend à l'unité. Ajustable par poste.
           </div>
         </div>
         <div class="form-group">
@@ -1269,14 +1388,216 @@ function showView(name) {
   document.getElementById('view-' + name).classList.add('active');
 
   document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
-  const navMap = { projets: 0, banque: 1, clients: 2 };
+  const navMap = { projets: 0, banque: 1, clients: 2, referentiel: 3 };
   const idx = navMap[name];
   if (idx !== undefined) {
     document.querySelectorAll('.nav-item')[idx].classList.add('active');
   }
 
-  if (name === 'banque') chargerProduits();
-  if (name === 'clients') chargerClients();
+  if (name === 'banque')      chargerProduits();
+  if (name === 'clients')     chargerClients();
+  if (name === 'referentiel') chargerReferentiel();
+}
+
+// ============================================================
+// RÉFÉRENTIEL BUDGÉTAIRE
+// Les 41 postes MasterFormat et leur catalogue de tâches, avec les prix
+// de référence (fourniture et pose) que CMPG monte progressivement.
+// ============================================================
+let postesRefCache = [];
+let tachesRefCache = [];
+
+async function chargerReferentiel() {
+  const [{ data: postes }, { data: taches }] = await Promise.all([
+    db.from('ddn_postes').select('*').eq('actif', true).order('ordre'),
+    db.from('catalogue_taches').select('*').eq('actif', true).order('ordre'),
+  ]);
+  postesRefCache = postes || [];
+  tachesRefCache = taches || [];
+
+  // Remplir le filtre de postes une seule fois
+  const sel = document.getElementById('ref-filtre-poste');
+  if (sel && sel.options.length <= 1) {
+    sel.innerHTML = '<option value="">Tous les postes</option>' +
+      postesRefCache.map(p => `<option value="${p.id}">${p.code} — ${p.nom}</option>`).join('');
+  }
+  filtrerReferentiel();
+}
+
+function filtrerReferentiel() {
+  const q     = (document.getElementById('ref-recherche')?.value || '').toLowerCase();
+  const poste = document.getElementById('ref-filtre-poste')?.value || '';
+  const etat  = document.getElementById('ref-filtre-etat')?.value || '';
+
+  const aUnPrix = t => (t.prix_materiaux != null && t.prix_materiaux > 0)
+                     || (t.prix_main_oeuvre != null && t.prix_main_oeuvre > 0);
+
+  const filtrees = tachesRefCache.filter(t => {
+    if (poste && t.poste_id !== poste) return false;
+    if (q && !t.libelle.toLowerCase().includes(q)) return false;
+    if (etat === 'sans' && aUnPrix(t)) return false;
+    if (etat === 'avec' && !aUnPrix(t)) return false;
+    return true;
+  });
+
+  // Compteur d'avancement : combien de tâches ont déjà un prix
+  const total = tachesRefCache.length;
+  const faits = tachesRefCache.filter(aUnPrix).length;
+  const pct = total ? Math.round(faits / total * 100) : 0;
+  document.getElementById('ref-stats').innerHTML =
+    `<strong>${faits}</strong> tâche(s) sur <strong>${total}</strong> ont un prix (${pct} %)` +
+    (filtrees.length !== total ? ` · <strong>${filtrees.length}</strong> affichée(s)` : '');
+
+  renderReferentiel(filtrees);
+}
+
+function renderReferentiel(taches) {
+  const cont = document.getElementById('ref-contenu');
+  if (!taches.length) {
+    cont.innerHTML = `<div class="empty-state"><div class="icon">💲</div>
+      <h3>Aucune tâche</h3><p>Ajustez les filtres ou ajoutez une tâche.</p></div>`;
+    return;
+  }
+  // Regrouper par poste, dans l'ordre du référentiel
+  const parPoste = {};
+  taches.forEach(t => { (parPoste[t.poste_id] = parPoste[t.poste_id] || []).push(t); });
+
+  cont.innerHTML = postesRefCache
+    .filter(p => parPoste[p.id])
+    .map(p => {
+      const lignes = parPoste[p.id].map(t => ligneReferentiel(t)).join('');
+      const n = parPoste[p.id].length;
+      return `
+        <div class="card" style="padding:0;overflow:hidden;margin-bottom:16px">
+          <div style="padding:14px 18px;background:var(--fond);border-bottom:1px solid var(--bord);
+                      display:flex;justify-content:space-between;align-items:center">
+            <div>
+              <span style="font-family:monospace;font-size:12px;color:var(--texte-2)">${p.code}</span>
+              <strong style="margin-left:10px">${p.nom}</strong>
+            </div>
+            <span style="font-size:12px;color:var(--texte-2)">${n} tâche(s)</span>
+          </div>
+          <table class="data-table" style="margin:0">
+            <thead>
+              <tr>
+                <th style="width:42%">Tâche</th>
+                <th style="width:70px">Type</th>
+                <th style="width:70px">Unité</th>
+                <th style="width:120px">Fourniture $</th>
+                <th style="width:120px">Pose $</th>
+                <th style="width:110px">Mise à jour</th>
+                <th style="width:60px"></th>
+              </tr>
+            </thead>
+            <tbody>${lignes}</tbody>
+          </table>
+        </div>`;
+    }).join('');
+}
+
+function ligneReferentiel(t) {
+  const badge = t.type === 'main_oeuvre'
+    ? `<span style="background:#eef0f5;color:#4a5568;font-size:10px;padding:2px 7px;letter-spacing:.5px">POSE</span>`
+    : `<span style="background:#f3efe9;color:#8a7a68;font-size:10px;padding:2px 7px;letter-spacing:.5px">FOURN.</span>`;
+  const maj = t.prix_maj_le
+    ? new Date(t.prix_maj_le).toLocaleDateString('fr-CA')
+    : '<span style="color:var(--texte-2)">—</span>';
+  const champ = (val, champNom) => `
+    <input type="number" step="0.01" min="0" value="${val ?? ''}" placeholder="—"
+           onchange="majPrixTache('${t.id}','${champNom}',this.value)"
+           style="width:100%;padding:7px 9px;border:1px solid var(--bord);text-align:right;font-size:13px" />`;
+  return `
+    <tr>
+      <td>${t.libelle}${t.notes ? `<div style="font-size:11px;color:var(--texte-2);margin-top:3px">${t.notes}</div>` : ''}</td>
+      <td>${badge}</td>
+      <td style="color:var(--texte-2);font-size:12px">${t.unite || '—'}</td>
+      <td>${champ(t.prix_materiaux, 'prix_materiaux')}</td>
+      <td>${champ(t.prix_main_oeuvre, 'prix_main_oeuvre')}</td>
+      <td style="font-size:12px">${maj}</td>
+      <td><button class="btn btn-outline btn-sm" onclick="ouvrirModalTache('${t.id}')" title="Modifier">✏️</button></td>
+    </tr>`;
+}
+
+// Saisie directe dans la grille : on enregistre à la volée et on horodate.
+async function majPrixTache(id, champ, valeur) {
+  const v = valeur === '' ? null : parseFloat(valeur);
+  if (v !== null && (isNaN(v) || v < 0)) { toast('Prix invalide.', 'error'); return; }
+
+  const payload = { [champ]: v, prix_maj_le: new Date().toISOString() };
+  if (v !== null) payload.prix_source = 'manuel';
+
+  const { error } = await db.from('catalogue_taches').update(payload).eq('id', id);
+  if (error) { toast('Erreur : ' + error.message, 'error'); return; }
+
+  const t = tachesRefCache.find(x => x.id === id);
+  if (t) { t[champ] = v; t.prix_maj_le = payload.prix_maj_le; }
+  filtrerReferentiel();   // met à jour le compteur d'avancement
+}
+
+let editingTacheId = null;
+
+function ouvrirModalTache(id) {
+  editingTacheId = id || null;
+  const t = id ? tachesRefCache.find(x => x.id === id) : null;
+
+  document.getElementById('mt-poste').innerHTML =
+    postesRefCache.map(p => `<option value="${p.id}">${p.code} — ${p.nom}</option>`).join('');
+
+  document.getElementById('mt-titre').textContent = t ? 'Modifier la tâche' : 'Nouvelle tâche';
+  document.getElementById('mt-poste').value     = t?.poste_id || (postesRefCache[0]?.id || '');
+  document.getElementById('mt-libelle').value   = t?.libelle || '';
+  document.getElementById('mt-type').value      = t?.type || 'materiaux';
+  document.getElementById('mt-unite').value     = t?.unite || '';
+  document.getElementById('mt-prix-mat').value  = t?.prix_materiaux ?? '';
+  document.getElementById('mt-prix-mo').value   = t?.prix_main_oeuvre ?? '';
+  document.getElementById('mt-categorie').value = t?.categorie_defaut || 'COÛTS DE BASE';
+  document.getElementById('mt-notes').value     = t?.notes || '';
+  document.getElementById('mt-msg').textContent = '';
+  openModal('modal-tache');
+}
+
+async function sauvegarderTache() {
+  const libelle = document.getElementById('mt-libelle').value.trim();
+  const posteId = document.getElementById('mt-poste').value;
+  const msg = document.getElementById('mt-msg');
+  if (!libelle || !posteId) {
+    msg.style.color = 'var(--danger)';
+    msg.textContent = 'Le poste et le libellé sont requis.';
+    return;
+  }
+
+  const prixMat = parseFloat(document.getElementById('mt-prix-mat').value);
+  const prixMo  = parseFloat(document.getElementById('mt-prix-mo').value);
+  const aPrix   = !isNaN(prixMat) || !isNaN(prixMo);
+
+  const payload = {
+    poste_id:         posteId,
+    libelle,
+    type:             document.getElementById('mt-type').value,
+    unite:            document.getElementById('mt-unite').value || null,
+    categorie_defaut: document.getElementById('mt-categorie').value,
+    prix_materiaux:   isNaN(prixMat) ? null : prixMat,
+    prix_main_oeuvre: isNaN(prixMo)  ? null : prixMo,
+    notes:            document.getElementById('mt-notes').value.trim() || null,
+  };
+  // On n'horodate que si un prix est réellement présent.
+  if (aPrix) {
+    payload.prix_maj_le = new Date().toISOString();
+    payload.prix_source = 'manuel';
+  }
+
+  const { error } = editingTacheId
+    ? await db.from('catalogue_taches').update(payload).eq('id', editingTacheId)
+    : await db.from('catalogue_taches').insert(payload);
+
+  if (error) {
+    msg.style.color = 'var(--danger)';
+    msg.textContent = 'Erreur : ' + error.message;
+    return;
+  }
+  closeModal('modal-tache');
+  toast(editingTacheId ? 'Tâche modifiée.' : 'Tâche ajoutée.', 'success');
+  chargerReferentiel();
 }
 
 function showProjetTab(tab, el) {
@@ -1367,12 +1688,21 @@ async function chargerProjets() {
   const progMap = {};
   (progressions || []).forEach(p => { progMap[p.id] = p; });
 
+  // Nombre de postes par projet. La vue vue_progression_projets compte les
+  // OPTIONS produits, pas les postes — d'où la confusion signalée : un projet
+  // de 16 postes affichait « 0/7 », 7 étant le nombre d'options proposées.
+  // On récupère le compte réel pour l'afficher explicitement à côté.
+  const { data: tousPostes } = await db.from('postes').select('projet_id');
+  const nbPostes = {};
+  (tousPostes || []).forEach(p => { nbPostes[p.projet_id] = (nbPostes[p.projet_id] || 0) + 1; });
+
   grid.innerHTML = '';
   projets.forEach(p => {
     const prog = progMap[p.id] || {};
     const total = prog.total_options || 0;
     const approuves = prog.approuves || 0;
     const pct = total > 0 ? Math.round(approuves / total * 100) : 0;
+    const nbP = nbPostes[p.id] || 0;
     const budget = prog.budget_confirme ? '$' + Number(prog.budget_confirme).toLocaleString('fr-CA') : '—';
 
     const card = document.createElement('div');
@@ -1389,8 +1719,12 @@ async function chargerProjets() {
       <h3>${p.nom}</h3>
       <div class="client-name">${p.clients ? p.clients.nom : '(aucun client)'}</div>
       ${p.adresse ? `<div class="address">${p.adresse}</div>` : ''}
+      <div style="display:flex;justify-content:space-between;font-size:11px;color:var(--texte-2);margin-bottom:8px">
+        <span>${nbP} poste${nbP > 1 ? 's' : ''}</span>
+        <span>${total} produit${total > 1 ? 's' : ''} proposé${total > 1 ? 's' : ''}</span>
+      </div>
       <div class="progress-bar"><div class="progress-fill" style="width:${pct}%"></div></div>
-      <div class="progress-label"><span>Approbations</span><span>${approuves}/${total} (${pct}%)</span></div>
+      <div class="progress-label"><span>Produits approuvés</span><span>${approuves}/${total} (${pct}%)</span></div>
     `;
     grid.appendChild(card);
   });
@@ -1536,7 +1870,7 @@ async function ouvrirProjet(projetId) {
 async function chargerPostes() {
   const { data: postes } = await db
     .from('postes')
-    .select('*, categories(nom, ordre), sous_categories(nom), options_produits(*, banque_produits(nom, fabricant, modele, prix, unite_prix, photo_url, couleur))')
+    .select('*, categories(nom, ordre), sous_categories(nom), options_produits(*, banque_produits(nom, fabricant, modele, prix, unite_prix, perte_pct, photo_url, couleur))')
     .eq('projet_id', currentProjetId)
     .order('ordre');
 
@@ -1556,13 +1890,18 @@ async function chargerPostes() {
   });
 
   container.innerHTML = '';
+  // Total du projet, pour distinguer le compte d'une section du compte global :
+  // l'en-tête affichait « 9 poste(s) » pour une seule catégorie, ce qui se lisait
+  // comme le total du projet (16) et faisait croire à un mauvais calcul.
+  const totalPostesProjet = postes.length;
+
   Object.entries(byCat).forEach(([catNom, catPostes]) => {
     const section = document.createElement('div');
     section.className = 'categorie-section';
     section.innerHTML = `
       <div class="categorie-header">
         <h4>${catNom}</h4>
-        <span style="font-size:12px;color:var(--texte-2)">${catPostes.length} poste(s)</span>
+        <span style="font-size:12px;color:var(--texte-2)">${catPostes.length} poste(s) sur ${totalPostesProjet}</span>
       </div>
     `;
 
@@ -1596,8 +1935,8 @@ async function chargerPostes() {
                   ${opt.commentaire_client && opt.commentaire_client !== '__rejete__' && opt.commentaire_client !== 'Article non nécessaire' ? `<div style="font-size:11px;color:var(--caramel);margin-top:3px">💬 ${opt.commentaire_client}</div>` : ''}
                 </div>
                 <div style="text-align:right;display:flex;flex-direction:column;align-items:flex-end;gap:4px">
-                  ${bp && bp.prix ? `<div style="font-size:13px;font-weight:500">$${Number(bp.prix * opt.quantite).toLocaleString('fr-CA')}</div>` : ''}
-                  <div style="font-size:11px;color:var(--texte-2)">Qté: ${qteAvecUnite(opt.quantite, bp?.unite_prix)}</div>
+                  ${bp && bp.prix ? `<div style="font-size:13px;font-weight:500">$${Number(montantLigne(opt, bp)).toLocaleString('fr-CA')}</div>` : ''}
+                  <div style="font-size:11px;color:var(--texte-2)">Qté: ${qteAvecUnite(opt.quantite, bp?.unite_prix)}${perteEffective(opt, bp) ? ` → ${qteAvecUnite(qteCommandee(opt.quantite, perteEffective(opt, bp)), bp?.unite_prix)} avec perte` : ''}</div>
                   ${isARevoir ? `<button class="btn btn-outline btn-sm" style="font-size:10px;padding:2px 8px;color:#1a5c2a;border-color:#1a5c2a" onclick="event.stopPropagation();remplacerOption('${opt.id}','${opt.lettre_option}',${opt.quantite})">↻ Proposer un remplacement</button>` : ''}
                   ${!isARevoir && !retired && !opt.pre_approuve_cmpg ? `<button class="btn btn-outline btn-sm" style="font-size:10px;padding:2px 8px;color:var(--caramel);border-color:var(--caramel)" onclick="event.stopPropagation();preApprouverOption('${opt.id}',true)">✓ Pré-approuver</button>` : ''}
                   ${opt.pre_approuve_cmpg ? `<span style="display:inline-flex;align-items:center;gap:4px;font-size:9px;background:var(--charcoal);color:var(--caramel);padding:2px 7px;letter-spacing:.5px">✓ Pré-approuvé CMPG<button onclick="event.stopPropagation();preApprouverOption('${opt.id}',false)" style="background:none;border:none;color:var(--caramel);cursor:pointer;font-size:10px;padding:0;margin-left:2px" title="Annuler la pré-approbation">✕</button></span>` : ''}
@@ -1770,7 +2109,7 @@ async function openModalPoste() {
 async function chargerProduitsBanqueSelect() {
   // Charge (ou recharge) la cache complète avec photo + catégories
   const { data } = await db.from('banque_produits')
-    .select('id, nom, fabricant, modele, prix, unite_prix, photo_url, categorie_id, sous_categorie_id')
+    .select('id, nom, fabricant, modele, prix, unite_prix, perte_pct, photo_url, categorie_id, sous_categorie_id')
     .order('nom');
   produitsCache = data || [];
   filtrerProduitsBanqueSelect();
@@ -1822,7 +2161,7 @@ function renderOptionsSlots() {
         </span>
         ${idx > 0 ? `<button type="button" onclick="supprimerSlotOption('${letter}')" style="background:none;border:none;color:var(--danger);cursor:pointer;font-size:12px;padding:0">✕ Retirer</button>` : ''}
       </div>
-      <div class="form-grid" style="grid-template-columns:2fr 80px 1fr">
+      <div class="form-grid" style="grid-template-columns:2fr 80px 90px 1fr">
         <div class="form-group" style="margin-bottom:0">
           <label>Produit</label>
           <select id="slot-prod-${letter}" onchange="mettreAJourApercuSlot('${letter}',this.value)">${optionsHTML}</select>
@@ -1830,6 +2169,10 @@ function renderOptionsSlots() {
         <div class="form-group" style="margin-bottom:0">
           <label>Qté</label>
           <input type="number" id="slot-qty-${letter}" value="1" min="0" step="0.01" />
+        </div>
+        <div class="form-group" style="margin-bottom:0">
+          <label title="Laisser vide pour utiliser la perte du produit">Perte %</label>
+          <input type="number" id="slot-perte-${letter}" placeholder="—" min="0" max="100" step="0.5" />
         </div>
         <div class="form-group" style="margin-bottom:0">
           <label>Note client</label>
@@ -1969,6 +2312,7 @@ async function sauvegarderPoste() {
         banque_produit_id: produitId,
         lettre_option: letter,
         quantite: parseFloat(document.getElementById(`slot-qty-${letter}`)?.value) || 1,
+        perte_pct: valeurPerteSlot(letter),
         note_client: document.getElementById(`slot-note-${letter}`)?.value?.trim() || null
       });
     }
@@ -2000,7 +2344,7 @@ async function ouvrirModalEditerPoste(id) {
   // Charger la banque de produits puis les options existantes du poste
   await chargerProduitsBanqueSelect();
   const { data: existingOpts } = await db.from('options_produits')
-    .select('id, lettre_option, banque_produit_id, quantite, note_client')
+    .select('id, lettre_option, banque_produit_id, quantite, perte_pct, note_client')
     .eq('poste_id', id)
     .order('lettre_option');
 
@@ -2025,6 +2369,8 @@ async function ouvrirModalEditerPoste(id) {
     mettreAJourApercuSlot(opt.lettre_option, opt.banque_produit_id);
     const qty = document.getElementById(`slot-qty-${opt.lettre_option}`);
     if (qty) qty.value = opt.quantite || 1;
+    const perte = document.getElementById(`slot-perte-${opt.lettre_option}`);
+    if (perte) perte.value = (opt.perte_pct ?? '') === null ? '' : (opt.perte_pct ?? '');
     const note = document.getElementById(`slot-note-${opt.lettre_option}`);
     if (note) note.value = opt.note_client || '';
   });
@@ -2252,6 +2598,38 @@ function qteAvecUnite(quantite, unite) {
   return (!unite || unite === 'unité') ? txt : `${txt} ${unite}`;
 }
 
+// Lit le champ « Perte % » d'un slot. Vide -> null, c'est-à-dire « hériter du
+// produit ». On ne renvoie pas 0, qui signifierait « aucune perte sur ce poste ».
+function valeurPerteSlot(letter) {
+  const el = document.getElementById(`slot-perte-${letter}`);
+  const v = (el?.value ?? '').trim();
+  return v === '' ? null : (parseFloat(v) || 0);
+}
+
+// ── Perte ────────────────────────────────────────────────────────────────
+// Le poste peut remplacer la perte du produit. NULL au niveau du poste veut
+// dire « hériter du produit » — à distinguer de 0, qui est un choix délibéré.
+function perteEffective(opt, bp) {
+  const surPoste = opt?.perte_pct;
+  if (surPoste !== null && surPoste !== undefined && surPoste !== '') return Number(surPoste);
+  return Number(bp?.perte_pct ?? 0);
+}
+
+// Quantité réellement à commander, perte incluse.
+// 100 pi² à 10 % de perte → 110 pi².
+function qteCommandee(quantite, perte) {
+  const q = Number(quantite ?? 1);
+  const p = Number(perte ?? 0);
+  if (!p) return q;
+  return Math.round(q * (1 + p / 100) * 100) / 100;
+}
+
+// Montant d'une ligne : la perte augmente la quantité, donc le total.
+function montantLigne(opt, bp) {
+  if (!bp || bp.prix == null) return null;
+  return qteCommandee(opt?.quantite ?? 1, perteEffective(opt, bp)) * Number(bp.prix);
+}
+
 function badgeStatut(p) {
   const badges = [];
   const statut = (typeof p === 'object') ? (p.statut || 'actif') : p;
@@ -2461,6 +2839,7 @@ async function sauvegarderProduit() {
     sku:                   document.getElementById('ap-sku').value.trim() || null,
     prix:                  parseFloat(document.getElementById('ap-prix').value) || null,
     unite_prix:            document.getElementById('ap-unite')?.value || 'unité',
+    perte_pct:             parseFloat(document.getElementById('ap-perte')?.value) || 0,
     couleur:               document.getElementById('ap-couleur').value.trim() || null,
     dimensions:            document.getElementById('ap-dimensions').value.trim() || null,
     caracteristiques:      document.getElementById('ap-carac').value.trim() || null,
@@ -2523,6 +2902,8 @@ function resetModalProduit() {
   if (statutEl) statutEl.value = 'actif';
   const uniteEl = document.getElementById('ap-unite');
   if (uniteEl) uniteEl.value = 'unité';
+  const perteEl = document.getElementById('ap-perte');
+  if (perteEl) perteEl.value = '';
   const histWrap = document.getElementById('ap-historique-wrap');
   if (histWrap) histWrap.style.display = 'none';
   effacerPhoto();
@@ -2549,6 +2930,7 @@ async function editerProduit(id) {
   document.getElementById('ap-sku').value         = p.sku || '';
   document.getElementById('ap-prix').value        = p.prix || '';
   document.getElementById('ap-unite').value       = p.unite_prix || 'unité';
+  document.getElementById('ap-perte').value       = p.perte_pct ?? 0;
   document.getElementById('ap-couleur').value     = p.couleur || '';
   document.getElementById('ap-dimensions').value  = p.dimensions || '';
   document.getElementById('ap-carac').value       = p.caracteristiques || '';
@@ -2873,8 +3255,8 @@ async function genererPDF_base(mode) {
       categories(id, nom, ordre),
       sous_categories(id, nom, ordre),
       options_produits(
-        id, statut_client, quantite, note_client, commentaire_client, lettre_option, date_decision,
-        banque_produits(id, nom, fabricant, modele, sku, couleur, dimensions, caracteristiques, prix, unite_prix, photo_url, url)
+        id, statut_client, quantite, perte_pct, note_client, commentaire_client, lettre_option, date_decision,
+        banque_produits(id, nom, fabricant, modele, sku, couleur, dimensions, caracteristiques, prix, unite_prix, perte_pct, photo_url, url)
       )
     `)
     .eq('projet_id', currentProjetId);
@@ -2917,14 +3299,16 @@ async function genererPDF_base(mode) {
         fabricant:   bp.fabricant || '',
         modele:      bp.modele || '',
         sku:         bp.sku || '',
-        qte:         opt.quantite || 1,
+        qte:         qteCommandee(opt.quantite || 1, perteEffective(opt, bp)),
+        qte_nette:   opt.quantite || 1,
+        perte_pct:   perteEffective(opt, bp),
         couleur:     bp.couleur || '',
         dims:        bp.dimensions || '',
         caract:      bp.caracteristiques || '',
         photo_url:   bp.photo_url || '',
         unite:       bp.unite_prix || 'unité',
         prix_u:      bp.prix ? Number(bp.prix) : null,
-        prix_total:  bp.prix ? Number(bp.prix) * (opt.quantite || 1) : null,
+        prix_total:  montantLigne(opt, bp),
         statut:      opt.statut_client || '',
         date_conf:   opt.date_decision ? new Date(opt.date_decision).toLocaleDateString('fr-CA') : '',
         lien:        bp.url || '',

@@ -730,13 +730,6 @@ body { font-family: 'Roboto', sans-serif; background: var(--fond); color: var(--
           <input type="text" id="mt-libelle" placeholder="Fournir et installer isolation de plancher" />
         </div>
         <div class="form-group">
-          <label>Type</label>
-          <select id="mt-type">
-            <option value="materiaux">Fourniture (matériau)</option>
-            <option value="main_oeuvre">Pose (main-d'œuvre)</option>
-          </select>
-        </div>
-        <div class="form-group">
           <label>Unité</label>
           <select id="mt-unite">
             <option value="">—</option>
@@ -1480,8 +1473,7 @@ function renderReferentiel(taches) {
           <table class="data-table" style="margin:0">
             <thead>
               <tr>
-                <th style="width:42%">Tâche</th>
-                <th style="width:70px">Type</th>
+                <th style="width:46%">Tâche</th>
                 <th style="width:70px">Unité</th>
                 <th style="width:120px">Fourniture $</th>
                 <th style="width:120px">Pose $</th>
@@ -1496,9 +1488,6 @@ function renderReferentiel(taches) {
 }
 
 function ligneReferentiel(t) {
-  const badge = t.type === 'main_oeuvre'
-    ? `<span style="background:#eef0f5;color:#4a5568;font-size:10px;padding:2px 7px;letter-spacing:.5px">POSE</span>`
-    : `<span style="background:#f3efe9;color:#8a7a68;font-size:10px;padding:2px 7px;letter-spacing:.5px">FOURN.</span>`;
   const maj = t.prix_maj_le
     ? new Date(t.prix_maj_le).toLocaleDateString('fr-CA')
     : '<span style="color:var(--texte-2)">—</span>';
@@ -1509,7 +1498,6 @@ function ligneReferentiel(t) {
   return `
     <tr>
       <td>${t.libelle}${t.notes ? `<div style="font-size:11px;color:var(--texte-2);margin-top:3px">${t.notes}</div>` : ''}</td>
-      <td>${badge}</td>
       <td style="color:var(--texte-2);font-size:12px">${t.unite || '—'}</td>
       <td>${champ(t.prix_materiaux, 'prix_materiaux')}</td>
       <td>${champ(t.prix_main_oeuvre, 'prix_main_oeuvre')}</td>
@@ -1546,7 +1534,6 @@ function ouvrirModalTache(id) {
   document.getElementById('mt-titre').textContent = t ? 'Modifier la tâche' : 'Nouvelle tâche';
   document.getElementById('mt-poste').value     = t?.poste_id || (postesRefCache[0]?.id || '');
   document.getElementById('mt-libelle').value   = t?.libelle || '';
-  document.getElementById('mt-type').value      = t?.type || 'materiaux';
   document.getElementById('mt-unite').value     = t?.unite || '';
   document.getElementById('mt-prix-mat').value  = t?.prix_materiaux ?? '';
   document.getElementById('mt-prix-mo').value   = t?.prix_main_oeuvre ?? '';
@@ -1573,7 +1560,6 @@ async function sauvegarderTache() {
   const payload = {
     poste_id:         posteId,
     libelle,
-    type:             document.getElementById('mt-type').value,
     unite:            document.getElementById('mt-unite').value || null,
     categorie_defaut: document.getElementById('mt-categorie').value,
     prix_materiaux:   isNaN(prixMat) ? null : prixMat,

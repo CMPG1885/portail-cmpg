@@ -510,6 +510,8 @@ body { font-family: 'Roboto', sans-serif; background: var(--fond); color: var(--
           <select id="filter-sous-cat" onchange="filtrerProduits()">
             <option value="">Toutes les sous-catégories</option>
           </select>
+          <input type="number" id="filter-prix-min" placeholder="Prix min $" min="0" step="1" oninput="filtrerProduits()" style="flex:0 0 110px;min-width:110px" />
+          <input type="number" id="filter-prix-max" placeholder="Prix max $" min="0" step="1" oninput="filtrerProduits()" style="flex:0 0 110px;min-width:110px" />
           <select id="filter-statut" onchange="filtrerProduits()">
             <option value="">Tous les statuts</option>
             <option value="actif">Actif</option>
@@ -2717,7 +2719,13 @@ function filtrerProduits() {
   const cat    = val('filter-categorie');
   const sCat   = val('filter-sous-cat');
   const statut = val('filter-statut');
+  const pMin   = parseFloat(val('filter-prix-min'));
+  const pMax   = parseFloat(val('filter-prix-max'));
   const filtered = produitsCache.filter(p => {
+    // Filtre de prix : un produit sans prix est exclu dès qu'une borne est saisie.
+    const prix = (p.prix == null || p.prix === '') ? null : Number(p.prix);
+    if (!isNaN(pMin) && (prix == null || prix < pMin)) return false;
+    if (!isNaN(pMax) && (prix == null || prix > pMax)) return false;
     const matchQ  = !q      || [p.nom, p.fabricant, p.modele, p.sku].some(v => v && v.toLowerCase().includes(q));
     const matchC  = !cat    || p.categorie_id === cat;
     const matchSC = !sCat   || p.sous_categorie_id === sCat;
@@ -2739,11 +2747,18 @@ async function importerParURL() {
   if (!url) return;
   const statusEl = document.getElementById('url-import-status');
 
-  // Vérifier doublon
-  const { data: doublon } = await db.from('banque_produits').select('id, nom').eq('url', url).maybeSingle();
-  if (doublon) {
-    statusEl.innerHTML = `⛔ Ce produit est déjà dans la banque : <strong>${doublon.nom}</strong>. Utilisez Modifier pour le mettre à jour.`;
-    return;
+  // Vérifier doublon de lien. Certains sites gardent le même lien pour toutes les
+  // variantes (ex. poignée 6 po / 12 po) : on avertit, puis on permet d'ajouter
+  // une autre variante — le SKU devra alors être différent (vérifié à l'enregistrement).
+  const { data: doublons } = await db.from('banque_produits').select('id, nom, sku').eq('url', url);
+  let varianteDuLien = false;
+  if (doublons && doublons.length) {
+    const noms = doublons.map(d => d.nom + (d.sku ? ` (SKU ${d.sku})` : '')).join(', ');
+    if (!confirm(`Ce lien est déjà dans la banque : ${noms}.\n\nS'agit-il d'une autre variante (grandeur, couleur, fini…) ?\nOK = ajouter la variante (il faudra inscrire son SKU).\nAnnuler = ne rien ajouter.`)) {
+      statusEl.innerHTML = `⛔ Ce produit est déjà dans la banque : <strong>${doublons[0].nom}</strong>. Utilisez Modifier pour le mettre à jour.`;
+      return;
+    }
+    varianteDuLien = true;
   }
 
   statusEl.innerHTML = '<span class="spinner"></span> Extraction en cours…';
@@ -2802,13 +2817,15 @@ async function importerParURL() {
       document.getElementById('ap-photo').value = specs.photo_url;
       apercuPhotoUrl(specs.photo_url);
     }
+    if (varianteDuLien) document.getElementById('ap-sku').value = '';
     openModal('modal-ajout-produit');
     mettreEnEvidenceChampsVides();
 
     const enSolde = specs.prix_promo != null && specs.prix_regulier != null
                     && specs.prix_promo < specs.prix_regulier;
     statusEl.innerHTML = '✅ Informations extraites — vérifiez les champs surlignés et enregistrez.'
-      + (enSolde ? ` <em>(en solde à ${specs.prix_promo} $ — le prix régulier a été conservé)</em>` : '');
+      + (enSolde ? ` <em>(en solde à ${specs.prix_promo} $ — le prix régulier a été conservé)</em>` : '')
+      + (varianteDuLien ? ' <strong>Variante : inscrivez son SKU, son nom et son prix.</strong>' : '');
   } else {
     openModal('modal-ajout-produit');
     mettreEnEvidenceChampsVides();
@@ -2832,11 +2849,16 @@ async function sauvegarderProduit() {
   const urlProduit = document.getElementById('ap-url').value.trim() || null;
   if (!nom) { toast('Le nom du produit est requis.', 'error'); return; }
 
-  // Vérification doublon par URL — blocage complet
-  if (urlProduit && !editingProduitId) {
-    const { data: existe } = await db.from('banque_produits').select('id, nom').eq('url', urlProduit).maybeSingle();
+  // Vérification doublon : même lien ET même SKU. Un même lien peut couvrir
+  // plusieurs variantes (grandeurs, finis) qui se distinguent par leur SKU.
+  if (urlProduit) {
+    const skuSaisi = document.getElementById('ap-sku').value.trim();
+    const { data: memesLiens } = await db.from('banque_produits').select('id, nom, sku').eq('url', urlProduit);
+    const existe = (memesLiens || []).find(d => d.id !== editingProduitId && (d.sku || '').trim() === skuSaisi);
     if (existe) {
-      toast(`Ce produit existe déjà dans la banque : "${existe.nom}"`, 'error');
+      toast(skuSaisi
+        ? `Ce produit existe déjà dans la banque : "${existe.nom}" (même lien et même SKU).`
+        : `Ce lien est déjà dans la banque ("${existe.nom}"). Pour une autre variante, inscrivez son SKU.`, 'error');
       return;
     }
   }
@@ -2871,16 +2893,16 @@ async function sauvegarderProduit() {
   };
 
   const wasEditing = !!editingProduitId;
-  let error;
+  let error, cree = null;
   if (wasEditing) {
     ({ error } = await db.from('banque_produits').update(payload).eq('id', editingProduitId));
   } else {
-    ({ error } = await db.from('banque_produits').insert(payload));
+    ({ data: cree, error } = await db.from('banque_produits').insert(payload).select('id').single());
   }
 
   if (error) {
     if (error.code === '23505') {
-      toast('Ce produit existe déjà dans la banque (URL en double).', 'error');
+      toast('Ce produit existe déjà dans la banque (même lien et même SKU).', 'error');
     } else {
       toast('Erreur : ' + error.message, 'error');
     }
@@ -2895,7 +2917,6 @@ async function sauvegarderProduit() {
     });
   } else if (!wasEditing && nouveauPrix != null) {
     // Première ligne d'historique à la création (spec §4.2 : ancien_prix = null).
-    const { data: cree } = await db.from('banque_produits').select('id').eq('url', urlProduit).maybeSingle();
     if (cree) {
       await db.from('historique_prix').insert({
         produit_id: cree.id, ancien_prix: null, nouveau_prix: nouveauPrix,

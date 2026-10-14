@@ -3712,9 +3712,12 @@ function toast(msg, type = 'info') {
   const t = document.createElement('div');
   t.className = 'toast toast-' + type;
   t.textContent = msg;
-  document.body.appendChild(t);
+  // Dans le conteneur fixe (z-index 9999) : ajouté directement au <body>, le message
+  // tombait en bas de la page, derrière les fenêtres modales — donc invisible.
+  (document.getElementById('toast-container') || document.body).appendChild(t);
   setTimeout(() => t.classList.add('show'), 10);
-  setTimeout(() => { t.classList.remove('show'); setTimeout(() => t.remove(), 300); }, 3500);
+  // Les erreurs restent plus longtemps : elles demandent une action.
+  setTimeout(() => { t.classList.remove('show'); setTimeout(() => t.remove(), 300); }, type === 'error' ? 7000 : 3500);
 }
 
 function openModal(id) {

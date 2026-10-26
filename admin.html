@@ -144,6 +144,51 @@ body { font-family: 'Roboto', sans-serif; background: var(--fond); color: var(--
 .btn-sm { padding: 7px 14px; font-size: 11px; }
 .btn-danger { background: var(--danger); color: var(--blanc); }
 
+/* ===== PANIER DE SÉLECTION ===== */
+.panier-fond { position: fixed; inset: 0; background: rgba(58,59,58,.35); z-index: 900; display: none; }
+.panier-fond.open { display: block; }
+.panier {
+  position: fixed; top: 12px; right: 12px; bottom: 12px; width: 520px; max-width: calc(100vw - 24px);
+  background: var(--fond); border-radius: 22px; box-shadow: 0 30px 80px rgba(0,0,0,.3);
+  z-index: 901; display: flex; flex-direction: column; overflow: hidden;
+  transform: translateX(110%); transition: transform .25s ease;
+}
+.panier.open { transform: translateX(0); }
+.panier-tete { background: var(--charcoal); color: var(--blanc); padding: 24px 26px 20px; position: relative; }
+.panier-tete h3 { font-family: 'Noto Serif Display', serif; font-weight: 400; font-size: 26px; margin: 6px 0 14px; }
+.panier-tete select {
+  width: 100%; padding: 10px 14px; border-radius: 12px; border: 1px solid rgba(255,255,255,.25);
+  background: rgba(255,255,255,.08); color: var(--blanc); font-size: 13px; outline: none; font-family: inherit;
+}
+.panier-tete select option { color: var(--texte); }
+.panier-corps { flex: 1; overflow-y: auto; padding: 18px 18px 8px; display: flex; flex-direction: column; gap: 12px; }
+.panier-item { background: var(--blanc); border-radius: 16px; padding: 14px; box-shadow: var(--shadow); display: grid; grid-template-columns: 64px 1fr auto; gap: 12px; }
+.panier-item img, .panier-item .ph { width: 64px; height: 64px; border-radius: 12px; object-fit: cover; background: var(--fond); }
+.panier-item .nom { font-weight: 500; font-size: 13px; line-height: 1.35; }
+.panier-item .sous { font-size: 11px; color: var(--texte-2); margin-top: 2px; }
+.panier-item .prix { font-size: 12px; color: var(--caramel); margin-top: 4px; }
+.panier-item .retirer { background: none; border: none; cursor: pointer; color: var(--texte-2); font-size: 14px; align-self: start; }
+.panier-item .retirer:hover { color: var(--danger); }
+.panier-champs { grid-column: 1 / -1; display: grid; grid-template-columns: 2fr 70px; gap: 8px; }
+.panier-champs select, .panier-champs input {
+  padding: 8px 10px; border: 1px solid var(--bord); border-radius: 10px; font-size: 12px; background: var(--blanc); outline: none; font-family: inherit; width: 100%;
+}
+.panier-champs select:focus, .panier-champs input:focus { border-color: var(--caramel); }
+.panier-champs select.manquant { border-color: var(--caramel); background: #FBF8F2; }
+.panier-champs .large { grid-column: 1 / -1; }
+.panier-nouveau-poste { grid-column: 1 / -1; display: grid; grid-template-columns: 1fr 1fr auto; gap: 8px; background: var(--fond); padding: 10px; border-radius: 12px; }
+.panier-vide { text-align: center; color: var(--texte-2); font-size: 13px; padding: 40px 20px; line-height: 1.7; }
+.panier-pied { padding: 16px 22px 20px; background: var(--blanc); border-top: 1px solid var(--bord); }
+.panier-total { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 12px; font-size: 12px; color: var(--texte-2); }
+.panier-total b { font-family: 'Noto Serif Display', serif; font-size: 22px; font-weight: 400; color: var(--texte); }
+.panier-envoyer { width: 100%; border-radius: 999px !important; padding: 13px !important; }
+.panier-envoyer:disabled { opacity: .45; cursor: not-allowed; }
+.btn-panier { position: relative; border-radius: 999px !important; }
+.btn-panier .compte {
+  display: inline-block; min-width: 18px; height: 18px; line-height: 18px; border-radius: 999px; margin-left: 6px;
+  background: var(--caramel); color: var(--blanc); font-size: 10px; text-align: center; padding: 0 5px;
+}
+
 /* ===== FICHE MATÉRIAUTHÈQUE ===== */
 .fiche-overlay { padding: 24px; }
 .fiche {
@@ -527,6 +572,7 @@ body { font-family: 'Roboto', sans-serif; background: var(--fond); color: var(--
           <div id="detail-projet-client" style="font-size:12px;color:var(--caramel);letter-spacing:1px;text-transform:uppercase;margin-top:2px"></div>
         </div>
         <div style="display:flex;gap:10px">
+          <button class="btn btn-outline btn-sm btn-panier" onclick="ouvrirPanier(currentProjetId)">🛒 Panier de sélection</button>
           <button class="btn btn-outline btn-sm" onclick="genererPDFClient()">⬇ PDF Client</button>
           <button class="btn btn-caramel btn-sm" onclick="genererPDFChantier()">⬇ PDF Chantier</button>
         </div>
@@ -578,7 +624,10 @@ body { font-family: 'Roboto', sans-serif; background: var(--fond); color: var(--
     <div id="view-banque" class="view">
       <div class="page-header">
         <h2>Banque de produits</h2>
-        <button class="btn btn-dark" onclick="openModal('modal-ajout-produit')">+ Ajouter un produit</button>
+        <div style="display:flex;gap:10px">
+          <button class="btn btn-outline btn-panier" onclick="ouvrirPanier()">🛒 Panier<span class="compte panier-compte">0</span></button>
+          <button class="btn btn-dark" onclick="openModal('modal-ajout-produit')">+ Ajouter un produit</button>
+        </div>
       </div>
       <div class="page-body">
         <!-- Import URL rapide -->
@@ -1032,6 +1081,24 @@ body { font-family: 'Roboto', sans-serif; background: var(--fond); color: var(--
     </div>
   </div>
 </div>
+
+<!-- Panier de sélection -->
+<div id="panier-fond" class="panier-fond" onclick="fermerPanier()"></div>
+<aside id="panier" class="panier" aria-label="Panier de sélection">
+  <div class="panier-tete">
+    <button class="fiche-close" onclick="fermerPanier()" style="top:16px;right:16px">×</button>
+    <div class="fiche-surtitre">Panier de sélection</div>
+    <h3>Proposition au client</h3>
+    <select id="panier-projet" onchange="changerProjetPanier(this.value)">
+      <option value="">— Choisir le projet —</option>
+    </select>
+  </div>
+  <div class="panier-corps" id="panier-corps"></div>
+  <div class="panier-pied">
+    <div class="panier-total"><span id="panier-resume">0 produit</span><b id="panier-montant">—</b></div>
+    <button class="btn btn-dark panier-envoyer" id="panier-btn-envoyer" onclick="envoyerPanier()" disabled>Envoyer au profil client</button>
+  </div>
+</aside>
 
 <!-- Fiche Matériauthèque (lecture) -->
 <div id="modal-fiche-mat" class="modal-overlay fiche-overlay" onclick="if (event.target === this) closeModal('modal-fiche-mat')">
@@ -1794,6 +1861,260 @@ async function sauvegarderMat() {
 }
 
 
+
+// ============================================================
+// PANIER DE SÉLECTION (tâche « Magasinage banque produit »)
+// On « magasine » dans la banque pour un projet : chaque produit est rattaché à un
+// poste du projet (existant ou créé sur place). « Envoyer au profil client » crée
+// les options A, B, C… dans ces postes, visibles tout de suite par le client.
+// Tables : paniers (un seul « ouvert » par projet) et panier_items.
+// ============================================================
+let panierProjetId = null;
+let panierId = null;
+let panierItems = [];
+let panierPostes = [];
+let panierProjets = null;
+try { panierProjetId = localStorage.getItem('cmpg_panier_projet') || null; } catch (e) {}
+
+function memoriserProjetPanier(id) {
+  panierProjetId = id || null;
+  try { id ? localStorage.setItem('cmpg_panier_projet', id) : localStorage.removeItem('cmpg_panier_projet'); } catch (e) {}
+}
+
+async function ouvrirPanier(projetId) {
+  if (projetId) memoriserProjetPanier(projetId);
+  if (!panierProjets) {
+    const { data } = await db.from('projets').select('id, nom').order('nom');
+    panierProjets = data || [];
+  }
+  const sel = document.getElementById('panier-projet');
+  sel.innerHTML = '<option value="">— Choisir le projet —</option>' +
+    panierProjets.map(p => `<option value="${p.id}">${escH(p.nom)}</option>`).join('');
+  sel.value = panierProjetId || '';
+  document.getElementById('panier-fond').classList.add('open');
+  document.getElementById('panier').classList.add('open');
+  await chargerPanier();
+}
+
+function fermerPanier() {
+  document.getElementById('panier-fond').classList.remove('open');
+  document.getElementById('panier').classList.remove('open');
+}
+
+async function changerProjetPanier(id) {
+  memoriserProjetPanier(id);
+  await chargerPanier();
+}
+
+async function chargerPanier() {
+  panierId = null; panierItems = []; panierPostes = [];
+  if (panierProjetId) {
+    const [{ data: pan }, { data: postes }] = await Promise.all([
+      db.from('paniers').select('id').eq('projet_id', panierProjetId).eq('statut', 'ouvert').maybeSingle(),
+      db.from('postes').select('id, reference, pieces, categorie_id, sous_categorie_id, type_selection, ordre, categories(nom), options_produits(lettre_option)')
+        .eq('projet_id', panierProjetId).order('ordre'),
+    ]);
+    panierPostes = postes || [];
+    if (pan) {
+      panierId = pan.id;
+      const { data: items } = await db.from('panier_items')
+        .select('*, banque_produits(nom, fabricant, modele, prix, unite_prix, photo_url, categorie_id, sous_categorie_id)')
+        .eq('panier_id', panierId).order('ordre').order('created_at');
+      panierItems = items || [];
+    }
+  }
+  renderPanier();
+}
+
+function majComptesPanier() {
+  document.querySelectorAll('.panier-compte').forEach(el => el.textContent = panierItems.length);
+}
+
+function optionsPostesPour(item) {
+  const bp = item.banque_produits || {};
+  const lib = p => `${escH(p.reference)}${p.pieces && p.pieces.length ? ' — ' + escH(p.pieces.join(', ')) : ''}`
+                 + (p.options_produits && p.options_produits.length ? ` (${p.options_produits.length} option${p.options_produits.length > 1 ? 's' : ''})` : '');
+  const memeCat = panierPostes.filter(p => p.categorie_id && p.categorie_id === bp.categorie_id);
+  const autres  = panierPostes.filter(p => !memeCat.includes(p));
+  const grp = (titre, liste) => liste.length
+    ? `<optgroup label="${escH(titre)}">${liste.map(p => `<option value="${p.id}" ${p.id === item.poste_id ? 'selected' : ''}>${lib(p)}</option>`).join('')}</optgroup>` : '';
+  return `<option value="">— Rattacher à un poste —</option>
+          ${grp('Même catégorie', memeCat)}${grp('Autres postes', autres)}
+          <option value="__nouveau">＋ Nouveau poste…</option>`;
+}
+
+function renderPanier() {
+  const corps = document.getElementById('panier-corps');
+  majComptesPanier();
+  if (!panierProjetId) {
+    corps.innerHTML = '<div class="panier-vide">Choisissez le projet pour lequel vous magasinez.<br>Ensuite, dans la Banque de produits, cliquez sur 🛒 pour ajouter un produit.</div>';
+  } else if (!panierItems.length) {
+    corps.innerHTML = '<div class="panier-vide">Le panier est vide.<br>Dans la Banque de produits, cliquez sur 🛒 à côté d’un produit pour l’ajouter.</div>';
+  } else {
+    corps.innerHTML = panierItems.map(it => {
+      const bp = it.banque_produits || {};
+      return `<div class="panier-item" id="pi-${it.id}">
+        ${bp.photo_url ? `<img src="${escH(bp.photo_url)}" referrerpolicy="no-referrer" onerror="this.style.visibility='hidden'">` : '<div class="ph"></div>'}
+        <div>
+          <div class="nom">${escH(bp.nom || 'Produit retiré de la banque')}</div>
+          <div class="sous">${escH([bp.fabricant, bp.modele].filter(Boolean).join(' · '))}</div>
+          ${bp.prix ? `<div class="prix">${prixAvecUnite(bp)}</div>` : ''}
+        </div>
+        <button class="retirer" title="Retirer du panier" onclick="retirerDuPanier('${it.id}')">✕</button>
+        <div class="panier-champs">
+          <select class="${it.poste_id ? '' : 'manquant'}" onchange="choisirPostePanier('${it.id}', this.value)">${optionsPostesPour(it)}</select>
+          <input type="number" min="0" step="any" value="${it.quantite ?? 1}" title="Quantité" onchange="majItemPanier('${it.id}', { quantite: parseFloat(this.value) || 1 })" />
+          <input type="text" class="large" placeholder="Note pour le client (facultatif)" value="${escH(it.note_client || '')}" onchange="majItemPanier('${it.id}', { note_client: this.value.trim() || null })" />
+          <div id="pnp-${it.id}" class="panier-nouveau-poste" style="display:none">
+            <input type="text" id="pnp-ref-${it.id}" placeholder="Référence (ex. PL-15)" />
+            <input type="text" id="pnp-piece-${it.id}" placeholder="Pièce (ex. Cuisine)" />
+            <button class="btn btn-dark btn-sm fiche-btn" onclick="creerPostePanier('${it.id}')">Créer</button>
+          </div>
+        </div>
+      </div>`;
+    }).join('');
+  }
+  const nb = panierItems.length;
+  const total = panierItems.reduce((t, it) => t + (Number(it.banque_produits?.prix) || 0) * (Number(it.quantite) || 1), 0);
+  const sansPoste = panierItems.filter(it => !it.poste_id).length;
+  document.getElementById('panier-resume').textContent =
+    `${nb} produit${nb > 1 ? 's' : ''}` + (sansPoste ? ` · ${sansPoste} sans poste` : '');
+  document.getElementById('panier-montant').textContent = total
+    ? total.toLocaleString('fr-CA', { style: 'currency', currency: 'CAD' }) : '—';
+  const btn = document.getElementById('panier-btn-envoyer');
+  btn.disabled = !nb || sansPoste > 0;
+  btn.title = sansPoste ? 'Rattachez chaque produit à un poste avant d’envoyer.' : '';
+}
+
+async function assurerPanier() {
+  if (panierId) return panierId;
+  const { data: { user } } = await db.auth.getUser();
+  const { data, error } = await db.from('paniers')
+    .insert({ projet_id: panierProjetId, created_by: user?.email || null }).select('id').single();
+  if (error) {
+    // Un panier ouvert a pu être créé entre-temps (autre onglet, collègue) : on le reprend
+    const { data: ex } = await db.from('paniers').select('id').eq('projet_id', panierProjetId).eq('statut', 'ouvert').maybeSingle();
+    if (!ex) { toast('Erreur : ' + error.message, 'error'); return null; }
+    panierId = ex.id;
+  } else {
+    panierId = data.id;
+  }
+  return panierId;
+}
+
+async function ajouterAuPanier(produitId) {
+  if (!panierProjetId) {
+    await ouvrirPanier();
+    toast('Choisissez d’abord le projet pour lequel vous magasinez.', 'info');
+    return;
+  }
+  if (!panierPostes.length && !panierItems.length) await chargerPanier();
+  if (!(await assurerPanier())) return;
+  // Proposer d'office le poste si un seul poste du projet a la même sous-catégorie
+  const p = produitsCache.find(x => x.id === produitId) || {};
+  const candidats = p.sous_categorie_id ? panierPostes.filter(x => x.sous_categorie_id === p.sous_categorie_id) : [];
+  const { error } = await db.from('panier_items').insert({
+    panier_id: panierId, banque_produit_id: produitId,
+    poste_id: candidats.length === 1 ? candidats[0].id : null,
+    ordre: panierItems.length,
+  });
+  if (error) { toast('Erreur : ' + error.message, 'error'); return; }
+  await chargerPanier();
+  const projet = (panierProjets || []).find(x => x.id === panierProjetId);
+  toast(`Ajouté au panier${projet ? ' — ' + projet.nom : ''}.`, 'success');
+}
+
+async function majItemPanier(itemId, champs) {
+  const { error } = await db.from('panier_items').update(champs).eq('id', itemId);
+  if (error) { toast('Erreur : ' + error.message, 'error'); return; }
+  const it = panierItems.find(x => x.id === itemId);
+  if (it) Object.assign(it, champs);
+  renderPanier();
+}
+
+async function choisirPostePanier(itemId, valeur) {
+  if (valeur === '__nouveau') {
+    document.getElementById('pnp-' + itemId).style.display = '';
+    document.getElementById('pnp-ref-' + itemId).focus();
+    return;
+  }
+  await majItemPanier(itemId, { poste_id: valeur || null });
+}
+
+async function creerPostePanier(itemId) {
+  const it = panierItems.find(x => x.id === itemId);
+  const bp = it?.banque_produits || {};
+  const ref = document.getElementById('pnp-ref-' + itemId).value.trim();
+  const piece = document.getElementById('pnp-piece-' + itemId).value.trim();
+  if (!ref) { toast('La référence du poste est requise.', 'error'); return; }
+  if (!bp.categorie_id) { toast('Ce produit n’a pas de catégorie : ajoutez-en une dans la banque, ou choisissez un poste existant.', 'error'); return; }
+  const ordre = panierPostes.length ? Math.max(...panierPostes.map(p => p.ordre ?? 0)) + 1 : 0;
+  const { data: poste, error } = await db.from('postes').insert({
+    projet_id: panierProjetId, reference: ref, categorie_id: bp.categorie_id,
+    sous_categorie_id: bp.sous_categorie_id || null, pieces: piece ? [piece] : [], piece: piece || null,
+    type_selection: 'unique', ordre,
+  }).select('id').single();
+  if (error) { toast('Erreur : ' + error.message, 'error'); return; }
+  await db.from('panier_items').update({ poste_id: poste.id }).eq('id', itemId);
+  toast(`Poste ${ref} créé.`, 'success');
+  await chargerPanier();
+}
+
+async function retirerDuPanier(itemId) {
+  const { error } = await db.from('panier_items').delete().eq('id', itemId);
+  if (error) { toast('Erreur : ' + error.message, 'error'); return; }
+  panierItems = panierItems.filter(x => x.id !== itemId);
+  renderPanier();
+}
+
+async function envoyerPanier() {
+  if (!panierItems.length || panierItems.some(it => !it.poste_id)) return;
+  const parPoste = {};
+  panierItems.forEach(it => (parPoste[it.poste_id] = parPoste[it.poste_id] || []).push(it));
+  const nbPostes = Object.keys(parPoste).length;
+  const projet = (panierProjets || []).find(x => x.id === panierProjetId);
+  if (!confirm(`Envoyer ${panierItems.length} produit(s) dans ${nbPostes} poste(s) du projet « ${projet?.nom || ''} » ?\n\nLes options seront visibles tout de suite dans le portail du client, en attente de sa décision.`)) return;
+
+  const btn = document.getElementById('panier-btn-envoyer');
+  btn.disabled = true; btn.textContent = 'Envoi en cours…';
+  let erreurs = 0;
+  for (const [posteId, items] of Object.entries(parPoste)) {
+    const poste = panierPostes.find(p => p.id === posteId);
+    // Lettres déjà prises dans ce poste → on continue la suite (A, B, C…)
+    const { data: exist } = await db.from('options_produits').select('lettre_option').eq('poste_id', posteId);
+    const prises = new Set((exist || []).map(o => (o.lettre_option || '').toUpperCase()));
+    let code = 65;
+    for (const it of items) {
+      while (prises.has(String.fromCharCode(code))) code++;
+      const lettre = String.fromCharCode(code); prises.add(lettre);
+      const { error } = await db.from('options_produits').insert({
+        poste_id: posteId, banque_produit_id: it.banque_produit_id, lettre_option: lettre,
+        quantite: Number(it.quantite) || 1, note_client: it.note_client || null,
+      });
+      if (error) { erreurs++; continue; }
+      await db.from('panier_items').delete().eq('id', it.id);
+    }
+    if (prises.size > 1 && poste && poste.type_selection !== 'multiple') {
+      await db.from('postes').update({ type_selection: 'multiple' }).eq('id', posteId);
+    }
+  }
+  btn.textContent = 'Envoyer au profil client';
+  if (erreurs) {
+    toast(`${erreurs} produit(s) n’ont pas pu être envoyés ; ils restent dans le panier.`, 'error');
+  } else {
+    const { data: { user } } = await db.auth.getUser();
+    await db.from('paniers').update({ statut: 'envoye', envoye_at: new Date().toISOString(), envoye_par: user?.email || null }).eq('id', panierId);
+    toast('Sélection envoyée au profil client.', 'success');
+  }
+  await chargerPanier();
+  if (currentProjetId === panierProjetId && typeof chargerPostes === 'function') chargerPostes();
+}
+
+document.addEventListener('DOMContentLoaded', () => {
+  // Compteur du panier dès l'ouverture du portail, si un projet était déjà choisi
+  setTimeout(() => { if (panierProjetId) chargerPanier().catch(() => {}); }, 1500);
+});
+
 // ---------- Fiche (lecture) ----------
 let ficheMatId = null;
 let projetsPourFiche = null;
@@ -1892,7 +2213,7 @@ function renderFicheMat(m, histo) {
         </div>
         ${aEntente ? `<div class="fiche-ententes">
           ${ent('Escompte EG', m.escompte_eg)}${ent('Ristourne EG', m.ristourne_eg)}
-          ${ent('Escompte réf. client', m.escompte_ref)}${ent('Ristourne réf. client', m.ristourne_ref)}
+          ${ent('Escompte réf.', m.escompte_ref)}${ent('Ristourne réf.', m.ristourne_ref)}
         </div>
         ${m.date_entente ? `<div class="fiche-eval-txt">Entente du ${new Date(m.date_entente + 'T12:00').toLocaleDateString('fr-CA', { day: 'numeric', month: 'long', year: 'numeric' })}</div>` : ''}` : ''}
       </div>
@@ -3272,6 +3593,7 @@ function renderProduits(produits) {
       <td>${badgeStatut(p)}</td>
       <td style="white-space:nowrap">
         <div style="display:flex;align-items:center;gap:6px">
+          <button class="btn btn-outline btn-sm" title="Ajouter au panier de sélection" onclick="ajouterAuPanier('${p.id}')">🛒</button>
           <button class="btn btn-outline btn-sm" onclick="editerProduit('${p.id}')">Modifier</button>
           <button class="btn btn-outline btn-sm" style="color:var(--danger);border-color:var(--danger)" onclick="supprimerProduit('${p.id}','${(p.nom||'').replace(/'/g,"\\'")}')">Supprimer</button>
         </div>

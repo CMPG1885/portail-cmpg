@@ -144,6 +144,97 @@ body { font-family: 'Roboto', sans-serif; background: var(--fond); color: var(--
 .btn-sm { padding: 7px 14px; font-size: 11px; }
 .btn-danger { background: var(--danger); color: var(--blanc); }
 
+/* ===== FICHE MATÉRIAUTHÈQUE ===== */
+.fiche-overlay { padding: 24px; }
+.fiche {
+  width: 880px; max-width: 100%; max-height: 92vh; overflow-y: auto;
+  background: var(--fond); border-radius: 22px; box-shadow: 0 30px 80px rgba(0,0,0,.35);
+}
+.fiche-hero {
+  position: relative; background: var(--charcoal); color: var(--blanc);
+  padding: 34px 40px 30px; border-radius: 22px 22px 0 0; overflow: hidden;
+}
+.fiche-hero::after {
+  content: ''; position: absolute; right: -60px; top: -60px; width: 220px; height: 220px;
+  border-radius: 50%; border: 1px solid rgba(154,140,126,.35);
+}
+.fiche-hero::before {
+  content: ''; position: absolute; right: 30px; top: 40px; width: 120px; height: 120px;
+  border-radius: 50%; border: 1px solid rgba(154,140,126,.2);
+}
+.fiche-close {
+  position: absolute; top: 18px; right: 20px; z-index: 2; width: 34px; height: 34px; border-radius: 50%;
+  border: 1px solid rgba(255,255,255,.25); background: transparent; color: var(--blanc); font-size: 18px; cursor: pointer;
+}
+.fiche-close:hover { background: rgba(255,255,255,.1); }
+.fiche-surtitre { font-size: 10px; letter-spacing: 2.5px; text-transform: uppercase; color: var(--caramel); }
+.fiche-nom { font-family: 'Noto Serif Display', serif; font-size: 34px; font-weight: 400; line-height: 1.15; margin: 8px 0 14px; padding-right: 60px; }
+.fiche-pills { display: flex; gap: 8px; flex-wrap: wrap; position: relative; z-index: 1; }
+.fiche-pill {
+  font-size: 11px; letter-spacing: .5px; padding: 6px 14px; border-radius: 999px;
+  border: 1px solid rgba(255,255,255,.22); color: rgba(255,255,255,.9);
+}
+.fiche-pill.plein { background: var(--caramel); border-color: var(--caramel); color: var(--blanc); }
+.fiche-pill.noire { background: var(--danger); border-color: var(--danger); color: var(--blanc); }
+.fiche-corps { padding: 26px 28px 30px; display: grid; grid-template-columns: 1.15fr 1fr; gap: 18px; }
+.fiche-carte { background: var(--blanc); border-radius: 16px; padding: 22px 24px; box-shadow: var(--shadow); }
+.fiche-carte.pleine { grid-column: 1 / -1; }
+.fiche-carte h4 { font-size: 10px; letter-spacing: 2px; text-transform: uppercase; color: var(--caramel); font-weight: 500; margin-bottom: 16px; }
+.fiche-rep { display: flex; align-items: center; gap: 16px; margin-bottom: 18px; }
+.fiche-avatar {
+  width: 56px; height: 56px; border-radius: 50%; flex: 0 0 56px; display: flex; align-items: center; justify-content: center;
+  background: var(--fond); border: 1px solid var(--bord); color: var(--charcoal);
+  font-family: 'Noto Serif Display', serif; font-size: 20px;
+}
+.fiche-rep-nom { font-family: 'Noto Serif Display', serif; font-size: 20px; }
+.fiche-rep-role { font-size: 12px; color: var(--texte-2); margin-top: 2px; }
+.fiche-coord { display: flex; flex-direction: column; gap: 8px; }
+.fiche-coord a, .fiche-coord span {
+  display: flex; align-items: center; gap: 12px; padding: 10px 14px; border-radius: 12px;
+  background: var(--fond); color: var(--texte); text-decoration: none; font-size: 13px; word-break: break-all;
+}
+.fiche-coord a:hover { background: #ECE8E0; }
+.fiche-coord i { font-style: normal; width: 18px; text-align: center; color: var(--caramel); flex: 0 0 18px; }
+.fiche-etoiles { font-size: 30px; letter-spacing: 4px; color: var(--caramel); line-height: 1; }
+.fiche-etoiles .vide { color: var(--bord); }
+.fiche-eval-txt { font-size: 12px; color: var(--texte-2); margin-top: 8px; }
+.fiche-gamme { margin-top: 24px; }
+.fiche-gamme-barre { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; margin-top: 10px; }
+.fiche-gamme-barre div { height: 8px; border-radius: 999px; background: var(--bord); }
+.fiche-gamme-barre div.on { background: var(--caramel); }
+.fiche-gamme-barre div.actif { background: var(--charcoal); }
+.fiche-gamme-libs { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; margin-top: 8px; font-size: 11px; color: var(--texte-2); }
+.fiche-gamme-libs span.actif { color: var(--charcoal); font-weight: 500; }
+.fiche-ententes { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 24px; }
+.fiche-entente { background: var(--fond); border-radius: 12px; padding: 12px 14px; }
+.fiche-entente b { display: block; font-family: 'Noto Serif Display', serif; font-size: 18px; font-weight: 400; }
+.fiche-entente small { font-size: 10px; letter-spacing: 1px; text-transform: uppercase; color: var(--texte-2); }
+.fiche-histo { list-style: none; position: relative; margin-left: 6px; }
+.fiche-histo li { position: relative; padding: 0 0 18px 26px; border-left: 1px solid var(--bord); }
+.fiche-histo li:last-child { border-left-color: transparent; padding-bottom: 0; }
+.fiche-histo li::before {
+  content: ''; position: absolute; left: -6px; top: 3px; width: 11px; height: 11px; border-radius: 50%;
+  background: var(--blanc); border: 2px solid var(--caramel);
+}
+.fiche-histo-titre { font-weight: 500; font-size: 14px; display: flex; justify-content: space-between; gap: 12px; }
+.fiche-histo-meta { font-size: 12px; color: var(--texte-2); margin-top: 3px; }
+.fiche-histo-suppr { background: none; border: none; color: var(--texte-2); cursor: pointer; font-size: 12px; opacity: .6; }
+.fiche-histo-suppr:hover { opacity: 1; color: var(--danger); }
+.fiche-ajout { display: grid; grid-template-columns: 2fr 1fr 1fr; gap: 8px; margin-top: 18px; padding-top: 18px; border-top: 1px dashed var(--bord); }
+.fiche-ajout input, .fiche-ajout select { padding: 9px 12px; border: 1px solid var(--bord); border-radius: 10px; font-size: 13px; background: var(--blanc); outline: none; font-family: inherit; }
+.fiche-ajout input:focus, .fiche-ajout select:focus { border-color: var(--caramel); }
+.fiche-ajout .large { grid-column: 1 / -1; }
+.fiche-btn { border-radius: 999px !important; }
+.fiche-notes { font-size: 13px; line-height: 1.7; color: var(--texte); white-space: pre-wrap; }
+.fiche-pied { display: flex; justify-content: space-between; align-items: center; padding: 0 28px 26px; gap: 12px; flex-wrap: wrap; }
+.fiche-pied small { font-size: 11px; color: var(--texte-2); }
+@media (max-width: 760px) {
+  .fiche-corps { grid-template-columns: 1fr; padding: 18px; }
+  .fiche-hero { padding: 28px 22px 24px; }
+  .fiche-nom { font-size: 26px; }
+  .fiche-ajout { grid-template-columns: 1fr; }
+}
+
 /* ===== MODAL ===== */
 .modal-overlay {
   display: none; position: fixed; inset: 0; background: rgba(58,59,58,.5);
@@ -369,7 +460,11 @@ body { font-family: 'Roboto', sans-serif; background: var(--fond); color: var(--
       <a class="nav-item" onclick="showView('clients')" href="#">
         <span class="nav-icon">👤</span> Clients
       </a>
-      <a class="nav-item" onclick="showView('referentiel')" href="#">
+      <a class="nav-item" onclick="showView('materiautheque')" href="#">
+        <span class="nav-icon">📇</span> Matériauthèque
+      </a>
+      <!-- Module budgétaire en développement : masqué tant que MODULE_BUDGET_ACTIF = false -->
+      <a class="nav-item" id="nav-referentiel" onclick="showView('referentiel')" href="#" style="display:none">
         <span class="nav-icon">💲</span> Référentiel budget
       </a>
     </nav>
@@ -564,6 +659,58 @@ body { font-family: 'Roboto', sans-serif; background: var(--fond); color: var(--
             </thead>
             <tbody id="clients-tbody">
               <tr><td colspan="5" style="text-align:center;padding:40px;color:var(--texte-2)">Chargement…</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <!-- ===== MATÉRIAUTHÈQUE (fournisseurs et sous-traitants) ===== -->
+    <div id="view-materiautheque" class="view">
+      <div class="page-header">
+        <h2>Matériauthèque</h2>
+        <button class="btn btn-dark" onclick="ouvrirModalMat()">+ Nouveau fournisseur</button>
+      </div>
+      <div class="page-body">
+        <div class="product-bank-filters">
+          <input type="search" id="mat-recherche" placeholder="Rechercher : compagnie, représentant, courriel, détails…" oninput="filtrerMateriautheque()" />
+          <select id="mat-f-ddn" onchange="onMatDdnChange()"><option value="">Tous les DDN</option></select>
+          <select id="mat-f-souscat" onchange="filtrerMateriautheque()"><option value="">Toutes les sous-catégories</option></select>
+          <select id="mat-f-type" onchange="filtrerMateriautheque()">
+            <option value="">Tous les types</option>
+            <option value="Fournisseur">Fournisseur</option>
+            <option value="Sous-traitant">Sous-traitant</option>
+            <option value="Les deux">Les deux (seulement)</option>
+          </select>
+          <select id="mat-f-gamme" onchange="filtrerMateriautheque()">
+            <option value="">Toutes les gammes</option>
+            <option>Bas de gamme</option><option>Moyen de gamme</option><option>Haut de gamme</option>
+          </select>
+          <select id="mat-f-eval" onchange="filtrerMateriautheque()">
+            <option value="">Toutes les évaluations</option>
+            <option value="4+">★★★★ et plus</option>
+            <option value="evalue">Évalués seulement</option>
+            <option value="Liste noire">Liste noire</option>
+          </select>
+        </div>
+        <div id="mat-compteur" style="font-size:12px;color:var(--texte-2);margin:-8px 0 12px"></div>
+        <div class="card" style="padding:0;overflow-x:auto">
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th>Compagnie</th>
+                <th>DDN / sous-catégorie</th>
+                <th>Type</th>
+                <th>Représentant</th>
+                <th>Téléphone</th>
+                <th>Courriel</th>
+                <th>Gamme</th>
+                <th>Éval.</th>
+                <th></th>
+              </tr>
+            </thead>
+            <tbody id="mat-tbody">
+              <tr><td colspan="9" style="text-align:center;padding:40px;color:var(--texte-2)">Chargement…</td></tr>
             </tbody>
           </table>
         </div>
@@ -882,6 +1029,101 @@ body { font-family: 'Roboto', sans-serif; background: var(--fond); color: var(--
     <div class="modal-footer">
       <button class="btn btn-outline" onclick="closeModal('modal-nouveau-client')">Annuler</button>
       <button class="btn btn-dark" onclick="creerClient()">Créer le client</button>
+    </div>
+  </div>
+</div>
+
+<!-- Fiche Matériauthèque (lecture) -->
+<div id="modal-fiche-mat" class="modal-overlay fiche-overlay" onclick="if (event.target === this) closeModal('modal-fiche-mat')">
+  <div class="fiche" id="fiche-mat-contenu"></div>
+</div>
+
+<!-- Modal Matériauthèque (édition) -->
+<div id="modal-mat" class="modal-overlay">
+  <div class="modal" style="width:760px">
+    <div class="modal-header">
+      <h3 id="mat-modal-titre">Nouveau fournisseur</h3>
+      <button class="modal-close" onclick="closeModal('modal-mat')">×</button>
+    </div>
+    <div class="modal-body">
+      <div class="form-grid">
+        <div class="form-group form-full">
+          <label>Compagnie *</label>
+          <input type="text" id="mat-compagnie" />
+        </div>
+        <div class="form-group form-full">
+          <label>DDN *</label>
+          <input type="text" id="mat-ddn" list="mat-liste-ddn" placeholder="Choisir ou taper (ex. 09 30 13 — Carrelage)" />
+          <datalist id="mat-liste-ddn"></datalist>
+        </div>
+        <div class="form-group">
+          <label>Sous-catégorie</label>
+          <input type="text" id="mat-souscat" list="mat-liste-souscat" />
+          <datalist id="mat-liste-souscat"></datalist>
+        </div>
+        <div class="form-group">
+          <label>Type *</label>
+          <select id="mat-type"><option>Fournisseur</option><option>Sous-traitant</option><option>Les deux</option></select>
+        </div>
+        <div class="form-group">
+          <label>Gamme</label>
+          <select id="mat-gamme"><option value="">—</option><option>Bas de gamme</option><option>Moyen de gamme</option><option>Haut de gamme</option></select>
+        </div>
+        <div class="form-group">
+          <label>Évaluation</label>
+          <select id="mat-eval"><option value="">—</option><option>★★★★★</option><option>★★★★</option><option>★★★</option><option>★★</option><option>★</option><option>Liste noire</option></select>
+        </div>
+        <div class="form-group">
+          <label>Représentant</label>
+          <input type="text" id="mat-rep" />
+        </div>
+        <div class="form-group">
+          <label>Téléphone</label>
+          <input type="tel" id="mat-tel" />
+        </div>
+        <div class="form-group">
+          <label>Courriel</label>
+          <input type="email" id="mat-courriel" />
+        </div>
+        <div class="form-group">
+          <label>Site web</label>
+          <input type="url" id="mat-site" placeholder="https://" />
+        </div>
+        <div class="form-group">
+          <label>Escompte EG</label>
+          <input type="text" id="mat-esc-eg" placeholder="ex. 10 %" />
+        </div>
+        <div class="form-group">
+          <label>Ristourne EG</label>
+          <input type="text" id="mat-ris-eg" />
+        </div>
+        <div class="form-group">
+          <label>Escompte référence client</label>
+          <input type="text" id="mat-esc-ref" />
+        </div>
+        <div class="form-group">
+          <label>Ristourne référence client</label>
+          <input type="text" id="mat-ris-ref" />
+        </div>
+        <div class="form-group">
+          <label>Date de l'entente</label>
+          <input type="date" id="mat-date" />
+        </div>
+        <div class="form-group">
+          <label>Liste de prix (lien)</label>
+          <input type="url" id="mat-liste-prix" placeholder="https://" />
+        </div>
+        <div class="form-group form-full">
+          <label>Autres détails</label>
+          <textarea id="mat-details"></textarea>
+        </div>
+      </div>
+      <div id="mat-maj" style="font-size:11px;color:var(--texte-2)"></div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-outline" id="mat-btn-suppr" onclick="supprimerMat()" style="margin-right:auto;color:var(--danger);display:none">Supprimer</button>
+      <button class="btn btn-outline" onclick="closeModal('modal-mat')">Annuler</button>
+      <button class="btn btn-dark" onclick="sauvegarderMat()">Enregistrer</button>
     </div>
   </div>
 </div>
@@ -1379,12 +1621,21 @@ async function initApp(user) {
 // ============================================================
 // NAVIGATION
 // ============================================================
+// Module budgétaire (Référentiel budget) en cours de développement : masqué.
+// Pour le réactiver, mettre à true — le menu et la vue réapparaissent.
+var MODULE_BUDGET_ACTIF = false;
+document.addEventListener('DOMContentLoaded', () => {
+  const nav = document.getElementById('nav-referentiel');
+  if (nav && MODULE_BUDGET_ACTIF) nav.style.display = '';
+});
+
 function showView(name) {
+  if (name === 'referentiel' && !MODULE_BUDGET_ACTIF) name = 'projets';
   document.querySelectorAll('.view').forEach(v => v.classList.remove('active'));
   document.getElementById('view-' + name).classList.add('active');
 
   document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
-  const navMap = { projets: 0, banque: 1, clients: 2, referentiel: 3 };
+  const navMap = { projets: 0, banque: 1, clients: 2, materiautheque: 3, referentiel: 4 };
   const idx = navMap[name];
   if (idx !== undefined) {
     document.querySelectorAll('.nav-item')[idx].classList.add('active');
@@ -1392,7 +1643,323 @@ function showView(name) {
 
   if (name === 'banque')      chargerProduits();
   if (name === 'clients')     chargerClients();
+  if (name === 'materiautheque') chargerMateriautheque();
   if (name === 'referentiel') chargerReferentiel();
+}
+
+
+// ============================================================
+// MATÉRIAUTHÈQUE — fournisseurs et sous-traitants (table materiautheque)
+// Une ligne = une compagnie pour un DDN (comme dans l'Excel d'origine) :
+// une compagnie active dans deux DDN apparaît deux fois.
+// ============================================================
+let matCache = [];
+let editingMatId = null;
+
+function escH(v) {
+  return String(v ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
+function lienWeb(u) {
+  if (!u) return '';
+  const href = /^https?:\/\//i.test(u) ? u : 'https://' + u;
+  return href;
+}
+
+async function chargerMateriautheque() {
+  const { data, error } = await db.from('materiautheque').select('*').order('compagnie').range(0, 9999);
+  if (error) {
+    document.getElementById('mat-tbody').innerHTML =
+      `<tr><td colspan="9" style="text-align:center;padding:40px;color:var(--danger)">Erreur de chargement : ${escH(error.message)}</td></tr>`;
+    return;
+  }
+  matCache = data || [];
+
+  // Listes déroulantes et suggestions, construites à partir des données
+  const ddns = [...new Set(matCache.map(m => m.ddn).filter(Boolean))].sort();
+  const selDdn = document.getElementById('mat-f-ddn');
+  const garde = selDdn.value;
+  selDdn.innerHTML = '<option value="">Tous les DDN</option>' + ddns.map(d => `<option value="${escH(d)}">${escH(d)}</option>`).join('');
+  selDdn.value = garde;
+  document.getElementById('mat-liste-ddn').innerHTML = ddns.map(d => `<option value="${escH(d)}">`).join('');
+  onMatDdnChange(true);
+}
+
+function onMatDdnChange(garderSousCat) {
+  const ddn = document.getElementById('mat-f-ddn').value;
+  const sel = document.getElementById('mat-f-souscat');
+  const garde = garderSousCat === true ? sel.value : '';
+  const scs = [...new Set(matCache.filter(m => !ddn || m.ddn === ddn).map(m => m.sous_categorie).filter(Boolean))].sort();
+  sel.innerHTML = '<option value="">Toutes les sous-catégories</option>' + scs.map(s => `<option value="${escH(s)}">${escH(s)}</option>`).join('');
+  sel.value = scs.includes(garde) ? garde : '';
+  filtrerMateriautheque();
+}
+
+function filtrerMateriautheque() {
+  const v = id => document.getElementById(id)?.value || '';
+  const q = v('mat-recherche').toLowerCase().trim();
+  const ddn = v('mat-f-ddn'), sc = v('mat-f-souscat'), type = v('mat-f-type'), gamme = v('mat-f-gamme'), ev = v('mat-f-eval');
+  const res = matCache.filter(m => {
+    if (q && ![m.compagnie, m.representant, m.courriel, m.telephone, m.autres_details, m.sous_categorie, m.ddn]
+              .some(x => x && x.toLowerCase().includes(q))) return false;
+    if (ddn && m.ddn !== ddn) return false;
+    if (sc && m.sous_categorie !== sc) return false;
+    // « Fournisseur » et « Sous-traitant » incluent « Les deux » (même règle que l'Excel)
+    if (type && !(m.type === type || (type !== 'Les deux' && m.type === 'Les deux'))) return false;
+    if (gamme && m.gamme !== gamme) return false;
+    if (ev === '4+' && !(m.evaluation && m.evaluation.startsWith('★★★★'))) return false;
+    if (ev === 'evalue' && !m.evaluation) return false;
+    if (ev === 'Liste noire' && m.evaluation !== 'Liste noire') return false;
+    return true;
+  });
+  document.getElementById('mat-compteur').textContent =
+    `${res.length} résultat${res.length > 1 ? 's' : ''}` + (res.length !== matCache.length ? ` sur ${matCache.length}` : '');
+  renderMateriautheque(res);
+}
+
+function renderMateriautheque(liste) {
+  const tbody = document.getElementById('mat-tbody');
+  if (!liste.length) {
+    tbody.innerHTML = '<tr><td colspan="9" style="text-align:center;padding:40px;color:var(--texte-2)">Aucun résultat. Ajustez les filtres.</td></tr>';
+    return;
+  }
+  tbody.innerHTML = liste.map(m => `
+    <tr style="cursor:pointer${m.evaluation === 'Liste noire' ? ';opacity:.55' : ''}" onclick="ouvrirFicheMat('${m.id}')">
+      <td style="font-weight:500">${escH(m.compagnie)}
+        ${m.site_web ? `<a href="${escH(lienWeb(m.site_web))}" target="_blank" rel="noopener" onclick="event.stopPropagation()" style="color:var(--caramel);font-weight:400;font-size:11px;margin-left:6px">site ↗</a>` : ''}</td>
+      <td style="font-size:12px">${escH(m.ddn)}${m.sous_categorie ? `<div style="color:var(--texte-2)">${escH(m.sous_categorie)}</div>` : ''}</td>
+      <td style="font-size:12px">${escH(m.type)}</td>
+      <td>${escH(m.representant || '—')}</td>
+      <td style="white-space:nowrap">${m.telephone ? `<a href="tel:${escH(m.telephone)}" onclick="event.stopPropagation()" style="color:inherit">${escH(m.telephone)}</a>` : '—'}</td>
+      <td>${m.courriel ? `<a href="mailto:${escH(m.courriel)}" onclick="event.stopPropagation()" style="color:var(--caramel)">${escH(m.courriel)}</a>` : '—'}</td>
+      <td style="font-size:12px">${escH(m.gamme || '')}</td>
+      <td style="white-space:nowrap;${m.evaluation === 'Liste noire' ? 'color:var(--danger);font-weight:500' : 'color:var(--caramel)'}">${escH(m.evaluation || '')}</td>
+      <td><button class="btn btn-outline btn-sm" onclick="event.stopPropagation();ouvrirFicheMat('${m.id}')">Voir la fiche</button></td>
+    </tr>`).join('');
+}
+
+const MAT_CHAMPS = {
+  'mat-compagnie': 'compagnie', 'mat-ddn': 'ddn', 'mat-souscat': 'sous_categorie', 'mat-type': 'type',
+  'mat-gamme': 'gamme', 'mat-eval': 'evaluation', 'mat-rep': 'representant', 'mat-tel': 'telephone',
+  'mat-courriel': 'courriel', 'mat-site': 'site_web', 'mat-esc-eg': 'escompte_eg', 'mat-ris-eg': 'ristourne_eg',
+  'mat-esc-ref': 'escompte_ref', 'mat-ris-ref': 'ristourne_ref', 'mat-date': 'date_entente',
+  'mat-liste-prix': 'liste_prix_url', 'mat-details': 'autres_details',
+};
+
+function ouvrirModalMat(id) {
+  editingMatId = id || null;
+  const m = id ? matCache.find(x => x.id === id) : null;
+  Object.entries(MAT_CHAMPS).forEach(([el, col]) => {
+    document.getElementById(el).value = m ? (m[col] ?? '') : (col === 'type' ? 'Fournisseur' : '');
+  });
+  // Sur un nouvel ajout, pré-remplir le DDN filtré pour aller plus vite
+  if (!m) document.getElementById('mat-ddn').value = document.getElementById('mat-f-ddn').value || '';
+  majSuggestionsSousCat();
+  document.getElementById('mat-modal-titre').textContent = m ? m.compagnie : 'Nouveau fournisseur';
+  document.getElementById('mat-btn-suppr').style.display = m ? '' : 'none';
+  document.getElementById('mat-maj').textContent = m && m.updated_at
+    ? `Dernière mise à jour : ${new Date(m.updated_at).toLocaleDateString('fr-CA')}${m.updated_by ? ' par ' + m.updated_by : ''}` : '';
+  openModal('modal-mat');
+}
+
+function majSuggestionsSousCat() {
+  const ddn = document.getElementById('mat-ddn').value;
+  const scs = [...new Set(matCache.filter(m => !ddn || m.ddn === ddn).map(m => m.sous_categorie).filter(Boolean))].sort();
+  document.getElementById('mat-liste-souscat').innerHTML = scs.map(s => `<option value="${escH(s)}">`).join('');
+}
+document.addEventListener('DOMContentLoaded', () => {
+  document.getElementById('mat-ddn')?.addEventListener('change', majSuggestionsSousCat);
+});
+
+async function sauvegarderMat() {
+  const payload = {};
+  Object.entries(MAT_CHAMPS).forEach(([el, col]) => {
+    const val = document.getElementById(el).value.trim();
+    payload[col] = val === '' ? null : val;
+  });
+  if (!payload.compagnie || !payload.ddn) { toast('La compagnie et le DDN sont requis.', 'error'); return; }
+  const { data: { user } } = await db.auth.getUser();
+  payload.updated_at = new Date().toISOString();
+  payload.updated_by = user?.email || null;
+
+  const { error } = editingMatId
+    ? await db.from('materiautheque').update(payload).eq('id', editingMatId)
+    : await db.from('materiautheque').insert(payload);
+  if (error) { toast('Erreur : ' + error.message, 'error'); return; }
+  closeModal('modal-mat');
+  toast(editingMatId ? 'Fiche mise à jour.' : 'Fournisseur ajouté.', 'success');
+  const rouvrir = editingMatId;
+  editingMatId = null;
+  await chargerMateriautheque();
+  if (rouvrir) ouvrirFicheMat(rouvrir);
+}
+
+
+// ---------- Fiche (lecture) ----------
+let ficheMatId = null;
+let projetsPourFiche = null;
+
+function initialesDe(nom) {
+  return (nom || '').split(/[\s\-]+/).filter(Boolean).slice(0, 2).map(x => x[0].toUpperCase()).join('') || '—';
+}
+
+async function ouvrirFicheMat(id) {
+  const m = matCache.find(x => x.id === id);
+  if (!m) return;
+  ficheMatId = id;
+  // Projets du portail, pour le menu de l'historique (chargés une fois)
+  if (!projetsPourFiche) {
+    const { data } = await db.from('projets').select('id, nom, numero_projet').order('nom');
+    projetsPourFiche = data || [];
+  }
+  const { data: histo, error } = await db.from('materiautheque_projets')
+    .select('*, projets(nom, numero_projet)').eq('materiautheque_id', id)
+    .order('date_travaux', { ascending: false, nullsFirst: false });
+  renderFicheMat(m, error ? null : (histo || []));
+  openModal('modal-fiche-mat');
+}
+
+function renderFicheMat(m, histo) {
+  const noire = m.evaluation === 'Liste noire';
+  const nbEt  = noire ? 0 : (m.evaluation || '').length;
+  const etoiles = noire
+    ? '<div class="fiche-etoiles" style="color:var(--danger);font-size:20px;letter-spacing:1px">⛔ Liste noire</div>'
+    : `<div class="fiche-etoiles">${'★'.repeat(nbEt)}<span class="vide">${'★'.repeat(5 - nbEt)}</span></div>
+       <div class="fiche-eval-txt">${nbEt ? nbEt + ' sur 5' : 'Pas encore évalué'}</div>`;
+
+  const gammes = ['Bas de gamme', 'Moyen de gamme', 'Haut de gamme'];
+  const gi = gammes.indexOf(m.gamme);
+  const barre = gammes.map((g, i) => `<div class="${i === gi ? 'actif' : (i < gi ? 'on' : '')}"></div>`).join('');
+  const libs  = ['Bas', 'Moyen', 'Haut'].map((g, i) => `<span class="${i === gi ? 'actif' : ''}" style="text-align:${['left','center','right'][i]}">${g}</span>`).join('');
+
+  const coord = [
+    m.telephone ? `<a href="tel:${escH(m.telephone)}"><i>☎</i>${escH(m.telephone)}</a>` : '',
+    m.courriel  ? `<a href="mailto:${escH(m.courriel)}"><i>✉</i>${escH(m.courriel)}</a>` : '',
+    m.site_web  ? `<a href="${escH(lienWeb(m.site_web))}" target="_blank" rel="noopener"><i>↗</i>${escH(m.site_web.replace(/^https?:\/\/(www\.)?/i, '').replace(/\/$/, ''))}</a>` : '',
+    m.liste_prix_url ? `<a href="${escH(lienWeb(m.liste_prix_url))}" target="_blank" rel="noopener"><i>$</i>Liste de prix</a>` : '',
+  ].filter(Boolean).join('') || '<span><i>·</i>Aucune coordonnée</span>';
+
+  const ent = (lib, v) => `<div class="fiche-entente"><small>${lib}</small><b>${escH(v || '—')}</b></div>`;
+  const aEntente = m.escompte_eg || m.ristourne_eg || m.escompte_ref || m.ristourne_ref || m.date_entente;
+
+  const histoHtml = histo === null
+    ? '<div style="font-size:13px;color:var(--danger)">Historique indisponible (table non créée ?).</div>'
+    : (histo.length
+      ? `<ul class="fiche-histo">${histo.map(h => {
+          const titre = h.projets ? h.projets.nom : (h.projet_libelle || 'Projet');
+          const meta = [h.date_travaux ? new Date(h.date_travaux + 'T12:00').toLocaleDateString('fr-CA', { year: 'numeric', month: 'long' }) : '',
+                        h.appreciation || '', h.commentaire ? escH(h.commentaire) : ''].filter(Boolean).join(' · ');
+          return `<li><div class="fiche-histo-titre"><span>${escH(titre)}</span>
+                    <button class="fiche-histo-suppr" title="Retirer" onclick="retirerHistoMat('${h.id}')">✕</button></div>
+                  ${meta ? `<div class="fiche-histo-meta">${meta}</div>` : ''}</li>`;
+        }).join('')}</ul>`
+      : '<div style="font-size:13px;color:var(--texte-2)">Aucun projet inscrit pour l’instant.</div>');
+
+  const optsProjets = (projetsPourFiche || []).map(p => `<option value="${p.id}">${escH(p.nom)}</option>`).join('');
+
+  document.getElementById('fiche-mat-contenu').innerHTML = `
+    <div class="fiche-hero">
+      <button class="fiche-close" onclick="closeModal('modal-fiche-mat')">×</button>
+      <div class="fiche-surtitre">${escH(m.ddn)}${m.sous_categorie ? ' · ' + escH(m.sous_categorie) : ''}</div>
+      <div class="fiche-nom">${escH(m.compagnie)}</div>
+      <div class="fiche-pills">
+        <span class="fiche-pill plein">${escH(m.type)}</span>
+        ${m.gamme ? `<span class="fiche-pill">${escH(m.gamme)}</span>` : ''}
+        ${noire ? '<span class="fiche-pill noire">Liste noire</span>' : ''}
+      </div>
+    </div>
+
+    <div class="fiche-corps">
+      <div class="fiche-carte">
+        <h4>Représentant</h4>
+        <div class="fiche-rep">
+          <div class="fiche-avatar">${escH(initialesDe(m.representant || m.compagnie))}</div>
+          <div>
+            <div class="fiche-rep-nom">${escH(m.representant || 'Non précisé')}</div>
+            <div class="fiche-rep-role">${escH(m.compagnie)}</div>
+          </div>
+        </div>
+        <div class="fiche-coord">${coord}</div>
+      </div>
+
+      <div class="fiche-carte">
+        <h4>Évaluation</h4>
+        ${etoiles}
+        <div class="fiche-gamme">
+          <h4 style="margin-bottom:0">Gamme</h4>
+          <div class="fiche-gamme-barre">${barre}</div>
+          <div class="fiche-gamme-libs">${libs}</div>
+          ${gi < 0 ? '<div class="fiche-eval-txt">Gamme non précisée</div>' : ''}
+        </div>
+        ${aEntente ? `<div class="fiche-ententes">
+          ${ent('Escompte EG', m.escompte_eg)}${ent('Ristourne EG', m.ristourne_eg)}
+          ${ent('Escompte réf. client', m.escompte_ref)}${ent('Ristourne réf. client', m.ristourne_ref)}
+        </div>
+        ${m.date_entente ? `<div class="fiche-eval-txt">Entente du ${new Date(m.date_entente + 'T12:00').toLocaleDateString('fr-CA', { day: 'numeric', month: 'long', year: 'numeric' })}</div>` : ''}` : ''}
+      </div>
+
+      <div class="fiche-carte pleine">
+        <h4>Historique des projets</h4>
+        ${histoHtml}
+        ${histo !== null ? `<div class="fiche-ajout">
+          <select id="fh-projet" onchange="document.getElementById('fh-libelle').style.display = this.value ? 'none' : ''">
+            <option value="">Projet hors portail (saisie libre)</option>${optsProjets}
+          </select>
+          <input type="month" id="fh-date" title="Période des travaux" />
+          <select id="fh-appreciation">
+            <option value="">Appréciation</option><option>★★★★★</option><option>★★★★</option><option>★★★</option><option>★★</option><option>★</option>
+          </select>
+          <input type="text" id="fh-libelle" class="large" placeholder="Nom du projet (ex. 2443 Phaneuf Kane)" />
+          <input type="text" id="fh-commentaire" class="large" placeholder="Commentaire (facultatif) — ex. livraison en retard, travail impeccable…" />
+          <button class="btn btn-dark btn-sm fiche-btn large" onclick="ajouterHistoMat()" style="justify-self:end">+ Ajouter au historique</button>
+        </div>` : ''}
+      </div>
+
+      ${m.autres_details ? `<div class="fiche-carte pleine"><h4>Notes</h4><div class="fiche-notes">${escH(m.autres_details)}</div></div>` : ''}
+    </div>
+
+    <div class="fiche-pied">
+      <small>${m.updated_at ? 'Mise à jour le ' + new Date(m.updated_at).toLocaleDateString('fr-CA') + (m.updated_by ? ' par ' + escH(m.updated_by) : '') : ''}</small>
+      <button class="btn btn-dark fiche-btn" onclick="closeModal('modal-fiche-mat');ouvrirModalMat('${m.id}')">✎ Modifier la fiche</button>
+    </div>`;
+}
+
+async function ajouterHistoMat() {
+  const projetId = document.getElementById('fh-projet').value || null;
+  const libelle  = document.getElementById('fh-libelle').value.trim() || null;
+  if (!projetId && !libelle) { toast('Choisissez un projet ou inscrivez son nom.', 'error'); return; }
+  const mois = document.getElementById('fh-date').value;   // AAAA-MM
+  const { data: { user } } = await db.auth.getUser();
+  const { error } = await db.from('materiautheque_projets').insert({
+    materiautheque_id: ficheMatId,
+    projet_id: projetId,
+    projet_libelle: projetId ? null : libelle,
+    date_travaux: mois ? mois + '-01' : null,
+    appreciation: document.getElementById('fh-appreciation').value || null,
+    commentaire: document.getElementById('fh-commentaire').value.trim() || null,
+    created_by: user?.email || null,
+  });
+  if (error) { toast('Erreur : ' + error.message, 'error'); return; }
+  toast('Projet ajouté à l’historique.', 'success');
+  ouvrirFicheMat(ficheMatId);
+}
+
+async function retirerHistoMat(histoId) {
+  if (!confirm('Retirer ce projet de l’historique ?')) return;
+  const { error } = await db.from('materiautheque_projets').delete().eq('id', histoId);
+  if (error) { toast('Erreur : ' + error.message, 'error'); return; }
+  ouvrirFicheMat(ficheMatId);
+}
+
+async function supprimerMat() {
+  if (!editingMatId) return;
+  const m = matCache.find(x => x.id === editingMatId);
+  if (!confirm(`Supprimer définitivement « ${m?.compagnie} » (${m?.ddn}) de la Matériauthèque ?`)) return;
+  const { error } = await db.from('materiautheque').delete().eq('id', editingMatId);
+  if (error) { toast('Erreur : ' + error.message, 'error'); return; }
+  closeModal('modal-mat');
+  toast('Fiche supprimée.', 'success');
+  editingMatId = null;
+  chargerMateriautheque();
 }
 
 // ============================================================

@@ -184,6 +184,16 @@ body { font-family: 'Roboto', sans-serif; background: var(--fond); color: var(--
 .panier-envoyer { width: 100%; border-radius: 999px !important; padding: 13px !important; }
 .panier-envoyer:disabled { opacity: .45; cursor: not-allowed; }
 .btn-panier { position: relative; border-radius: 999px !important; }
+.panier-bandeau {
+  display: flex; align-items: center; gap: 14px; flex-wrap: wrap; margin-bottom: 18px;
+  background: var(--charcoal); color: var(--blanc); border-radius: 16px; padding: 12px 18px; cursor: pointer;
+}
+.panier-bandeau:hover { background: #2F302F; }
+.panier-bandeau .lib { font-size: 10px; letter-spacing: 2px; text-transform: uppercase; color: var(--caramel); }
+.panier-bandeau .projet { font-family: 'Noto Serif Display', serif; font-size: 18px; }
+.panier-bandeau .nb { margin-left: auto; font-size: 12px; background: rgba(255,255,255,.1); padding: 5px 12px; border-radius: 999px; }
+.panier-bandeau.vide { background: var(--blanc); color: var(--texte-2); border: 1px dashed var(--bord); }
+.panier-bandeau.vide .projet { font-family: inherit; font-size: 13px; }
 .btn-panier .compte {
   display: inline-block; min-width: 18px; height: 18px; line-height: 18px; border-radius: 999px; margin-left: 6px;
   background: var(--caramel); color: var(--blanc); font-size: 10px; text-align: center; padding: 0 5px;
@@ -630,6 +640,11 @@ body { font-family: 'Roboto', sans-serif; background: var(--fond); color: var(--
         </div>
       </div>
       <div class="page-body">
+        <!-- Projet du panier de sélection -->
+        <div id="banque-panier-bandeau" class="panier-bandeau vide" onclick="ouvrirPanier()">
+          <span class="lib">🛒 Panier</span>
+          <span class="projet">Aucun projet choisi — cliquez pour choisir le projet pour lequel vous magasinez</span>
+        </div>
         <!-- Import URL rapide -->
         <div class="card">
           <div style="font-size:11px;letter-spacing:1.5px;text-transform:uppercase;color:var(--texte-2);margin-bottom:10px">Ajout rapide par URL</div>
@@ -1908,6 +1923,15 @@ async function changerProjetPanier(id) {
 
 async function chargerPanier() {
   panierId = null; panierItems = []; panierPostes = [];
+  panierProjetNom = '';
+  if (panierProjetId) {
+    const connu = (panierProjets || []).find(x => x.id === panierProjetId);
+    if (connu) panierProjetNom = connu.nom;
+    else {
+      const { data: pj } = await db.from('projets').select('nom').eq('id', panierProjetId).maybeSingle();
+      if (pj) panierProjetNom = pj.nom; else memoriserProjetPanier(null);   // projet supprimé
+    }
+  }
   if (panierProjetId) {
     const [{ data: pan }, { data: postes }] = await Promise.all([
       db.from('paniers').select('id').eq('projet_id', panierProjetId).eq('statut', 'ouvert').maybeSingle(),
@@ -1926,8 +1950,22 @@ async function chargerPanier() {
   renderPanier();
 }
 
+let panierProjetNom = '';
 function majComptesPanier() {
   document.querySelectorAll('.panier-compte').forEach(el => el.textContent = panierItems.length);
+  // Bandeau de la Banque de produits : pour quel projet on magasine
+  const b = document.getElementById('banque-panier-bandeau');
+  if (!b) return;
+  const nb = panierItems.length;
+  if (panierProjetId && panierProjetNom) {
+    b.className = 'panier-bandeau';
+    b.innerHTML = `<span class="lib">🛒 Vous magasinez pour</span>
+      <span class="projet">${escH(panierProjetNom)}</span>
+      <span class="nb">${nb} produit${nb > 1 ? 's' : ''} dans le panier · changer de projet ›</span>`;
+  } else {
+    b.className = 'panier-bandeau vide';
+    b.innerHTML = '<span class="lib">🛒 Panier</span><span class="projet">Aucun projet choisi — cliquez pour choisir le projet pour lequel vous magasinez</span>';
+  }
 }
 
 function optionsPostesPour(item) {

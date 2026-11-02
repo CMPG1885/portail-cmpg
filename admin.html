@@ -1357,7 +1357,7 @@ body { font-family: 'Roboto', sans-serif; background: var(--fond); color: var(--
         </div>
         <div class="form-group">
           <label>Catégorie *</label>
-          <select id="poste-categorie" onchange="mettreAJourSousCatsPoste(this.value,'');filtrerProduitsBanqueSelect()">
+          <select id="poste-categorie" onchange="mettreAJourSousCatsPoste(this.value,'');filtrerProduitsBanqueSelect();majVisibiliteFinis(this.value)">
             <option value="">-- Sélectionner --</option>
           </select>
         </div>
@@ -1426,6 +1426,7 @@ body { font-family: 'Roboto', sans-serif; background: var(--fond); color: var(--
           <input type="text" id="ao-note" placeholder="Optionnel" />
         </div>
       </div>
+      <div id="ao-finis"></div>
     </div>
     <div class="modal-footer">
       <button class="btn btn-outline" onclick="closeModal('modal-ajout-option')">Annuler</button>
@@ -1723,7 +1724,7 @@ function showView(name) {
     document.querySelectorAll('.nav-item')[idx].classList.add('active');
   }
 
-  if (name === 'banque')      chargerProduits();
+  if (name === 'banque')      { chargerProduits(); chargerPanier().catch(() => {}); }
   if (name === 'clients')     chargerClients();
   if (name === 'materiautheque') chargerMateriautheque();
   if (name === 'referentiel') chargerReferentiel();
@@ -1875,6 +1876,67 @@ async function sauvegarderMat() {
   if (rouvrir) ouvrirFicheMat(rouvrir);
 }
 
+
+
+// ============================================================
+// FINIS PLANCHER ET MURAUX — coulis et lisière par option
+// (tâche ClickUp de Samantha). Colonnes options_produits :
+// coulis_fabricant, coulis_couleur, lisiere_fabricant, lisiere_couleur.
+// ============================================================
+const FINIS_CAT_NOM = 'finis plancher et muraux';
+const FINIS_FABRICANTS = ['MAPEI', 'Laticrete', 'Custom Building Products', 'Ardex', 'Flextile', 'Schluter', 'Rondec', 'Genesis'];
+const FINIS_CHAMPS = ['coulis_fabricant', 'coulis_couleur', 'lisiere_fabricant', 'lisiere_couleur'];
+
+function estCatFinis(catId) {
+  const c = (categories || []).find(x => x.id === catId);
+  return !!c && (c.nom || '').trim().toLowerCase() === FINIS_CAT_NOM;
+}
+// « Coulis : MAPEI · 5039 Ivory » / « Lisière : Schluter · Ivory » (lignes vides ignorées)
+function lignesFinis(opt) {
+  if (!opt) return [];
+  const l = [];
+  const c = [opt.coulis_fabricant, opt.coulis_couleur].filter(Boolean).join(' · ');
+  const s = [opt.lisiere_fabricant, opt.lisiere_couleur].filter(Boolean).join(' · ');
+  if (c) l.push('Coulis : ' + c);
+  if (s) l.push('Lisière : ' + s);
+  return l;
+}
+// Bloc de 4 champs ; prefixe = 'slot-A' (fenêtre du poste) ou 'ao' (fenêtre d'option)
+function htmlChampsFinis(prefixe) {
+  const f = (suffixe, ph, liste) => `<input type="text" id="${prefixe}-${suffixe}" placeholder="${ph}" ${liste ? 'list="finis-fabricants"' : ''}
+     style="padding:8px 10px;border:1px solid var(--bord);font-size:12px;outline:none;background:var(--blanc);width:100%" />`;
+  return `<div class="bloc-finis" style="display:none;margin-top:10px;padding:10px 12px;background:var(--blanc);border:1px solid var(--bord)">
+    <div style="font-size:10px;letter-spacing:1.5px;text-transform:uppercase;color:var(--caramel);margin-bottom:8px">Coulis et lisière</div>
+    <div style="display:grid;grid-template-columns:60px 1fr 1fr;gap:8px;align-items:center;font-size:12px">
+      <span style="color:var(--texte-2)">Coulis</span>${f('coulis_fabricant', 'Fabricant (ex. MAPEI)', true)}${f('coulis_couleur', 'Couleur (ex. 5039 Ivory)')}
+      <span style="color:var(--texte-2)">Lisière</span>${f('lisiere_fabricant', 'Fabricant (ex. Schluter)', true)}${f('lisiere_couleur', 'Couleur / fini (ex. Ivory)')}
+    </div>
+  </div>`;
+}
+function lireFinis(prefixe) {
+  const o = {};
+  // Hors catégorie Finis, le bloc est caché : on n'écrit rien (on ne touche pas aux valeurs)
+  const bloc = document.getElementById(`${prefixe}-coulis_fabricant`)?.closest('.bloc-finis');
+  if (!bloc || bloc.style.display === 'none') return o;
+  FINIS_CHAMPS.forEach(k => { o[k] = document.getElementById(`${prefixe}-${k}`)?.value.trim() || null; });
+  return o;
+}
+function ecrireFinis(prefixe, opt) {
+  FINIS_CHAMPS.forEach(k => { const el = document.getElementById(`${prefixe}-${k}`); if (el) el.value = (opt && opt[k]) || ''; });
+}
+// Montre ou cache les blocs selon la catégorie du poste
+function majVisibiliteFinis(catId) {
+  const visible = estCatFinis(catId);
+  document.querySelectorAll('.bloc-finis').forEach(b => b.style.display = visible ? '' : 'none');
+}
+document.addEventListener('DOMContentLoaded', () => {
+  if (!document.getElementById('finis-fabricants')) {
+    const dl = document.createElement('datalist');
+    dl.id = 'finis-fabricants';
+    dl.innerHTML = FINIS_FABRICANTS.map(f => `<option value="${f}">`).join('');
+    document.body.appendChild(dl);
+  }
+});
 
 
 // ============================================================
@@ -2878,7 +2940,8 @@ async function chargerPostes() {
                 <div class="option-status ${statusClass}">${statusLabel}</div>
                 <div style="flex:1">
                   ${bp ? `<div style="font-size:13px;font-weight:500">${bp.nom || ''}</div>
-                  <div style="font-size:11px;color:var(--texte-2)">${[bp.fabricant, bp.modele, bp.couleur].filter(Boolean).join(' · ')}</div>` : '<div style="font-size:12px;color:var(--texte-2)">Produit non disponible</div>'}
+                  <div style="font-size:11px;color:var(--texte-2)">${[bp.fabricant, bp.modele, bp.couleur].filter(Boolean).join(' · ')}</div>
+                  ${lignesFinis(opt).map(l => `<div style="font-size:11px;color:var(--caramel);margin-top:2px">${escH(l)}</div>`).join('')}` : '<div style="font-size:12px;color:var(--texte-2)">Produit non disponible</div>'}
                   ${opt.commentaire_client && opt.commentaire_client !== '__rejete__' && opt.commentaire_client !== 'Article non nécessaire' ? `<div style="font-size:11px;color:var(--caramel);margin-top:3px">💬 ${opt.commentaire_client}</div>` : ''}
                 </div>
                 <div style="text-align:right;display:flex;flex-direction:column;align-items:flex-end;gap:4px">
@@ -3126,9 +3189,12 @@ function renderOptionsSlots() {
           <input type="text" id="slot-note-${letter}" placeholder="Optionnel" />
         </div>
       </div>
+      ${htmlChampsFinis('slot-' + letter)}
       <div id="slot-apercu-${letter}" style="display:none;margin-top:10px;align-items:center;gap:12px;padding:10px;background:var(--blanc);border:1px solid var(--bord)"></div>
     </div>
   `).join('');
+
+  majVisibiliteFinis(document.getElementById('poste-categorie')?.value);
 
   // Bouton ajouter option suivante
   if (btnWrap) {
@@ -3217,7 +3283,8 @@ async function sauvegarderPoste() {
         await db.from('options_produits').update({
           banque_produit_id: produitId || null,
           quantite: qty,
-          note_client: note
+          note_client: note,
+          ...lireFinis('slot-' + letter)
         }).eq('id', optId);
       } else if (produitId) {
         // Nouveau slot ajouté en mode édition — insérer
@@ -3226,7 +3293,8 @@ async function sauvegarderPoste() {
           banque_produit_id: produitId,
           lettre_option: letter,
           quantite: qty,
-          note_client: note
+          note_client: note,
+          ...lireFinis('slot-' + letter)
         });
       }
     }
@@ -3260,7 +3328,8 @@ async function sauvegarderPoste() {
         lettre_option: letter,
         quantite: parseFloat(document.getElementById(`slot-qty-${letter}`)?.value) || 1,
         perte_pct: valeurPerteSlot(letter),
-        note_client: document.getElementById(`slot-note-${letter}`)?.value?.trim() || null
+        note_client: document.getElementById(`slot-note-${letter}`)?.value?.trim() || null,
+        ...lireFinis('slot-' + letter)
       });
     }
 
@@ -3291,7 +3360,7 @@ async function ouvrirModalEditerPoste(id) {
   // Charger la banque de produits puis les options existantes du poste
   await chargerProduitsBanqueSelect();
   const { data: existingOpts } = await db.from('options_produits')
-    .select('id, lettre_option, banque_produit_id, quantite, perte_pct, note_client')
+    .select('id, lettre_option, banque_produit_id, quantite, perte_pct, note_client, coulis_fabricant, coulis_couleur, lisiere_fabricant, lisiere_couleur')
     .eq('poste_id', id)
     .order('lettre_option');
 
@@ -3320,7 +3389,9 @@ async function ouvrirModalEditerPoste(id) {
     if (perte) perte.value = (opt.perte_pct ?? '') === null ? '' : (opt.perte_pct ?? '');
     const note = document.getElementById(`slot-note-${opt.lettre_option}`);
     if (note) note.value = opt.note_client || '';
+    ecrireFinis('slot-' + opt.lettre_option, opt);
   });
+  majVisibiliteFinis(poste.categorie_id);
 
   const titreEl = document.querySelector('#modal-ajout-poste h3');
   if (titreEl) titreEl.textContent = 'Modifier le poste';
@@ -3360,6 +3431,8 @@ async function ouvrirModalAjoutOption(posteId, lettre) {
   if (qtyEl) qtyEl.value = '1';
   const noteEl = document.getElementById('ao-note');
   if (noteEl) noteEl.value = '';
+  document.getElementById('ao-finis').innerHTML = htmlChampsFinis('ao');
+  majVisibiliteFinis(poste?.categorie_id);
 
   openModal('modal-ajout-option');
 }
@@ -3390,6 +3463,7 @@ async function sauvegarderNouvelleOption() {
       banque_produit_id:  produitId,
       quantite:           parseFloat(document.getElementById('ao-qty')?.value) || 1,
       note_client:        document.getElementById('ao-note')?.value?.trim() || null,
+      ...lireFinis('ao'),
       statut_client:      'en_attente',   // remet en attente pour que le client revoie
       commentaire_client: null,           // efface l'ancien commentaire de révision
       pre_approuve_cmpg:  false,
@@ -3409,7 +3483,8 @@ async function sauvegarderNouvelleOption() {
     banque_produit_id: produitId,
     lettre_option:     _aoLettre,
     quantite:          parseFloat(document.getElementById('ao-qty')?.value) || 1,
-    note_client:       document.getElementById('ao-note')?.value?.trim() || null
+    note_client:       document.getElementById('ao-note')?.value?.trim() || null,
+    ...lireFinis('ao')
   });
   if (error) { toast('Erreur : ' + error.message, 'error'); return; }
   closeModal('modal-ajout-option');
@@ -3444,6 +3519,10 @@ async function remplacerOption(optionId, lettre, quantiteActuelle) {
   if (qtyEl) qtyEl.value = quantiteActuelle || 1;
   const noteEl = document.getElementById('ao-note');
   if (noteEl) noteEl.value = '';
+  const posteR = postesCache.find(p => (p.options_produits || []).some(o => o.id === optionId));
+  document.getElementById('ao-finis').innerHTML = htmlChampsFinis('ao');
+  ecrireFinis('ao', (posteR?.options_produits || []).find(o => o.id === optionId));
+  majVisibiliteFinis(posteR?.categorie_id);
 
   openModal('modal-ajout-option');
 }
@@ -4223,6 +4302,7 @@ async function genererPDF_base(mode) {
       sous_categories(id, nom, ordre),
       options_produits(
         id, statut_client, quantite, perte_pct, note_client, commentaire_client, lettre_option, date_decision,
+        coulis_fabricant, coulis_couleur, lisiere_fabricant, lisiere_couleur,
         banque_produits(id, nom, fabricant, modele, sku, couleur, dimensions, caracteristiques, prix, unite_prix, perte_pct, photo_url, url)
       )
     `)
@@ -4262,7 +4342,7 @@ async function genererPDF_base(mode) {
       const row = {
         ref:         poste.reference || '',
         pieces:      piecesStr,
-        nom:         bp.nom || '',
+        nom:         [bp.nom || '', ...lignesFinis(opt)].join('\n'),
         fabricant:   bp.fabricant || '',
         modele:      bp.modele || '',
         sku:         bp.sku || '',

@@ -144,6 +144,18 @@ body { font-family: 'Roboto', sans-serif; background: var(--fond); color: var(--
 .btn-sm { padding: 7px 14px; font-size: 11px; }
 .btn-danger { background: var(--danger); color: var(--blanc); }
 
+/* ===== ONGLETS POSTES & SÉLECTIONS ===== */
+.onglets-postes { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 18px; position: sticky; top: 0; z-index: 5; background: var(--fond); padding: 6px 0 10px; }
+.onglet-poste { border: 1px solid var(--bord); background: var(--blanc); color: var(--texte); padding: 7px 14px; border-radius: 999px; font-size: 12px; cursor: pointer; font-family: inherit; }
+.onglet-poste span { color: var(--texte-2); font-size: 11px; margin-left: 2px; }
+.onglet-poste:hover { border-color: var(--caramel); }
+.onglet-poste.actif { background: var(--charcoal); border-color: var(--charcoal); color: var(--blanc); }
+.onglet-poste.actif span { color: var(--caramel); }
+.pastilles-sc { flex-basis: 100%; display: flex; flex-wrap: wrap; gap: 6px; margin-top: 4px; }
+.pastille-sc { border: none; background: transparent; color: var(--texte-2); font-size: 12px; padding: 4px 10px; border-radius: 999px; cursor: pointer; font-family: inherit; }
+.pastille-sc:hover { color: var(--texte); }
+.pastille-sc.actif { background: #ECE8E0; color: var(--texte); font-weight: 500; }
+
 /* ===== PANIER DE SÉLECTION ===== */
 .panier-fond { position: fixed; inset: 0; background: rgba(58,59,58,.35); z-index: 900; display: none; }
 .panier-fond.open { display: block; }
@@ -678,6 +690,7 @@ body { font-family: 'Roboto', sans-serif; background: var(--fond); color: var(--
             <option value="prix_a_verifier">⚠ Prix à vérifier</option>
             <option value="suggerer_discontinue">⚠ Discontinué ?</option>
             <option value="sans_prix">⚠ Sans prix</option>
+            <option value="photo_a_televerser">⚠ Photo à téléverser</option>
           </select>
         </div>
 
@@ -1215,7 +1228,7 @@ body { font-family: 'Roboto', sans-serif; background: var(--fond); color: var(--
   <div class="modal">
     <div class="modal-header">
       <h3>Ajouter un produit</h3>
-      <button class="modal-close" onclick="resetModalProduit();closeModal('modal-ajout-produit')">×</button>
+      <button class="modal-close" onclick="resetModalProduit();closeModal('modal-ajout-produit');this.closest('.modal-overlay').style.zIndex=''">×</button>
     </div>
     <div class="modal-body">
       <div class="form-grid">
@@ -1229,6 +1242,12 @@ body { font-family: 'Roboto', sans-serif; background: var(--fond); color: var(--
           <label>Sous-catégorie</label>
           <select id="ap-sous-cat">
             <option value="">-- Sélectionner une catégorie d'abord --</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label title="Ex. une tuile pour le sol ET le mur">2e sous-catégorie (facultatif)</label>
+          <select id="ap-sous-cat-2">
+            <option value="">— Aucune —</option>
           </select>
         </div>
         <div class="form-group form-full">
@@ -1878,6 +1897,55 @@ async function sauvegarderMat() {
 
 
 
+
+// ============================================================
+// LOT NOVEMBRE 2026 — petites aides (Banque de produits, postes)
+// ============================================================
+// Nom de la 2e sous-catégorie d'un produit (colonne sans clé étrangère → lookup local)
+function nomSousCat2(p) {
+  if (!p || !p.sous_categorie_2_id) return '';
+  return (sousCategories || []).find(s => s.id === p.sous_categorie_2_id)?.nom || '';
+}
+// Photo à téléverser : erreur signalée, ou photo restée sur le site du fournisseur
+// plus de 15 min après l'ajout (le rapatriement automatique a échoué sans le dire).
+function photoATeleverser(p) {
+  if (!p) return false;
+  if (p.photo_url_erreur) return true;
+  if (!p.photo_url || p.photo_url.includes('/storage/v1/object/public/photos-produits/')) return false;
+  const age = Date.now() - new Date(p.updated_at || p.created_at || 0).getTime();
+  return age > 15 * 60 * 1000;
+}
+
+// Dupliquer : ouvre la fiche pré-remplie comme un NOUVEAU produit
+async function dupliquerProduit(id) {
+  await editerProduit(id);
+  editingProduitId = null;
+  document.querySelector('#modal-ajout-produit .modal-header h3').textContent = 'Dupliquer le produit';
+  document.querySelector('#modal-ajout-produit .modal-footer .btn-dark').textContent = 'Ajouter à la banque';
+  const hist = document.getElementById('ap-historique-wrap');
+  if (hist) hist.style.display = 'none';
+  // Champs à revoir : surlignés, SKU vidé (un même lien + même SKU est refusé)
+  document.getElementById('ap-sku').value = '';
+  ['ap-nom', 'ap-couleur', 'ap-sku', 'ap-url'].forEach(f => {
+    const el = document.getElementById(f);
+    if (el) { el.style.background = '#fff8e6'; el.addEventListener('input', () => el.style.background = '', { once: true }); }
+  });
+  document.getElementById('ap-nom').focus();
+  toast('Copie prête : changez le nom, la couleur et le SKU, puis « Ajouter à la banque ».', 'info');
+}
+
+// Ouvrir la fiche d'un produit depuis un poste (fenêtre par-dessus)
+async function ouvrirProduitDepuisPoste(produitId) {
+  if (!produitId) return;
+  const { data: p, error } = await db.from('banque_produits')
+    .select('*, categories(nom), sous_categories(nom)').eq('id', produitId).maybeSingle();
+  if (error || !p) { toast('Produit introuvable dans la banque.', 'error'); return; }
+  const i = produitsCache.findIndex(x => x.id === produitId);
+  if (i >= 0) produitsCache[i] = { ...produitsCache[i], ...p }; else produitsCache.push(p);
+  document.getElementById('modal-ajout-produit').style.zIndex = '1100';
+  await editerProduit(produitId);
+}
+
 // ============================================================
 // FINIS PLANCHER ET MURAUX — coulis et lisière par option
 // (tâche ClickUp de Samantha). Colonnes options_produits :
@@ -1886,6 +1954,13 @@ async function sauvegarderMat() {
 const FINIS_CAT_NOM = 'finis plancher et muraux';
 const FINIS_FABRICANTS = ['MAPEI', 'Laticrete', 'Custom Building Products', 'Ardex', 'Flextile', 'Schluter', 'Rondec', 'Genesis'];
 const FINIS_CHAMPS = ['coulis_fabricant', 'coulis_couleur', 'lisiere_fabricant', 'lisiere_couleur'];
+// Peinture (demande de Maya) : la couleur est dans la banque une seule fois, le fini se choisit par option
+const PEINTURE_CAT_NOM = 'peinture';
+const PEINTURE_FINIS = ['Mat', 'Velouté', "Coquille d'œuf", 'Perle', 'Satiné', 'Semi-lustré', 'Lustré'];
+function estCatPeinture(catId) {
+  const c = (categories || []).find(x => x.id === catId);
+  return !!c && (c.nom || '').trim().toLowerCase() === PEINTURE_CAT_NOM;
+}
 
 function estCatFinis(catId) {
   const c = (categories || []).find(x => x.id === catId);
@@ -1899,6 +1974,7 @@ function lignesFinis(opt) {
   const s = [opt.lisiere_fabricant, opt.lisiere_couleur].filter(Boolean).join(' · ');
   if (c) l.push('Coulis : ' + c);
   if (s) l.push('Lisière : ' + s);
+  if (opt.fini_peinture) l.push('Fini : ' + opt.fini_peinture);
   return l;
 }
 // Bloc de 4 champs ; prefixe = 'slot-A' (fenêtre du poste) ou 'ao' (fenêtre d'option)
@@ -1911,29 +1987,46 @@ function htmlChampsFinis(prefixe) {
       <span style="color:var(--texte-2)">Coulis</span>${f('coulis_fabricant', 'Fabricant (ex. MAPEI)', true)}${f('coulis_couleur', 'Couleur (ex. 5039 Ivory)')}
       <span style="color:var(--texte-2)">Lisière</span>${f('lisiere_fabricant', 'Fabricant (ex. Schluter)', true)}${f('lisiere_couleur', 'Couleur / fini (ex. Ivory)')}
     </div>
+  </div>
+  <div class="bloc-peinture" style="display:none;margin-top:10px;padding:10px 12px;background:var(--blanc);border:1px solid var(--bord)">
+    <div style="display:grid;grid-template-columns:60px 1fr;gap:8px;align-items:center;font-size:12px">
+      <span style="font-size:10px;letter-spacing:1.5px;text-transform:uppercase;color:var(--caramel)">Fini</span>
+      <input type="text" id="${prefixe}-fini_peinture" list="peinture-finis" placeholder="Choisir ou taper (ex. Perle)"
+        style="padding:8px 10px;border:1px solid var(--bord);font-size:12px;outline:none;background:var(--blanc);width:100%" />
+    </div>
   </div>`;
 }
 function lireFinis(prefixe) {
   const o = {};
-  // Hors catégorie Finis, le bloc est caché : on n'écrit rien (on ne touche pas aux valeurs)
+  // Un bloc caché (autre catégorie) n'écrit rien : on ne touche pas aux valeurs existantes
   const bloc = document.getElementById(`${prefixe}-coulis_fabricant`)?.closest('.bloc-finis');
-  if (!bloc || bloc.style.display === 'none') return o;
-  FINIS_CHAMPS.forEach(k => { o[k] = document.getElementById(`${prefixe}-${k}`)?.value.trim() || null; });
+  if (bloc && bloc.style.display !== 'none')
+    FINIS_CHAMPS.forEach(k => { o[k] = document.getElementById(`${prefixe}-${k}`)?.value.trim() || null; });
+  const blocP = document.getElementById(`${prefixe}-fini_peinture`)?.closest('.bloc-peinture');
+  if (blocP && blocP.style.display !== 'none')
+    o.fini_peinture = document.getElementById(`${prefixe}-fini_peinture`).value.trim() || null;
   return o;
 }
 function ecrireFinis(prefixe, opt) {
-  FINIS_CHAMPS.forEach(k => { const el = document.getElementById(`${prefixe}-${k}`); if (el) el.value = (opt && opt[k]) || ''; });
+  [...FINIS_CHAMPS, 'fini_peinture'].forEach(k => { const el = document.getElementById(`${prefixe}-${k}`); if (el) el.value = (opt && opt[k]) || ''; });
 }
 // Montre ou cache les blocs selon la catégorie du poste
 function majVisibiliteFinis(catId) {
-  const visible = estCatFinis(catId);
+  const visible = estCatFinis(catId), peinture = estCatPeinture(catId);
   document.querySelectorAll('.bloc-finis').forEach(b => b.style.display = visible ? '' : 'none');
+  document.querySelectorAll('.bloc-peinture').forEach(b => b.style.display = peinture ? '' : 'none');
 }
 document.addEventListener('DOMContentLoaded', () => {
   if (!document.getElementById('finis-fabricants')) {
     const dl = document.createElement('datalist');
     dl.id = 'finis-fabricants';
     dl.innerHTML = FINIS_FABRICANTS.map(f => `<option value="${f}">`).join('');
+    document.body.appendChild(dl);
+  }
+  if (!document.getElementById('peinture-finis')) {
+    const dl = document.createElement('datalist');
+    dl.id = 'peinture-finis';
+    dl.innerHTML = PEINTURE_FINIS.map(f => `<option value="${f}">`).join('');
     document.body.appendChild(dl);
   }
 });
@@ -2673,6 +2766,7 @@ function onCatFiltreChange() {
 function onCatFormChange() {
   const catId = document.getElementById('ap-categorie').value;
   mettreAJourSousCats(catId, 'ap-sous-cat');
+  mettreAJourSousCats(catId, 'ap-sous-cat-2');
 }
 
 // ============================================================
@@ -2907,6 +3001,7 @@ async function chargerPostes() {
   Object.entries(byCat).forEach(([catNom, catPostes]) => {
     const section = document.createElement('div');
     section.className = 'categorie-section';
+    section.dataset.cat = catNom;
     section.innerHTML = `
       <div class="categorie-header">
         <h4>${catNom}</h4>
@@ -2917,6 +3012,7 @@ async function chargerPostes() {
     catPostes.forEach(poste => {
       const card = document.createElement('div');
       card.className = 'poste-card';
+      card.dataset.sc = poste.sous_categories?.nom || 'Sans sous-catégorie';
       const options = poste.options_produits || [];
 
       // Lettres déjà utilisées → prochaine lettre disponible
@@ -2939,7 +3035,7 @@ async function chargerPostes() {
                 <div class="option-letter">Opt. ${opt.lettre_option}</div>
                 <div class="option-status ${statusClass}">${statusLabel}</div>
                 <div style="flex:1">
-                  ${bp ? `<div style="font-size:13px;font-weight:500">${bp.nom || ''}</div>
+                  ${bp ? `<div style="font-size:13px;font-weight:500;cursor:pointer" title="Ouvrir la fiche du produit" onclick="event.stopPropagation();ouvrirProduitDepuisPoste('${opt.banque_produit_id}')">${bp.nom || ''} <span style="color:var(--caramel);font-size:11px">↗</span></div>
                   <div style="font-size:11px;color:var(--texte-2)">${[bp.fabricant, bp.modele, bp.couleur].filter(Boolean).join(' · ')}</div>
                   ${lignesFinis(opt).map(l => `<div style="font-size:11px;color:var(--caramel);margin-top:2px">${escH(l)}</div>`).join('')}` : '<div style="font-size:12px;color:var(--texte-2)">Produit non disponible</div>'}
                   ${opt.commentaire_client && opt.commentaire_client !== '__rejete__' && opt.commentaire_client !== 'Article non nécessaire' ? `<div style="font-size:11px;color:var(--caramel);margin-top:3px">💬 ${opt.commentaire_client}</div>` : ''}
@@ -2999,6 +3095,45 @@ async function chargerPostes() {
 
     container.appendChild(section);
   });
+  construireOngletsPostes(byCat);
+}
+
+// Onglets par catégorie (+ pastilles par sous-catégorie) au-dessus des postes
+let ongletPostes = { projet: null, cat: '', sc: '' };
+function construireOngletsPostes(byCat) {
+  const container = document.getElementById('postes-categories-list');
+  if (ongletPostes.projet !== currentProjetId) ongletPostes = { projet: currentProjetId, cat: '', sc: '' };
+  if (ongletPostes.cat && !byCat[ongletPostes.cat]) ongletPostes.cat = '';
+  const total = Object.values(byCat).reduce((t, l) => t + l.length, 0);
+  const barre = document.createElement('div');
+  barre.className = 'onglets-postes';
+  const btn = (val, lib, n) => `<button class="onglet-poste ${ongletPostes.cat === val ? 'actif' : ''}" onclick="choisirOngletPostes('${val.replace(/'/g, "\\'")}', '')">${escH(lib)} <span>${n}</span></button>`;
+  let html = btn('', 'Tous', total) + Object.entries(byCat).map(([c, l]) => btn(c, c, l.length)).join('');
+  if (ongletPostes.cat) {
+    const scs = {};
+    byCat[ongletPostes.cat].forEach(p => { const k = p.sous_categories?.nom || 'Sans sous-catégorie'; scs[k] = (scs[k] || 0) + 1; });
+    if (Object.keys(scs).length > 1) {
+      if (ongletPostes.sc && !scs[ongletPostes.sc]) ongletPostes.sc = '';
+      const pas = (val, lib, n) => `<button class="pastille-sc ${ongletPostes.sc === val ? 'actif' : ''}" onclick="choisirOngletPostes('${ongletPostes.cat.replace(/'/g, "\\'")}', '${val.replace(/'/g, "\\'")}')">${escH(lib)} (${n})</button>`;
+      html += `<div class="pastilles-sc">${pas('', 'Toutes', byCat[ongletPostes.cat].length)}${Object.entries(scs).map(([k, n]) => pas(k, k, n)).join('')}</div>`;
+    } else ongletPostes.sc = '';
+  } else ongletPostes.sc = '';
+  barre.innerHTML = html;
+  container.prepend(barre);
+  container.querySelectorAll('.categorie-section').forEach(sec => {
+    sec.style.display = (!ongletPostes.cat || sec.dataset.cat === ongletPostes.cat) ? '' : 'none';
+    sec.querySelectorAll('.poste-card').forEach(c => {
+      c.style.display = (!ongletPostes.sc || c.dataset.sc === ongletPostes.sc) ? '' : 'none';
+    });
+  });
+}
+function choisirOngletPostes(cat, sc) {
+  ongletPostes.cat = cat; ongletPostes.sc = sc;
+  const container = document.getElementById('postes-categories-list');
+  container.querySelector('.onglets-postes')?.remove();
+  const byCat = {};
+  postesCache.forEach(p => { const c = p.categories ? p.categories.nom : 'Autre'; (byCat[c] = byCat[c] || []).push(p); });
+  construireOngletsPostes(byCat);
 }
 
 async function deplacerPoste(posteId, direction) {
@@ -3119,7 +3254,7 @@ async function openModalPoste() {
 async function chargerProduitsBanqueSelect() {
   // Charge (ou recharge) la cache complète avec photo + catégories
   const { data } = await db.from('banque_produits')
-    .select('id, nom, fabricant, modele, prix, unite_prix, perte_pct, photo_url, categorie_id, sous_categorie_id')
+    .select('id, nom, fabricant, modele, prix, unite_prix, perte_pct, photo_url, categorie_id, sous_categorie_id, sous_categorie_2_id')
     .order('nom');
   produitsCache = data || [];
   filtrerProduitsBanqueSelect();
@@ -3159,7 +3294,7 @@ function renderOptionsSlots() {
   const sousCatId = document.getElementById('poste-sous-cat')?.value || '';
   let filtered = produitsCache;
   if (catId)     filtered = filtered.filter(p => p.categorie_id === catId);
-  if (sousCatId) filtered = filtered.filter(p => p.sous_categorie_id === sousCatId);
+  if (sousCatId) filtered = filtered.filter(p => p.sous_categorie_id === sousCatId || p.sous_categorie_2_id === sousCatId);
   const optionsHTML = '<option value="">-- Choisir --</option>' +
     filtered.map(p => `<option value="${p.id}">${p.fabricant ? p.fabricant + ' — ' : ''}${p.nom || ''}${p.prix ? ' ($' + p.prix + suffixeUnite(p.unite_prix) + ')' : ''}</option>`).join('');
 
@@ -3217,11 +3352,12 @@ function mettreAJourApercuSlot(letter, produitId) {
     ${p.photo_url
       ? `<img src="${p.photo_url}" referrerpolicy="no-referrer" style="width:56px;height:56px;object-fit:contain;border:1px solid var(--bord);flex-shrink:0" onerror="this.style.display='none'" />`
       : `<div style="width:56px;height:56px;background:var(--fond);border:1px solid var(--bord);display:flex;align-items:center;justify-content:center;font-size:20px;flex-shrink:0">📦</div>`}
-    <div>
+    <div style="flex:1">
       <div style="font-weight:500;font-size:13px">${p.nom || '—'}</div>
       <div style="font-size:11px;color:var(--texte-2);margin-top:2px">${[p.fabricant, p.modele].filter(Boolean).join(' · ')}</div>
       ${p.prix ? `<div style="font-size:12px;color:var(--caramel);margin-top:4px">${Number(p.prix).toLocaleString('fr-CA',{style:'currency',currency:'CAD'})}${suffixeUnite(p.unite_prix)}</div>` : ''}
-    </div>`;
+    </div>
+    <button type="button" class="btn btn-outline btn-sm" onclick="ouvrirProduitDepuisPoste('${p.id}')" title="Ouvrir la fiche du produit dans la banque">↗ Voir / modifier le produit</button>`;
 }
 
 function filtrerProduitsBanqueSelect() {
@@ -3360,7 +3496,7 @@ async function ouvrirModalEditerPoste(id) {
   // Charger la banque de produits puis les options existantes du poste
   await chargerProduitsBanqueSelect();
   const { data: existingOpts } = await db.from('options_produits')
-    .select('id, lettre_option, banque_produit_id, quantite, perte_pct, note_client, coulis_fabricant, coulis_couleur, lisiere_fabricant, lisiere_couleur')
+    .select('id, lettre_option, banque_produit_id, quantite, perte_pct, note_client, coulis_fabricant, coulis_couleur, lisiere_fabricant, lisiere_couleur, fini_peinture')
     .eq('poste_id', id)
     .order('lettre_option');
 
@@ -3690,7 +3826,7 @@ function renderProduits(produits) {
       <td>
         <div style="position:relative;display:inline-block">
           ${p.photo_url ? `<img src="${p.photo_url}" referrerpolicy="no-referrer" class="product-thumb" onerror="this.style.display='none'" />` : '<div class="product-thumb" style="display:inline-block"></div>'}
-          ${p.photo_url_erreur ? `<span title="Photo bloquée par le fournisseur (${p.photo_url_erreur.replace(/"/g,'&quot;')}) — à téléverser manuellement" style="position:absolute;top:-4px;right:-4px;background:var(--danger);color:#fff;border-radius:50%;width:16px;height:16px;font-size:10px;line-height:16px;text-align:center;cursor:help">!</span>` : ''}
+          ${photoATeleverser(p) ? `<span title="Photo non rapatriée (${(p.photo_url_erreur || 'site du fournisseur protégé').replace(/"/g,'&quot;')}) — elle n'apparaîtra pas dans les PDF. Téléversez-la dans la fiche du produit." style="position:absolute;top:-4px;right:-4px;background:var(--danger);color:#fff;border-radius:50%;width:16px;height:16px;font-size:10px;line-height:16px;text-align:center;cursor:help">!</span>` : ''}
         </div>
       </td>
       <td>
@@ -3701,7 +3837,7 @@ function renderProduits(produits) {
       <td style="font-size:13px">${p.fabricant || '—'}<br><span style="font-size:11px;color:var(--texte-2)">${p.modele || ''}</span></td>
       <td style="font-size:12px">
         ${p.categories ? p.categories.nom : '—'}
-        ${p.sous_categories ? `<div style="font-size:11px;color:var(--caramel);margin-top:2px">${p.sous_categories.nom}</div>` : ''}
+        ${p.sous_categories ? `<div style="font-size:11px;color:var(--caramel);margin-top:2px">${p.sous_categories.nom}${nomSousCat2(p) ? ' + ' + nomSousCat2(p) : ''}</div>` : ''}
       </td>
       <td style="font-size:13px;font-weight:500">
         ${prixAvecUnite(p)}
@@ -3712,6 +3848,7 @@ function renderProduits(produits) {
         <div style="display:flex;align-items:center;gap:6px">
           <button class="btn btn-outline btn-sm" title="Ajouter au panier de sélection" onclick="ajouterAuPanier('${p.id}')">🛒</button>
           <button class="btn btn-outline btn-sm" onclick="editerProduit('${p.id}')">Modifier</button>
+          <button class="btn btn-outline btn-sm" title="Créer une copie de ce produit (ex. autre couleur)" onclick="dupliquerProduit('${p.id}')">⧉ Dupliquer</button>
           <button class="btn btn-outline btn-sm" style="color:var(--danger);border-color:var(--danger)" onclick="supprimerProduit('${p.id}','${(p.nom||'').replace(/'/g,"\\'")}')">Supprimer</button>
         </div>
       </td>
@@ -3734,7 +3871,7 @@ function filtrerProduits() {
     if (!isNaN(pMax) && (prix == null || prix > pMax)) return false;
     const matchQ  = !q      || [p.nom, p.fabricant, p.modele, p.sku].some(v => v && v.toLowerCase().includes(q));
     const matchC  = !cat    || p.categorie_id === cat;
-    const matchSC = !sCat   || p.sous_categorie_id === sCat;
+    const matchSC = !sCat   || p.sous_categorie_id === sCat || p.sous_categorie_2_id === sCat;
     // Le menu mêle deux notions : le statut réel du produit (actif / discontinué),
     // et les drapeaux posés par la revalidation, qui sont des colonnes booléennes
     // distinctes. Les comparer à p.statut ne donnait jamais rien.
@@ -3742,6 +3879,7 @@ function filtrerProduits() {
       || (statut === 'prix_a_verifier'      ? !!p.prix_a_verifier
        :  statut === 'suggerer_discontinue' ? !!p.suggerer_discontinue
        :  statut === 'sans_prix'            ? (p.prix == null || p.prix === '')
+       :  statut === 'photo_a_televerser'   ? photoATeleverser(p)
        :  (p.statut || 'actif') === statut);
     return matchQ && matchC && matchSC && matchSt;
   });
@@ -3879,6 +4017,8 @@ async function sauvegarderProduit() {
   const payload = {
     categorie_id:          catId || null,
     sous_categorie_id:     document.getElementById('ap-sous-cat').value || null,
+    sous_categorie_2_id:   (document.getElementById('ap-sous-cat-2')?.value || null) === document.getElementById('ap-sous-cat').value
+                             ? null : (document.getElementById('ap-sous-cat-2')?.value || null),
     url:                   urlProduit,
     nom,
     fabricant:             document.getElementById('ap-fabricant').value.trim() || null,
@@ -3933,15 +4073,21 @@ async function sauvegarderProduit() {
 
   resetModalProduit();
   closeModal('modal-ajout-produit');
+  document.getElementById('modal-ajout-produit').style.zIndex = '';
   toast(wasEditing ? 'Produit modifié.' : 'Produit ajouté à la banque.', 'success');
-  chargerProduits();
+  await chargerProduits();
+  // Produit ouvert depuis un poste : rafraîchir les aperçus et la fiche projet
+  if (document.getElementById('modal-ajout-poste')?.classList.contains('open')) {
+    optionSlots.forEach(l => mettreAJourApercuSlot(l, document.getElementById(`slot-prod-${l}`)?.value));
+  }
+  if (currentProjetId && document.getElementById('view-projet-detail')?.classList.contains('active')) chargerPostes();
 }
 
 function resetModalProduit() {
   editingProduitId = null;
   document.querySelector('#modal-ajout-produit .modal-header h3').textContent = 'Ajouter un produit';
   document.querySelector('#modal-ajout-produit .modal-footer .btn-dark').textContent = 'Ajouter à la banque';
-  ['ap-categorie','ap-sous-cat','ap-url','ap-nom','ap-fabricant','ap-modele','ap-sku',
+  ['ap-categorie','ap-sous-cat','ap-sous-cat-2','ap-url','ap-nom','ap-fabricant','ap-modele','ap-sku',
    'ap-prix','ap-couleur','ap-dimensions','ap-carac','ap-photo','ap-notes']
     .forEach(id => { const el = document.getElementById(id); if(el) el.value = ''; });
   const statutEl = document.getElementById('ap-statut');
@@ -3969,6 +4115,7 @@ async function editerProduit(id) {
   editingProduitId = id;
   document.getElementById('ap-categorie').value   = p.categorie_id || '';
   mettreAJourSousCats(p.categorie_id, 'ap-sous-cat', p.sous_categorie_id);
+  mettreAJourSousCats(p.categorie_id, 'ap-sous-cat-2', p.sous_categorie_2_id);
   document.getElementById('ap-url').value         = p.url || '';
   document.getElementById('ap-nom').value         = p.nom || '';
   document.getElementById('ap-fabricant').value   = p.fabricant || '';
@@ -4302,7 +4449,7 @@ async function genererPDF_base(mode) {
       sous_categories(id, nom, ordre),
       options_produits(
         id, statut_client, quantite, perte_pct, note_client, commentaire_client, lettre_option, date_decision,
-        coulis_fabricant, coulis_couleur, lisiere_fabricant, lisiere_couleur,
+        coulis_fabricant, coulis_couleur, lisiere_fabricant, lisiere_couleur, fini_peinture,
         banque_produits(id, nom, fabricant, modele, sku, couleur, dimensions, caracteristiques, prix, unite_prix, perte_pct, photo_url, url)
       )
     `)

@@ -1173,7 +1173,7 @@ function buildOptionContent(opt, isMultiple, posteId) {
       <h4>${bp.nom || '—'}</h4>
       ${specsArr.length ? `<div class="specs">${specsArr.join('<br>')}</div>` : ''}
       ${opt.note_client ? `<div class="note-cmpg">💡 ${opt.note_client}</div>` : ''}
-      ${[[ 'Coulis', opt.coulis_fabricant, opt.coulis_couleur ], [ 'Lisière', opt.lisiere_fabricant, opt.lisiere_couleur ]]
+      ${[[ 'Coulis', opt.coulis_fabricant, opt.coulis_couleur ], [ 'Lisière', opt.lisiere_fabricant, opt.lisiere_couleur ], [ 'Fini', opt.fini_peinture, null ]]
           .filter(([, f, c]) => f || c)
           .map(([lib, f, c]) => `<div class="specs" style="margin-top:4px"><strong>${lib} :</strong> ${[f, c].filter(Boolean).join(' · ')}</div>`).join('')}
       ${bp.prix ? `<div class="prix">${Number(montantLigne(opt, bp)).toLocaleString('fr-CA',{style:'currency',currency:'CAD'})}<span style="font-size:11px;font-weight:400;color:var(--texte-2)"> (${detailQte(qteCommandee(opt.quantite, perteEffective(opt, bp)), bp.prix, bp.unite_prix)})</span></div>` : ''}

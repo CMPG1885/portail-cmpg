@@ -474,6 +474,9 @@ h1, h2, h3, h4, .selection-ref, .poste-section-title, .tout-cat-header { font-va
 body * { font-variant-numeric: lining-nums; }
 /* Badge « Approuvé par CMPG » : texte clair sur charcoal (le brun y était illisible) */
 .badge-cmpg { color: #fff; border-radius: 999px; padding: 3px 10px; }
+.btn-imprimer { margin-left: auto; background: #fff; border: 1px solid var(--bord); color: var(--charcoal); border-radius: 999px; padding: 9px 18px;
+  font-family: 'Roboto', sans-serif; font-size: 10px; font-weight: 500; letter-spacing: 1.6px; text-transform: uppercase; cursor: pointer; }
+.btn-imprimer:hover { background: var(--charcoal); color: #fff; border-color: var(--charcoal); }
 /* FIN THÈME CMPG 2026 */
 </style>
 
@@ -530,6 +533,7 @@ body * { font-variant-numeric: lining-nums; }
     <select id="projet-select" onchange="chargerProjet()">
       <option value="">Chargement…</option>
     </select>
+    <button class="btn-imprimer" onclick="imprimerPropositionClient()" title="Imprimer ou enregistrer en PDF">⎙ Imprimer la proposition</button>
   </div>
 
   <!-- Navigation volets (toujours visible — Devis d'approbation par défaut) -->
@@ -645,6 +649,7 @@ body * { font-variant-numeric: lining-nums; }
 
 <div id="toast-container"></div>
 
+<script src="selection-pdf.js"></script>
 <script>
 // ============================================================
 // CONFIG
@@ -703,6 +708,25 @@ document.addEventListener('DOMContentLoaded', () => {
   const img = `<img src="data:image/svg+xml;base64,${LOGO_CMPG_B64}" alt="CMPG Design Construction">`;
   document.querySelectorAll('.client-header-logo h1, .auth-logo h1').forEach(h => { h.innerHTML = img; });
 });
+
+// Imprimer / enregistrer en PDF la proposition du projet affiché (même document
+// que le « PDF client » de CMPG — module selection-pdf.js)
+async function imprimerPropositionClient() {
+  if (!currentProjetId || !window.CMPGSelection) return;
+  try {
+    toast('Préparation du document…', 'info');
+    const { data: projet } = await db.from('projets').select('nom, numero_projet, adresse, responsable_nom').eq('id', currentProjetId).maybeSingle();
+    const r = await CMPGSelection.imprimer({
+      mode: 'client', postes: allPostes,
+      projet: { nom: projet?.nom, numero: projet?.numero_projet, adresse: projet?.adresse,
+                responsable: projet?.responsable_nom, client: clientRecord?.nom },
+    });
+    if (r.vide) toast('Aucune sélection à imprimer pour l\u2019instant.', 'info');
+    else toast('Dans la fenêtre d\u2019impression, choisissez « Enregistrer au format PDF » pour garder une copie.', 'info');
+  } catch (e) {
+    toast('Le document n\u2019a pas pu être préparé.', 'error');
+  }
+}
 
 async function checkAuth() {
   const { data: { session } } = await db.auth.getSession();

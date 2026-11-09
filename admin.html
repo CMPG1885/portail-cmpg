@@ -621,6 +621,8 @@ body * { font-variant-numeric: lining-nums; }
   background: var(--charcoal); color: #fff; padding: 4px 6px 4px 11px; border-radius: 999px; white-space: nowrap; }
 .badge-preapprouve button { background: rgba(255,255,255,.12); border: none; color: var(--taupe); cursor: pointer; font-size: 9px; width: 16px; height: 16px; border-radius: 50%; line-height: 16px; padding: 0; }
 .badge-preapprouve button:hover { background: rgba(255,255,255,.25); color: #fff; }
+.lien-fournisseur { display: inline-block; margin-top: 4px; font-size: 11px; color: var(--brun); text-decoration: underline; text-underline-offset: 2px; }
+.lien-fournisseur:hover { color: #000; }
 /* FIN THÈME CMPG 2026 */
 </style>
 
@@ -1619,6 +1621,7 @@ body * { font-variant-numeric: lining-nums; }
 <!-- Toast container -->
 <div id="toast-container"></div>
 
+<script src="selection-pdf.js"></script>
 <script>
 // ============================================================
 // CONFIG — à modifier avec vos clés Supabase
@@ -3141,7 +3144,7 @@ async function ouvrirProjet(projetId) {
 async function chargerPostes() {
   const { data: postes } = await db
     .from('postes')
-    .select('*, categories(nom, ordre), sous_categories(nom), options_produits(*, banque_produits(nom, fabricant, modele, prix, unite_prix, perte_pct, photo_url, couleur))')
+    .select('*, categories(nom, ordre), sous_categories(nom), options_produits(*, banque_produits(nom, fabricant, modele, prix, unite_prix, perte_pct, photo_url, couleur, url))')
     .eq('projet_id', currentProjetId)
     .order('ordre');
 
@@ -3210,7 +3213,8 @@ async function chargerPostes() {
                 <div style="flex:1">
                   ${bp ? `<div style="font-size:13px;font-weight:500;cursor:pointer" title="Ouvrir la fiche du produit" onclick="event.stopPropagation();ouvrirProduitDepuisPoste('${opt.banque_produit_id}')">${bp.nom || ''} <span style="color:var(--caramel);font-size:11px">↗</span></div>
                   <div style="font-size:11px;color:var(--texte-2)">${[bp.fabricant, bp.modele, bp.couleur].filter(Boolean).join(' · ')}</div>
-                  ${lignesFinis(opt).map(l => `<div style="font-size:11px;color:var(--caramel);margin-top:2px">${escH(l)}</div>`).join('')}` : '<div style="font-size:12px;color:var(--texte-2)">Produit non disponible</div>'}
+                  ${lignesFinis(opt).map(l => `<div style="font-size:11px;color:var(--caramel);margin-top:2px">${escH(l)}</div>`).join('')}
+                  ${bp.url ? `<a class="lien-fournisseur" href="${escH(bp.url)}" target="_blank" rel="noopener" onclick="event.stopPropagation()">Voir sur le site du fournisseur ↗</a>` : ''}` : '<div style="font-size:12px;color:var(--texte-2)">Produit non disponible</div>'}
                   ${opt.commentaire_client && opt.commentaire_client !== '__rejete__' && opt.commentaire_client !== 'Article non nécessaire' ? `<div style="font-size:11px;color:var(--caramel);margin-top:3px">💬 ${opt.commentaire_client}</div>` : ''}
                 </div>
                 <div style="text-align:right;display:flex;flex-direction:column;align-items:flex-end;gap:4px">
@@ -4561,6 +4565,10 @@ async function chargerImageProduit(url) {
   if (_imgCache[url]) return _imgCache[url];
   return new Promise(resolve => {
     const img = new Image();
+    // Un site fournisseur qui ne répond jamais bloquait toute la génération du PDF :
+    // après 8 s, on continue sans cette photo.
+    const delai = setTimeout(() => { console.warn('[PDF] Photo trop lente, ignorée :', url); resolve(null); }, 8000);
+    const fin = (v) => { clearTimeout(delai); resolve(v); };
     img.crossOrigin = 'anonymous';
     img.onload = () => {
       try {
@@ -4570,7 +4578,7 @@ async function chargerImageProduit(url) {
         canvas.getContext('2d').drawImage(img, 0, 0);
         const b64 = canvas.toDataURL('image/jpeg', 0.7);
         _imgCache[url] = b64;
-        resolve(b64);
+        fin(b64);
       } catch (e) {
         // Le navigateur bloque la lecture des pixels d'une image hébergée
         // sur un domaine externe qui n'autorise pas le CORS (courant pour
@@ -4579,19 +4587,60 @@ async function chargerImageProduit(url) {
         // mais l'intégrer dans un PDF nécessite de lire ses pixels, ce que
         // le CORS bloque ici.
         console.warn('[PDF] Photo bloquée (CORS, domaine externe sans autorisation) :', url);
-        resolve(null);
+        fin(null);
       }
     };
     img.onerror = () => {
       console.warn('[PDF] Photo introuvable ou serveur injoignable :', url);
-      resolve(null);
+      fin(null);
     };
     img.src = url;
   });
 }
 
-function genererPDFClient()   { genererPDF_base('client'); }
-function genererPDFChantier() { genererPDF_base('chantier'); }
+// Toute erreur pendant la génération s'affiche à l'écran (avant : le bouton
+// semblait « ne rien faire » quand quelque chose plantait en arrière-plan).
+async function genererPDFSecurise(mode) {
+  try { await genererPDF_base(mode); }
+  catch (e) {
+    console.error('[PDF] Échec de la génération', e);
+    toast('Le PDF n\u2019a pas pu être généré : ' + (e?.message || e), 'error');
+  }
+}
+// Nouveaux PDF (charte 2026) : document mis en page puis fenêtre d'impression
+// → « Enregistrer au format PDF ». Module partagé : selection-pdf.js.
+// L'ancienne génération jsPDF (genererPDF_base) reste disponible en secours.
+async function imprimerSelection(mode) {
+  if (!currentProjetId) { toast('Aucun projet sélectionné.', 'error'); return; }
+  if (!window.CMPGSelection) { genererPDFSecurise(mode); return; }   // module absent → ancien PDF
+  try {
+    toast('Préparation du document…', 'info');
+    const [{ data: projet, error: e1 }, { data: postes, error: e2 }] = await Promise.all([
+      db.from('projets').select('nom, numero_projet, adresse, responsable_nom, clients(nom)').eq('id', currentProjetId).single(),
+      db.from('postes').select(`id, reference, pieces, piece, ordre,
+        categories(id, nom, ordre), sous_categories(id, nom, ordre),
+        options_produits(id, statut_client, quantite, perte_pct, commentaire_client, lettre_option, date_decision, pre_approuve_cmpg,
+          coulis_fabricant, coulis_couleur, lisiere_fabricant, lisiere_couleur, fini_peinture,
+          banque_produits(nom, fabricant, modele, sku, couleur, dimensions, prix, unite_prix, perte_pct, photo_url, url))`)
+        .eq('projet_id', currentProjetId),
+    ]);
+    if (e1 || e2) throw (e1 || e2);
+    const r = await CMPGSelection.imprimer({
+      mode, postes,
+      projet: { nom: projet?.nom, numero: projet?.numero_projet, adresse: projet?.adresse,
+                responsable: projet?.responsable_nom, client: projet?.clients?.nom },
+    });
+    if (r.vide) toast(mode === 'chantier'
+      ? 'Aucun produit approuvé dans ce projet : le PDF chantier ne contient que les produits approuvés par le client.'
+      : 'Aucune sélection à imprimer pour ce projet.', 'error');
+    else toast('Dans la fenêtre d\u2019impression, choisissez « Enregistrer au format PDF ».', 'info');
+  } catch (e) {
+    console.error('[PDF]', e);
+    toast('Le document n\u2019a pas pu être préparé : ' + (e?.message || e), 'error');
+  }
+}
+function genererPDFClient()   { imprimerSelection('client'); }
+function genererPDFChantier() { imprimerSelection('chantier'); }
 
 // Extrait les chiffres en début de référence pour un tri numérique fiable
 // même si le format mélange lettres et chiffres (ex. "P-2" avant "P-10").
@@ -4698,7 +4747,10 @@ async function genererPDF_base(mode) {
   const sortedCats = Object.values(catMap).sort((a, b) => (a.cat.ordre || 0) - (b.cat.ordre || 0));
 
   if (sortedCats.length === 0 && historiqueRows.length === 0) {
-    toast('Aucune donnée à exporter.', 'info'); return;
+    toast(mode === 'chantier'
+      ? 'Aucun produit approuvé dans ce projet : le PDF chantier ne contient que les produits approuvés par le client.'
+      : 'Aucune donnée à exporter.', mode === 'chantier' ? 'error' : 'info');
+    return;
   }
 
   // ── Tri en ordre chronologique de référence (dans chaque sous-catégorie) ──

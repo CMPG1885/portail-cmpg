@@ -461,6 +461,11 @@ body { font-family: 'Roboto', sans-serif; background: var(--fond); color: var(--
 .notif-meta  { font-size: 10px; color: var(--texte-2); }
 .notif-empty { padding: 48px 20px; text-align: center; color: var(--texte-2); font-size: 13px; }
 
+
+/* Vignette du produit dans les options d'un poste */
+.option-row { grid-template-columns: 60px 74px 56px 1fr auto !important; }
+.option-vignette { width: 56px; height: 56px; flex: 0 0 56px; object-fit: cover; border-radius: 10px; border: 1px solid var(--fond-2, #EEEDEE); background: #fff; cursor: pointer; }
+.option-vignette.vide { display: flex; align-items: center; justify-content: center; font-size: 20px; background: var(--fond); cursor: default; }
 /* =====================================================================
    THÈME CMPG 2026 — charte graphique « mise à jour 2026 »
    Couleurs : #3A3B3A · #FFFFFF · #F1EEE8 · #000000 / #523525 · #EEEDEE · #D6D2D0 · #ACA298
@@ -598,6 +603,24 @@ body { font-weight: 400; -webkit-font-smoothing: antialiased; letter-spacing: .1
 .bloc-finis, .bloc-peinture { border-radius: 12px; border-color: var(--fond-2) !important; }
 .bloc-finis input, .bloc-peinture input { border-radius: 8px; }
 body * { font-variant-numeric: lining-nums; }
+/* Boutons du bas de la barre latérale : même gabarit, texte centré */
+.sidebar-bottom .notif-bell-wrap { margin-bottom: 8px; }
+.sidebar-bottom .btn-notif-bell, .sidebar-bottom .btn-signout {
+  width: 100%; height: 36px; padding: 0 14px; margin: 0 0 8px 0 !important;
+  display: flex; align-items: center; justify-content: center; position: relative;
+  border: 1px solid rgba(255,255,255,.18); border-radius: 999px; background: transparent;
+  color: rgba(255,255,255,.65); font-family: 'Roboto', sans-serif; font-size: 10px; font-weight: 500;
+  letter-spacing: 1.8px; text-transform: uppercase; line-height: 1;
+}
+.sidebar-bottom .btn-signout:last-child { margin-bottom: 0 !important; }
+.sidebar-bottom .btn-notif-bell:hover, .sidebar-bottom .btn-signout:hover { border-color: rgba(255,255,255,.5); color: #fff; }
+.sidebar-bottom .notif-badge { position: absolute; right: 10px; top: 50%; transform: translateY(-50%); margin: 0; background: var(--taupe); color: var(--charcoal); }
+.notif-voir-historique { display: block; margin: 14px auto 0; background: none; border: none; color: var(--brun); font-size: 11px; letter-spacing: 1px; text-transform: uppercase; cursor: pointer; text-decoration: underline; }
+/* Badge « Pré-approuvé CMPG » (texte brun illisible sur fond charcoal) */
+.badge-preapprouve { display: inline-flex; align-items: center; gap: 6px; font-size: 9px; font-weight: 500; letter-spacing: 1.2px; text-transform: uppercase;
+  background: var(--charcoal); color: #fff; padding: 4px 6px 4px 11px; border-radius: 999px; white-space: nowrap; }
+.badge-preapprouve button { background: rgba(255,255,255,.12); border: none; color: var(--taupe); cursor: pointer; font-size: 9px; width: 16px; height: 16px; border-radius: 50%; line-height: 16px; padding: 0; }
+.badge-preapprouve button:hover { background: rgba(255,255,255,.25); color: #fff; }
 /* FIN THÈME CMPG 2026 */
 </style>
 
@@ -678,12 +701,12 @@ body * { font-variant-numeric: lining-nums; }
       <div class="user-email" id="user-email-display"></div>
       <div class="notif-bell-wrap">
         <button class="btn-notif-bell" onclick="toggleNotifPanel()">
-          🔔 Notifications
+          Notifications
           <span class="notif-badge" id="notif-badge">0</span>
         </button>
       </div>
       <button class="btn-signout" onclick="ouvrirModalMfa()"
-              style="margin-bottom:8px" id="btn-securite">🔒 Sécurité</button>
+              style="margin-bottom:8px" id="btn-securite">Sécurité</button>
       <button class="btn-signout" onclick="logout()">Déconnexion</button>
     </div>
   </aside>
@@ -3179,6 +3202,11 @@ async function chargerPostes() {
               return `<div class="option-row" style="${isARevoir ? 'border-left:3px solid var(--caramel)' : ''}${retired ? 'opacity:.6;background:var(--fond)' : ''}">
                 <div class="option-letter">Opt. ${opt.lettre_option}</div>
                 <div class="option-status ${statusClass}">${statusLabel}</div>
+                ${bp ? (bp.photo_url
+                  ? `<img class="option-vignette" src="${escH(bp.photo_url)}" referrerpolicy="no-referrer" alt="" title="Ouvrir la fiche du produit"
+                       onclick="event.stopPropagation();ouvrirProduitDepuisPoste('${opt.banque_produit_id}')"
+                       onerror="this.replaceWith(Object.assign(document.createElement('div'),{className:'option-vignette vide',textContent:'📦'}))" />`
+                  : `<div class="option-vignette vide">📦</div>`) : '<div></div>'}
                 <div style="flex:1">
                   ${bp ? `<div style="font-size:13px;font-weight:500;cursor:pointer" title="Ouvrir la fiche du produit" onclick="event.stopPropagation();ouvrirProduitDepuisPoste('${opt.banque_produit_id}')">${bp.nom || ''} <span style="color:var(--caramel);font-size:11px">↗</span></div>
                   <div style="font-size:11px;color:var(--texte-2)">${[bp.fabricant, bp.modele, bp.couleur].filter(Boolean).join(' · ')}</div>
@@ -3190,7 +3218,7 @@ async function chargerPostes() {
                   <div style="font-size:11px;color:var(--texte-2)">Qté: ${qteAvecUnite(opt.quantite, bp?.unite_prix)}${perteEffective(opt, bp) ? ` → ${qteAvecUnite(qteCommandee(opt.quantite, perteEffective(opt, bp)), bp?.unite_prix)} avec perte` : ''}</div>
                   ${isARevoir ? `<button class="btn btn-outline btn-sm" style="font-size:10px;padding:2px 8px;color:#1a5c2a;border-color:#1a5c2a" onclick="event.stopPropagation();remplacerOption('${opt.id}','${opt.lettre_option}',${opt.quantite})">↻ Proposer un remplacement</button>` : ''}
                   ${!isARevoir && !retired && !opt.pre_approuve_cmpg ? `<button class="btn btn-outline btn-sm" style="font-size:10px;padding:2px 8px;color:var(--caramel);border-color:var(--caramel)" onclick="event.stopPropagation();preApprouverOption('${opt.id}',true)">✓ Pré-approuver</button>` : ''}
-                  ${opt.pre_approuve_cmpg ? `<span style="display:inline-flex;align-items:center;gap:4px;font-size:9px;background:var(--charcoal);color:var(--caramel);padding:2px 7px;letter-spacing:.5px">✓ Pré-approuvé CMPG<button onclick="event.stopPropagation();preApprouverOption('${opt.id}',false)" style="background:none;border:none;color:var(--caramel);cursor:pointer;font-size:10px;padding:0;margin-left:2px" title="Annuler la pré-approbation">✕</button></span>` : ''}
+                  ${opt.pre_approuve_cmpg ? `<span class="badge-preapprouve">✓ Pré-approuvé CMPG<button onclick="event.stopPropagation();preApprouverOption('${opt.id}',false)" title="Annuler la pré-approbation">✕</button></span>` : ''}
                   ${canDelete ? `<button class="btn btn-outline btn-sm" style="font-size:10px;padding:2px 8px;color:var(--danger);border-color:var(--danger)" onclick="event.stopPropagation();supprimerOption('${opt.id}','${(bp?.nom||'ce produit').replace(/'/g,"\\'")}')">✕</button>` : ''}
                 </div>
               </div>`;
@@ -4918,11 +4946,31 @@ async function genererPDF_base(mode) {
 // ============================================================
 let _notifPanelOpen = false;
 
+// Lecture des notifications : un seul horodatage « vu jusqu'à », gardé dans le compte
+// Supabase de la personne (user_metadata) pour suivre d'un ordinateur à l'autre, et en
+// copie dans le navigateur. Les notifications plus anciennes que cet horodatage sont
+// lues : elles disparaissent du panneau (consultables via « Voir l'historique »).
+let _notifLastSeen = null;
+let _notifSeuilPanneau = null;   // horodatage au moment d'ouvrir le panneau
+let _notifHistorique = false;
+function _dateNotif(v) { const t = Date.parse(v || ''); return isNaN(t) ? 0 : t; }
 function getLastSeenNotif() {
-  return localStorage.getItem('cmpg_notif_last_seen') || '1970-01-01T00:00:00Z';
+  let local = null;
+  try { local = localStorage.getItem('cmpg_notif_last_seen'); } catch (e) {}
+  const candidats = [_notifLastSeen, local].filter(Boolean);
+  return candidats.sort((a, b) => _dateNotif(b) - _dateNotif(a))[0] || '1970-01-01T00:00:00Z';
+}
+function setLastSeenNotif(iso) {
+  _notifLastSeen = iso;
+  try { localStorage.setItem('cmpg_notif_last_seen', iso); } catch (e) {}
+  try { db.auth.updateUser({ data: { notif_last_seen: iso } }).catch(() => {}); } catch (e) {}
 }
 
 async function initNotifications() {
+  try {
+    const { data: { user } } = await db.auth.getUser();
+    _notifLastSeen = user?.user_metadata?.notif_last_seen || null;
+  } catch (e) {}
   await rafraichirNotifications();
   db.channel('notif_realtime')
     .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'notifications_log' },
@@ -4935,13 +4983,13 @@ async function rafraichirNotifications() {
     .select('*, projets(nom)').order('created_at', { ascending: false }).limit(50);
   if (!data) return;
   const lastSeen = getLastSeenNotif();
-  const nonLus   = data.filter(n => n.created_at > lastSeen).length;
+  const nonLus   = data.filter(n => _dateNotif(n.created_at) > _dateNotif(lastSeen)).length;
   const badge    = document.getElementById('notif-badge');
   if (badge) {
     badge.textContent = nonLus > 9 ? '9+' : String(nonLus);
     badge.classList.toggle('visible', nonLus > 0);
   }
-  if (_notifPanelOpen) _renderNotifList(data, lastSeen);
+  if (_notifPanelOpen) _renderNotifList(data, _notifSeuilPanneau || lastSeen);
 }
 
 async function toggleNotifPanel() {
@@ -4949,34 +4997,52 @@ async function toggleNotifPanel() {
   _notifPanelOpen = true;
   document.getElementById('notif-panel')?.classList.add('open');
   document.getElementById('notif-backdrop')?.classList.add('open');
+  _notifHistorique = false;
   const { data } = await db.from('notifications_log')
     .select('*, projets(nom)').order('created_at', { ascending: false }).limit(50);
-  // Marquer automatiquement comme lues à l'ouverture du panneau
-  localStorage.setItem('cmpg_notif_last_seen', new Date().toISOString());
+  // On montre les nouvelles depuis la dernière visite ; elles seront marquées
+  // lues à la fermeture du panneau (et n'y reviendront plus).
+  _notifSeuilPanneau = getLastSeenNotif();
   const badge = document.getElementById('notif-badge');
   if (badge) { badge.textContent = '0'; badge.classList.remove('visible'); }
-  _renderNotifList(data || [], getLastSeenNotif());
+  _renderNotifList(data || [], _notifSeuilPanneau);
 }
 
 function fermerNotifPanel() {
+  if (_notifPanelOpen) setLastSeenNotif(new Date().toISOString());
+  _notifSeuilPanneau = null;
   _notifPanelOpen = false;
   document.getElementById('notif-panel')?.classList.remove('open');
   document.getElementById('notif-backdrop')?.classList.remove('open');
 }
 
 function marquerToutLu() {
-  localStorage.setItem('cmpg_notif_last_seen', new Date().toISOString());
+  const maintenant = new Date().toISOString();
+  setLastSeenNotif(maintenant);
+  _notifSeuilPanneau = maintenant;
+  _notifHistorique = false;
   const badge = document.getElementById('notif-badge');
   if (badge) { badge.textContent = '0'; badge.classList.remove('visible'); }
   db.from('notifications_log').select('*, projets(nom)').order('created_at', { ascending: false }).limit(50)
-    .then(({ data }) => _renderNotifList(data || [], getLastSeenNotif()));
+    .then(({ data }) => _renderNotifList(data || [], maintenant));
+}
+
+function basculerHistoriqueNotif() {
+  _notifHistorique = !_notifHistorique;
+  db.from('notifications_log').select('*, projets(nom)').order('created_at', { ascending: false }).limit(50)
+    .then(({ data }) => _renderNotifList(data || [], _notifSeuilPanneau || getLastSeenNotif()));
 }
 
 function _renderNotifList(data, lastSeen) {
   const list = document.getElementById('notif-list');
   if (!list) return;
-  if (!data || data.length === 0) {
-    list.innerHTML = '<div class="notif-empty">Aucune notification pour l\'instant.</div>';
+  const toutes = data || [];
+  const nouvelles = toutes.filter(n => _dateNotif(n.created_at) > _dateNotif(lastSeen));
+  const lienHisto = toutes.length
+    ? `<button class="notif-voir-historique" onclick="basculerHistoriqueNotif()">${_notifHistorique ? 'Masquer les notifications lues' : "Voir l'historique"}</button>` : '';
+  data = _notifHistorique ? toutes : nouvelles;
+  if (!data.length) {
+    list.innerHTML = `<div class="notif-empty">${toutes.length ? 'Aucune nouvelle notification.' : "Aucune notification pour l'instant."}</div>${lienHisto}`;
     return;
   }
   const TYPE_LABELS = {
@@ -4985,7 +5051,7 @@ function _renderNotifList(data, lastSeen) {
     annule:   { label: 'Article non nécessaire', cls: 'annule'   },
   };
   list.innerHTML = data.map(n => {
-    const unread   = n.created_at > lastSeen;
+    const unread   = _dateNotif(n.created_at) > _dateNotif(lastSeen);
     const tl       = TYPE_LABELS[n.type] || { label: n.type || 'Notification', cls: '' };
     const date     = new Date(n.created_at).toLocaleString('fr-CA', { dateStyle: 'medium', timeStyle: 'short' });
     const projetNom = n.projets?.nom || n.contenu?.projet_nom || '';
@@ -5001,7 +5067,7 @@ function _renderNotifList(data, lastSeen) {
         ${projetNom ? `<span style="color:var(--caramel)">📁 ${projetNom}</span> · ` : ''}${date}
       </div>
     </div>`;
-  }).join('');
+  }).join('') + lienHisto;
 }
 
 // ============================================================

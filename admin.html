@@ -8,7 +8,7 @@
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script src="https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/jspdf-autotable@3.8.2/dist/jspdf.plugin.autotable.min.js"></script>
-<link href="https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;500;700&family=Noto+Serif+Display:ital,wght@0,400;0,700;1,400&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;500;700&family=Playfair+Display:ital,wght@0,400;0,500;0,700;1,400&display=swap" rel="stylesheet">
 <style>
 /* ===== CMPG DESIGN SYSTEM ===== */
 :root {
@@ -39,7 +39,7 @@ body { font-family: 'Roboto', sans-serif; background: var(--fond); color: var(--
   box-shadow: 0 8px 40px rgba(0,0,0,.3);
 }
 .auth-logo { text-align: center; margin-bottom: 32px; }
-.auth-logo h1 { font-family: 'Noto Serif Display', serif; font-size: 28px; color: var(--charcoal); letter-spacing: 2px; }
+.auth-logo h1 { font-family: 'Playfair Display', serif; font-size: 28px; color: var(--charcoal); letter-spacing: 2px; }
 .auth-logo p { font-size: 11px; letter-spacing: 3px; text-transform: uppercase; color: var(--caramel); margin-top: 4px; }
 .auth-card input {
   width: 100%; padding: 12px 14px; border: 1px solid var(--bord); font-family: 'Roboto', sans-serif;
@@ -63,7 +63,7 @@ body { font-family: 'Roboto', sans-serif; background: var(--fond); color: var(--
 .sidebar-logo {
   padding: 28px 24px 20px; border-bottom: 1px solid rgba(255,255,255,.1);
 }
-.sidebar-logo h1 { font-family: 'Noto Serif Display', serif; font-size: 20px; color: var(--blanc); }
+.sidebar-logo h1 { font-family: 'Playfair Display', serif; font-size: 20px; color: var(--blanc); }
 .sidebar-logo p { font-size: 9px; letter-spacing: 3px; text-transform: uppercase; color: var(--caramel); margin-top: 2px; }
 .sidebar-nav { flex: 1; padding: 16px 0; }
 .nav-item {
@@ -84,7 +84,7 @@ body { font-family: 'Roboto', sans-serif; background: var(--fond); color: var(--
   background: var(--blanc); border-bottom: 1px solid var(--bord);
   padding: 24px 36px; display: flex; align-items: center; justify-content: space-between;
 }
-.page-header h2 { font-family: 'Noto Serif Display', serif; font-size: 22px; color: var(--charcoal); }
+.page-header h2 { font-family: 'Playfair Display', serif; font-size: 22px; color: var(--charcoal); }
 .page-body { padding: 32px 36px; }
 
 /* ===== VIEWS ===== */
@@ -104,7 +104,7 @@ body { font-family: 'Roboto', sans-serif; background: var(--fond); color: var(--
   cursor: pointer; transition: all .2s; box-shadow: var(--shadow);
 }
 .project-card:hover { border-color: var(--caramel); transform: translateY(-2px); box-shadow: 0 6px 24px rgba(58,59,58,.12); }
-.project-card h3 { font-family: 'Noto Serif Display', serif; font-size: 17px; margin-bottom: 4px; }
+.project-card h3 { font-family: 'Playfair Display', serif; font-size: 17px; margin-bottom: 4px; }
 .project-card .client-name { font-size: 12px; color: var(--caramel); letter-spacing: 1px; text-transform: uppercase; margin-bottom: 12px; }
 .project-card .address { font-size: 13px; color: var(--texte-2); margin-bottom: 14px; }
 .progress-bar { height: 3px; background: var(--bord); margin-bottom: 6px; }
@@ -167,7 +167,7 @@ body { font-family: 'Roboto', sans-serif; background: var(--fond); color: var(--
 }
 .panier.open { transform: translateX(0); }
 .panier-tete { background: var(--charcoal); color: var(--blanc); padding: 24px 26px 20px; position: relative; }
-.panier-tete h3 { font-family: 'Noto Serif Display', serif; font-weight: 400; font-size: 26px; margin: 6px 0 14px; }
+.panier-tete h3 { font-family: 'Playfair Display', serif; font-weight: 400; font-size: 26px; margin: 6px 0 14px; }
 .panier-tete select {
   width: 100%; padding: 10px 14px; border-radius: 12px; border: 1px solid rgba(255,255,255,.25);
   background: rgba(255,255,255,.08); color: var(--blanc); font-size: 13px; outline: none; font-family: inherit;
@@ -192,7 +192,7 @@ body { font-family: 'Roboto', sans-serif; background: var(--fond); color: var(--
 .panier-vide { text-align: center; color: var(--texte-2); font-size: 13px; padding: 40px 20px; line-height: 1.7; }
 .panier-pied { padding: 16px 22px 20px; background: var(--blanc); border-top: 1px solid var(--bord); }
 .panier-total { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 12px; font-size: 12px; color: var(--texte-2); }
-.panier-total b { font-family: 'Noto Serif Display', serif; font-size: 22px; font-weight: 400; color: var(--texte); }
+.panier-total b { font-family: 'Playfair Display', serif; font-size: 22px; font-weight: 400; color: var(--texte); }
 .panier-envoyer { width: 100%; border-radius: 999px !important; padding: 13px !important; }
 .panier-envoyer:disabled { opacity: .45; cursor: not-allowed; }
 .btn-panier { position: relative; border-radius: 999px !important; }
@@ -202,7 +202,7 @@ body { font-family: 'Roboto', sans-serif; background: var(--fond); color: var(--
 }
 .panier-bandeau:hover { background: #2F302F; }
 .panier-bandeau .lib { font-size: 10px; letter-spacing: 2px; text-transform: uppercase; color: var(--caramel); }
-.panier-bandeau .projet { font-family: 'Noto Serif Display', serif; font-size: 18px; }
+.panier-bandeau .projet { font-family: 'Playfair Display', serif; font-size: 18px; }
 .panier-bandeau .nb { margin-left: auto; font-size: 12px; background: rgba(255,255,255,.1); padding: 5px 12px; border-radius: 999px; }
 .panier-bandeau.vide { background: var(--blanc); color: var(--texte-2); border: 1px dashed var(--bord); }
 .panier-bandeau.vide .projet { font-family: inherit; font-size: 13px; }
@@ -235,7 +235,7 @@ body { font-family: 'Roboto', sans-serif; background: var(--fond); color: var(--
 }
 .fiche-close:hover { background: rgba(255,255,255,.1); }
 .fiche-surtitre { font-size: 10px; letter-spacing: 2.5px; text-transform: uppercase; color: var(--caramel); }
-.fiche-nom { font-family: 'Noto Serif Display', serif; font-size: 34px; font-weight: 400; line-height: 1.15; margin: 8px 0 14px; padding-right: 60px; }
+.fiche-nom { font-family: 'Playfair Display', serif; font-size: 34px; font-weight: 400; line-height: 1.15; margin: 8px 0 14px; padding-right: 60px; }
 .fiche-pills { display: flex; gap: 8px; flex-wrap: wrap; position: relative; z-index: 1; }
 .fiche-pill {
   font-size: 11px; letter-spacing: .5px; padding: 6px 14px; border-radius: 999px;
@@ -251,9 +251,9 @@ body { font-family: 'Roboto', sans-serif; background: var(--fond); color: var(--
 .fiche-avatar {
   width: 56px; height: 56px; border-radius: 50%; flex: 0 0 56px; display: flex; align-items: center; justify-content: center;
   background: var(--fond); border: 1px solid var(--bord); color: var(--charcoal);
-  font-family: 'Noto Serif Display', serif; font-size: 20px;
+  font-family: 'Playfair Display', serif; font-size: 20px;
 }
-.fiche-rep-nom { font-family: 'Noto Serif Display', serif; font-size: 20px; }
+.fiche-rep-nom { font-family: 'Playfair Display', serif; font-size: 20px; }
 .fiche-rep-role { font-size: 12px; color: var(--texte-2); margin-top: 2px; }
 .fiche-coord { display: flex; flex-direction: column; gap: 8px; }
 .fiche-coord a, .fiche-coord span {
@@ -274,7 +274,7 @@ body { font-family: 'Roboto', sans-serif; background: var(--fond); color: var(--
 .fiche-gamme-libs span.actif { color: var(--charcoal); font-weight: 500; }
 .fiche-ententes { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 24px; }
 .fiche-entente { background: var(--fond); border-radius: 12px; padding: 12px 14px; }
-.fiche-entente b { display: block; font-family: 'Noto Serif Display', serif; font-size: 18px; font-weight: 400; }
+.fiche-entente b { display: block; font-family: 'Playfair Display', serif; font-size: 18px; font-weight: 400; }
 .fiche-entente small { font-size: 10px; letter-spacing: 1px; text-transform: uppercase; color: var(--texte-2); }
 .fiche-histo { list-style: none; position: relative; margin-left: 6px; }
 .fiche-histo li { position: relative; padding: 0 0 18px 26px; border-left: 1px solid var(--bord); }
@@ -318,7 +318,7 @@ body { font-family: 'Roboto', sans-serif; background: var(--fond); color: var(--
   display: flex; align-items: center; justify-content: space-between;
   flex-shrink: 0;
 }
-.modal-header h3 { font-family: 'Noto Serif Display', serif; font-size: 18px; }
+.modal-header h3 { font-family: 'Playfair Display', serif; font-size: 18px; }
 .modal-close { background: none; border: none; font-size: 20px; cursor: pointer; color: var(--texte-2); }
 .modal-body { padding: 28px; overflow-y: auto; flex: 1 1 auto; min-height: 0; }
 .modal-footer {
@@ -392,7 +392,7 @@ body { font-family: 'Roboto', sans-serif; background: var(--fond); color: var(--
 /* ===== EMPTY STATES ===== */
 .empty-state { text-align: center; padding: 60px 20px; color: var(--texte-2); }
 .empty-state .icon { font-size: 40px; margin-bottom: 12px; }
-.empty-state h3 { font-family: 'Noto Serif Display', serif; font-size: 18px; color: var(--charcoal); margin-bottom: 8px; }
+.empty-state h3 { font-family: 'Playfair Display', serif; font-size: 18px; color: var(--charcoal); margin-bottom: 8px; }
 .empty-state p { font-size: 13px; margin-bottom: 20px; }
 
 /* ===== SPINNER ===== */
@@ -445,7 +445,7 @@ body { font-family: 'Roboto', sans-serif; background: var(--fond); color: var(--
   padding: 20px 20px 14px; border-bottom: 1px solid var(--bord);
   display: flex; align-items: center; justify-content: space-between;
 }
-.notif-panel-header h3 { font-family: 'Noto Serif Display', serif; font-size: 16px; color: var(--charcoal); }
+.notif-panel-header h3 { font-family: 'Playfair Display', serif; font-size: 16px; color: var(--charcoal); }
 .btn-tout-lu { font-size: 10px; letter-spacing: .5px; color: var(--caramel); background: none; border: none; cursor: pointer; text-transform: uppercase; }
 .notif-close { background: none; border: none; font-size: 20px; cursor: pointer; color: var(--texte-2); line-height: 1; }
 .notif-list { flex: 1; overflow-y: auto; }
@@ -460,6 +460,145 @@ body { font-family: 'Roboto', sans-serif; background: var(--fond); color: var(--
 .notif-desc  { font-size: 12px; color: var(--charcoal); line-height: 1.4; margin-bottom: 3px; }
 .notif-meta  { font-size: 10px; color: var(--texte-2); }
 .notif-empty { padding: 48px 20px; text-align: center; color: var(--texte-2); font-size: 13px; }
+
+/* =====================================================================
+   THÈME CMPG 2026 — charte graphique « mise à jour 2026 »
+   Couleurs : #3A3B3A · #FFFFFF · #F1EEE8 · #000000 / #523525 · #EEEDEE · #D6D2D0 · #ACA298
+   Typo : Roboto (principale) · Playfair Display (secondaire, accents et titres)
+   Ce bloc ne fait que redéfinir l'apparence : aucun nom d'élément n'est changé.
+   Pour revenir à l'ancien look, supprimer le bloc jusqu'à « FIN THÈME CMPG 2026 ».
+   ===================================================================== */
+:root {
+  --charcoal: #3A3B3A;
+  --brun: #523525;
+  --taupe: #ACA298;
+  --caramel: #523525;        /* accents (textes, liens, prix) : brun de la charte */
+  --gris: #D6D2D0;
+  --fond: #F1EEE8;
+  --fond-2: #EEEDEE;
+  --fond-card: #FFFFFF;
+  --bord: #DEDAD5;
+  --texte: #3A3B3A;
+  --texte-2: #6F6863;
+  --rayon: 14px;
+  --shadow: 0 1px 2px rgba(58,59,58,.04), 0 8px 24px rgba(58,59,58,.06);
+}
+body { font-weight: 400; -webkit-font-smoothing: antialiased; letter-spacing: .1px; }
+::selection { background: var(--taupe); color: #fff; }
+
+/* Connexion */
+#auth-screen, #mfa-screen { background: var(--charcoal) !important; }
+.auth-card { border-radius: 22px; padding: 52px 44px; box-shadow: 0 30px 80px rgba(0,0,0,.35); }
+.auth-logo h1 { font-size: 0; }
+.auth-logo h1 img { height: 64px; filter: brightness(.23); }
+.auth-logo p { color: var(--taupe); }
+.auth-card input { border-radius: 12px; padding: 13px 16px; background: var(--fond); border-color: transparent; }
+.auth-card input:focus { background: #fff; border-color: var(--taupe); }
+.btn-primary { border-radius: 999px; padding: 14px; font-weight: 500; letter-spacing: 2px; }
+.btn-primary:hover { background: #000; }
+
+/* Barre latérale */
+.sidebar { background: var(--charcoal); }
+.sidebar-logo { padding: 34px 26px 26px; border-bottom: 1px solid rgba(255,255,255,.08); }
+.sidebar-logo h1 { font-size: 0; line-height: 0; }
+.sidebar-logo h1 img { width: 150px; height: auto; display: block; }
+.sidebar-logo p { color: var(--taupe); letter-spacing: 3.5px; margin-top: 14px; font-size: 9px; }
+.sidebar-nav { padding: 22px 0; }
+.nav-item {
+  padding: 12px 26px; font-size: 11px; letter-spacing: 2px; text-transform: uppercase; font-weight: 500;
+  color: rgba(255,255,255,.55); border-left: 1px solid transparent; margin: 2px 0;
+}
+.nav-item .nav-icon { display: none; }
+.nav-item:hover { background: transparent; color: #fff; }
+.nav-item.active { color: #fff; background: rgba(255,255,255,.04); border-left: 2px solid var(--taupe); }
+.sidebar-bottom { border-top: 1px solid rgba(255,255,255,.08); padding: 18px 22px 22px; }
+.btn-signout { border-radius: 999px; border-color: rgba(255,255,255,.18); letter-spacing: 1.6px; }
+
+/* En-tête de page : grand titre Playfair + trait vertical de la charte */
+.page-header { background: var(--fond); border-bottom: 1px solid var(--bord); padding: 34px 44px 26px; }
+.page-header h2 {
+  font-family: 'Playfair Display', serif; font-weight: 400; font-size: 34px; letter-spacing: -.2px;
+  padding-left: 18px; border-left: 1px solid var(--charcoal); line-height: 1.1;
+}
+.page-body { padding: 34px 44px; }
+#detail-projet-client { color: var(--taupe) !important; letter-spacing: 2.5px !important; margin-top: 8px !important; padding-left: 19px; }
+
+/* Cartes */
+.card, .project-card { border: none; border-radius: var(--rayon); box-shadow: var(--shadow); }
+.project-card { padding: 26px 26px 22px; position: relative; overflow: hidden; }
+.project-card:hover { transform: translateY(-3px); box-shadow: 0 16px 40px rgba(58,59,58,.12); }
+.project-card h3 { font-family: 'Playfair Display', serif; font-weight: 400; font-size: 22px; margin: 6px 0 6px; }
+.project-card .client-name { color: var(--taupe); letter-spacing: 2px; font-size: 10px; font-weight: 500; }
+.progress-bar { height: 2px; background: var(--fond-2); border-radius: 2px; }
+.progress-fill { background: var(--brun); border-radius: 2px; }
+.status-badge { border-radius: 999px; padding: 4px 11px; font-size: 9px; letter-spacing: 1.6px; }
+.status-actif { background: #EEF1EC; color: #4B6B55; }
+
+/* Boutons : pilules, majuscules espacées */
+.btn { border-radius: 999px; font-weight: 500; letter-spacing: 1.6px; font-size: 11px; padding: 11px 22px; }
+.btn-sm { padding: 7px 14px; font-size: 10px; letter-spacing: 1.3px; }
+.btn-dark { background: var(--charcoal); }
+.btn-dark:hover { background: #000; }
+.btn-outline { border-color: var(--gris); color: var(--charcoal); background: #fff; }
+.btn-outline:hover { background: var(--charcoal); border-color: var(--charcoal); color: #fff; }
+.btn-caramel { background: var(--brun); }
+.btn-caramel:hover { background: #3E271B; }
+
+/* Formulaires */
+.form-group label { font-size: 10px; letter-spacing: 1.8px; font-weight: 500; color: var(--texte-2); }
+.form-group input, .form-group select, .form-group textarea { border-radius: 10px; border-color: var(--bord); padding: 11px 13px; }
+.form-group input:focus, .form-group select:focus, .form-group textarea:focus { border-color: var(--taupe); box-shadow: 0 0 0 3px rgba(172,162,152,.18); }
+.product-bank-filters input, .product-bank-filters select { border-radius: 999px !important; padding: 10px 16px !important; border-color: var(--bord) !important; background: #fff; }
+
+/* Fenêtres */
+.modal-overlay { background: rgba(58,59,58,.45); backdrop-filter: blur(3px); }
+.modal { border-radius: 20px; overflow: hidden; box-shadow: 0 40px 100px rgba(0,0,0,.3); }
+.modal-header { padding: 26px 30px 20px; border-bottom: 1px solid var(--fond-2); }
+.modal-header h3 { font-family: 'Playfair Display', serif !important; font-weight: 400; font-size: 24px !important; }
+.modal-close { width: 34px; height: 34px; border-radius: 50%; border: 1px solid var(--bord) !important; font-size: 17px !important; }
+.modal-footer { border-top: 1px solid var(--fond-2); }
+
+/* Tableaux */
+.data-table th { font-size: 9px; letter-spacing: 2px; font-weight: 500; color: var(--taupe); border-bottom: 1px solid var(--bord); padding: 14px; }
+.data-table td { border-bottom: 1px solid var(--fond-2); padding: 14px; }
+.data-table tr:hover td { background: #FAF8F4; }
+.card[style*="padding:0"] { overflow: hidden; }
+.product-thumb { border-radius: 10px; }
+
+/* Onglets du projet */
+.projet-tab { letter-spacing: 2px !important; font-size: 10px !important; font-weight: 500; }
+.projet-tab.active { border-bottom-color: var(--charcoal) !important; color: var(--charcoal) !important; }
+
+/* Catégories et postes */
+.categorie-header h4 { font-family: 'Playfair Display', serif; font-weight: 400; font-size: 22px; letter-spacing: 0; text-transform: none; color: var(--charcoal); }
+.poste-card { border: none; border-radius: var(--rayon); box-shadow: var(--shadow); overflow: hidden; margin-bottom: 14px; }
+.poste-header { background: #fff; border-bottom: 1px solid var(--fond-2); }
+.poste-ref { font-family: 'Playfair Display', serif; font-size: 17px; font-weight: 500; }
+.option-letter { color: var(--taupe) !important; letter-spacing: 1.5px; }
+.option-row { border-bottom-color: var(--fond-2) !important; }
+.option-status { border-radius: 999px; }
+
+/* Onglets catégories (Postes & Sélections) */
+.onglet-poste { border-color: var(--bord); letter-spacing: .3px; }
+.onglet-poste.actif span { color: var(--taupe); }
+
+/* Petites touches */
+.empty-state h3 { font-family: 'Playfair Display', serif; font-weight: 400; }
+.fiche-pill.plein { background: var(--brun); border-color: var(--brun); }
+.panier-bandeau .lib, .fiche-surtitre { color: var(--taupe); }
+.btn-panier .compte { background: var(--brun); }
+/* Ajustements */
+.page-header h2, .project-card h3, .poste-ref, .categorie-header h4, .modal-header h3, .fiche-nom, .fiche-rep-nom, .panier-tete h3, .fiche-entente b, .panier-total b { font-variant-numeric: lining-nums; }
+.auth-logo p { display: none; }
+.auth-logo h1 img { height: 84px; }
+.btn-notif-bell { border-radius: 999px; }
+.piece-chip { border-radius: 999px; padding: 6px 13px; background: #fff; }
+.piece-chip.checked { background: var(--charcoal); border-color: var(--charcoal); }
+#options-slots-container > div { border-radius: 14px; border-color: var(--fond-2) !important; }
+.bloc-finis, .bloc-peinture { border-radius: 12px; border-color: var(--fond-2) !important; }
+.bloc-finis input, .bloc-peinture input { border-radius: 8px; }
+body * { font-variant-numeric: lining-nums; }
+/* FIN THÈME CMPG 2026 */
 </style>
 
 <!--[if gte mso 9]><xml>
@@ -1690,6 +1829,12 @@ async function logout() {
   document.getElementById('app').style.display = 'none';
   document.getElementById('auth-screen').style.display = 'flex';
 }
+
+// Logo officiel (SVG blanc) dans la barre latérale et à l'écran de connexion
+document.addEventListener('DOMContentLoaded', () => {
+  const img = `<img src="data:image/svg+xml;base64,${LOGO_SVG_B64}" alt="CMPG Design Construction">`;
+  document.querySelectorAll('.sidebar-logo h1, .auth-logo h1').forEach(h => { h.innerHTML = img; });
+});
 
 async function checkAuth() {
   const { data: { session } } = await db.auth.getSession();
@@ -3066,7 +3211,7 @@ async function chargerPostes() {
             .map(opt => renderOptRow(opt)).join('')) + retiredHTML;
 
       const typeBadge = isMultiple
-        ? `<span style="font-size:10px;background:rgba(207,147,79,.15);color:var(--caramel);padding:2px 7px;letter-spacing:.5px">MULTIPLE</span>`
+        ? `<span style="font-size:10px;background:rgba(82,53,37,.08);color:var(--brun);padding:2px 9px;border-radius:999px;letter-spacing:1px">MULTIPLE</span>`
         : `<span style="font-size:10px;background:var(--fond);color:var(--texte-2);padding:2px 7px;letter-spacing:.5px">UNIQUE</span>`;
 
       const btnAjouterOption = (isMultiple && nextLetter)
@@ -4312,19 +4457,19 @@ async function chargerProgression() {
 
   document.getElementById('progression-stats').innerHTML = `
     <div>
-      <div style="font-family:'Noto Serif Display',serif;font-size:36px;color:var(--charcoal)">${data.approuves || 0}</div>
+      <div style="font-family:'Playfair Display',serif;font-size:36px;color:var(--charcoal)">${data.approuves || 0}</div>
       <div style="font-size:11px;letter-spacing:1.5px;text-transform:uppercase;color:var(--success);margin-top:4px">Approuvés</div>
     </div>
     <div>
-      <div style="font-family:'Noto Serif Display',serif;font-size:36px;color:var(--danger)">${data.a_revoir || 0}</div>
+      <div style="font-family:'Playfair Display',serif;font-size:36px;color:var(--danger)">${data.a_revoir || 0}</div>
       <div style="font-size:11px;letter-spacing:1.5px;text-transform:uppercase;color:var(--danger);margin-top:4px">À revoir</div>
     </div>
     <div>
-      <div style="font-family:'Noto Serif Display',serif;font-size:36px;color:var(--texte-2)">${data.en_attente || 0}</div>
+      <div style="font-family:'Playfair Display',serif;font-size:36px;color:var(--texte-2)">${data.en_attente || 0}</div>
       <div style="font-size:11px;letter-spacing:1.5px;text-transform:uppercase;color:var(--texte-2);margin-top:4px">En attente</div>
     </div>
     <div>
-      <div style="font-family:'Noto Serif Display',serif;font-size:24px;color:var(--caramel)">${data.budget_confirme ? '$' + Number(data.budget_confirme).toLocaleString('fr-CA') : '—'}</div>
+      <div style="font-family:'Playfair Display',serif;font-size:24px;color:var(--caramel)">${data.budget_confirme ? '$' + Number(data.budget_confirme).toLocaleString('fr-CA') : '—'}</div>
       <div style="font-size:11px;letter-spacing:1.5px;text-transform:uppercase;color:var(--caramel);margin-top:4px">Budget confirmé</div>
     </div>
   `;
@@ -4547,12 +4692,12 @@ async function genererPDF_base(mode) {
 
   // ── Couleurs de marque CMPG (le charcoal correspond au fond réel du logo) ──
   const T_DARK    = '#3A3B3A';
-  const T_BEIGE   = '#EFEBE6';
+  const T_BEIGE   = '#F1EEE8';
   const T_SUBCAT  = '#ACA298';
   const T_BORD    = '#C8C2BB';
   const T_TEXT    = '#302F24';
   const T_WARN    = '#7A5C00';
-  const T_LIEN    = '#9A8C7E';
+  const T_LIEN    = '#523525';
 
   const { jsPDF } = window.jspdf;
   const doc = new jsPDF({ orientation: 'landscape', unit: 'mm', format: 'letter' });

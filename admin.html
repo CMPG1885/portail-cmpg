@@ -5363,6 +5363,8 @@ function estShowOnglet(nom, el) {
 
 // ---------- Liste des estimations d'un projet ----------
 async function estChoisirProjet(id) {
+  await estMonCourriel();
+  if (estCourante && estCourante.projet_id !== id) estLibererEdition(estCourante.id);
   estProjetId = id || null; estCourante = null;
   try { localStorage.setItem('est-projet', id || ''); } catch (e) {}
   document.getElementById('est-editeur').style.display = 'none';
@@ -5374,7 +5376,7 @@ async function estChoisirProjet(id) {
     : `<span style="color:var(--danger)">Type de projet manquant — à inscrire dans la fiche du projet (Modifier le projet).</span>`;
 
   const [{ data: ests }, { data: volet }] = await Promise.all([
-    db.from('estimations').select('id, nom, version, phase, statut, type_projet, gamme_defaut, total_ht, calculee_le, cree_le, figee_le, figee_par').eq('projet_id', id).order('version', { ascending: false }),
+    db.from('estimations').select('id, nom, version, phase, statut, type_projet, gamme_defaut, total_ht, calculee_le, cree_le, figee_le, figee_par, en_edition_par, en_edition_le').eq('projet_id', id).order('version', { ascending: false }),
     db.from('volets_projet').select('id, actif').eq('projet_id', id).eq('type_volet', 'estimation').maybeSingle(),
   ]);
   document.getElementById('est-volet').checked = !!volet?.actif;
@@ -5386,7 +5388,8 @@ async function estChoisirProjet(id) {
   liste.innerHTML = `<div class="card" style="padding:0;overflow:hidden"><table class="data-table" style="margin:0">
     <thead><tr><th>Estimation</th><th>Statut</th><th>Type · gamme</th><th style="text-align:right">Total HT</th><th>Calculée le</th><th></th></tr></thead>
     <tbody>${ests.map(e => `<tr style="cursor:pointer" onclick="estOuvrir('${e.id}')">
-      <td><strong>${escH(estNom(e))}</strong><div style="font-size:11px;color:var(--texte-2)">v${e.version} · ${escH(e.phase)}</div></td>
+      <td><strong>${escH(estNom(e))}</strong><div style="font-size:11px;color:var(--texte-2)">v${e.version} · ${escH(e.phase)}</div>
+        ${estEnEditionAutre(e) ? `<div style="font-size:11px;color:var(--caramel)">✏️ en cours de modification par ${escH(e.en_edition_par)}</div>` : ''}</td>
       <td>${estBadgeStatut(e.statut)}${e.figee_le ? `<div style="font-size:11px;color:var(--texte-2)">${new Date(e.figee_le).toLocaleDateString('fr-CA')} · ${escH(e.figee_par || '')}</div>` : ''}</td>
       <td style="font-size:12px">${escH(e.type_projet || '—')} · ${escH(e.gamme_defaut || '—')}</td>
       <td style="text-align:right">${e.total_ht != null ? estMoney(e.total_ht) : '—'}</td>
@@ -5433,7 +5436,11 @@ async function estSupprimer(id) {
 }
 
 async function estDefiger() {
-  if (!confirm(`Défiger « ${estNom(estCourante)} » ?\n\nElle redevient modifiable. Tant qu'elle n'est pas figée de nouveau, le client ne la voit plus.`)) return;
+  const ok = await estDialogue('🔓 Défiger', `<p>Défiger « ${escH(estNom(estCourante))} » ?</p>
+      <p style="margin-top:8px">Elle redevient modifiable et <strong>ses prix suivront le catalogue</strong> au prochain calcul. Tant qu’elle n’est pas figée de nouveau, le client ne la voit plus.</p>
+      <p style="margin-top:8px;font-size:13px;color:var(--texte-2)">Pour seulement actualiser les prix en gardant l’historique, utilisez plutôt « Mettre à jour les prix ».</p>`,
+    [{ v: '', lib: 'Annuler' }, { v: 'ok', lib: 'Défiger', classe: 'btn-dark' }]);
+  if (!ok) return;
   const id = estCourante.id;
   const { error } = await db.from('estimations').update({ statut: 'brouillon', figee_le: null, figee_par: null }).eq('id', id);
   if (error) { toast('Erreur : ' + error.message, 'error'); return; }
@@ -5443,6 +5450,19 @@ async function estDefiger() {
 
 async function estVolet(actif) {
   if (!estProjetId) return;
+  if (actif) {
+    const { data: fig } = await db.from('estimations').select('id').eq('projet_id', estProjetId).eq('statut', 'figée').limit(1);
+    if (!fig?.length) {
+      const cb = document.getElementById('est-volet'); if (cb) cb.checked = false;
+      if (estCourante && estCourante.projet_id === estProjetId && estCourante.statut === 'brouillon' && estLignes.length) {
+        const ok = await estDialogue('Visible au client', `<p>Le client voit seulement une estimation <strong>figée</strong>, et ce projet n’en a aucune.</p>
+          <p style="margin-top:8px">Figer « ${escH(estNom(estCourante))} » maintenant et la rendre visible ?</p>`,
+          [{ v: '', lib: 'Annuler' }, { v: 'ok', lib: 'Figer et rendre visible', classe: 'btn-caramel' }]);
+        if (ok) { const f = await estFiger('visible'); if (f && cb) cb.checked = true; }
+      } else toast('Figez d’abord une estimation : le client voit seulement une estimation figée.', 'error');
+      return;
+    }
+  }
   const { data: v } = await db.from('volets_projet').select('id').eq('projet_id', estProjetId).eq('type_volet', 'estimation').maybeSingle();
   const { error } = v
     ? await db.from('volets_projet').update({ actif }).eq('id', v.id)
@@ -5466,7 +5486,10 @@ async function estOuvrir(id) {
     db.from('estimation_lignes').select('*').eq('estimation_id', id).order('ordre'),
   ]);
   if (!e) { toast('Estimation introuvable.', 'error'); return; }
+  if (estCourante && estCourante.id !== e.id) estLibererEdition(estCourante.id);
+  await estMonCourriel();
   estCourante = e; estPieces = pcs || []; estQtes = qs || []; estLignes = ls || [];
+  estSignalerEdition(e);
   document.getElementById('est-editeur').style.display = 'block';
   estRenderEntete();
   estAfficher(estLignes.length ? 'resultat' : estOnglet);
@@ -5482,7 +5505,11 @@ function estRenderEntete() {
   const chiffre = (lib, val, sous) => `<div style="padding:10px 16px;background:var(--fond);border-radius:10px;min-width:130px">
       <div style="font-size:10px;letter-spacing:1.2px;text-transform:uppercase;color:var(--texte-2)">${lib}</div>
       <div style="font-size:18px;margin-top:2px">${val}</div>${sous ? `<div style="font-size:11px;color:var(--texte-2)">${sous}</div>` : ''}</div>`;
+  const autre = estEnEditionAutre(e);
   document.getElementById('est-entete').innerHTML = `
+    ${autre ? `<div style="margin:-4px 0 14px;padding:10px 14px;border-radius:10px;background:#fbf3e6;border-left:3px solid var(--caramel);font-size:13px">
+      ✏️ <strong>${escH(e.en_edition_par)}</strong> est en train de modifier cette estimation (depuis ${new Date(e.en_edition_le).toLocaleTimeString('fr-CA', { hour: '2-digit', minute: '2-digit' })}).
+      Vos changements pourraient écraser les siens : coordonnez-vous avant de modifier.</div>` : ''}
     <div style="display:flex;justify-content:space-between;gap:16px;flex-wrap:wrap;align-items:flex-start">
       <div style="flex:1;min-width:280px">
         <input ${dis} value="${escH(estNom(e))}" onchange="estMajEntete('nom',this.value.trim()||null);this.value=estNom(estCourante)"
@@ -5496,7 +5523,8 @@ function estRenderEntete() {
         </div>
       </div>
       <div style="display:flex;gap:8px;flex-wrap:wrap;justify-content:flex-end">
-        ${fz ? `<button class="btn btn-outline btn-sm" onclick="estDefiger()">🔓 Défiger</button>`
+        ${fz ? `<button class="btn btn-dark btn-sm" onclick="estMettreAJourPrix()" title="Comparer avec les prix actuels et créer une version à jour">⟳ Mettre à jour les prix</button>
+                <button class="btn btn-outline btn-sm" onclick="estDefiger()">🔓 Défiger</button>`
              : `<button class="btn btn-dark btn-sm" onclick="estCalculer()">⟳ Calculer</button>
                 <button class="btn btn-caramel btn-sm" onclick="estFiger()">🔒 Figer</button>`}
         <button class="btn btn-outline btn-sm" onclick="estNouvelleVersion()">＋ Nouvelle version</button>
@@ -5891,43 +5919,155 @@ async function estAssocierSelection(i, cle) {
 }
 
 // ---------- Gel et versions ----------
-async function estFiger() {
-  if (!estLignes.length) { toast('Calculez l’estimation avant de la figer.', 'error'); return; }
-  if (!confirm(`Figer l’estimation v${estCourante.version} ?\n\nElle ne pourra plus être modifiée. Pour la changer, il faudra créer une nouvelle version.`)) return;
-  const { data: { user } } = await db.auth.getUser();
-  await db.from('estimations').update({ statut: 'remplacée' }).eq('projet_id', estCourante.projet_id).eq('statut', 'figée');
-  const { error } = await db.from('estimations').update({ statut: 'figée', figee_le: new Date().toISOString(), figee_par: user?.email || null }).eq('id', estCourante.id);
-  if (error) { toast('Erreur : ' + error.message, 'error'); return; }
-  const id = estCourante.id;
-  toast(`Estimation v${estCourante.version} figée.`, 'success');
-  await estChoisirProjet(estProjetId); estOuvrir(id);
+// ---------- Fenêtre de dialogue (remplace confirm) ----------
+function estDialogue(titre, html, boutons) {
+  return new Promise(res => {
+    document.getElementById('est-dialogue')?.remove();
+    const o = document.createElement('div');
+    o.id = 'est-dialogue'; o.className = 'modal-overlay open';
+    o.innerHTML = `<div class="modal" style="width:min(620px,94vw);max-width:none">
+      <div class="modal-header"><h3>${titre}</h3><button class="modal-close" data-v="">×</button></div>
+      <div class="modal-body" style="font-size:14px;line-height:1.65">${html}</div>
+      <div class="modal-footer">${boutons.map(b => `<button class="btn ${b.classe || 'btn-outline'}" data-v="${b.v}">${b.lib}</button>`).join('')}</div></div>`;
+    o.addEventListener('click', ev => {
+      const v = ev.target.closest('[data-v]')?.dataset.v;
+      if (v === undefined) { if (ev.target === o) { o.remove(); res(''); } return; }
+      const extra = {}; o.querySelectorAll('input[type=checkbox][name]').forEach(c => extra[c.name] = c.checked);
+      o.remove(); res(v ? { v, ...extra } : '');
+    });
+    document.body.appendChild(o);
+  });
 }
 
-async function estNouvelleVersion() {
-  if (!confirm(`Créer une nouvelle version à partir de la v${estCourante.version} ? Les pièces et les quantités sont copiées.`)) return;
-  const src = estCourante;
+// ---------- Gel ----------
+async function estFiger(depuis) {
+  if (!estLignes.length) { toast('Calculez l’estimation avant de la figer.', 'error'); return false; }
+  const T = estCourante.totaux;
+  const r = await estDialogue('🔒 Figer l’estimation', `
+      <p><strong>${escH(estNom(estCourante))}</strong>${T ? ` — ${estMoney(T.total_ht)} avant taxes` : ''}</p>
+      <p style="margin-top:10px">Une fois figée :</p>
+      <ul style="margin:6px 0 0 20px">
+        <li>les <strong>prix sont verrouillés</strong> : un changement au catalogue des tâches ne la modifie plus ;</li>
+        <li>les pièces, quantités et commentaires ne peuvent plus être modifiés ;</li>
+        <li>c’est cette version que le client voit quand l’estimation est visible dans son portail.</li>
+      </ul>
+      <p style="margin-top:10px;font-size:13px;color:var(--texte-2)">Pour l’ajuster plus tard : « Mettre à jour les prix » ou « Défiger ».</p>
+      <label style="display:flex;gap:8px;align-items:center;margin-top:14px;font-size:13px"><input type="checkbox" name="visible" ${depuis === 'visible' ? 'checked' : ''}> Rendre visible au client</label>`,
+    [{ v: '', lib: 'Annuler' }, { v: 'figer', lib: '🔒 Figer', classe: 'btn-caramel' }]);
+  if (!r) return false;
+  const { data: { user } } = await db.auth.getUser();
+  await db.from('estimations').update({ statut: 'remplacée' }).eq('projet_id', estCourante.projet_id).eq('statut', 'figée').neq('id', estCourante.id);
+  const { error } = await db.from('estimations').update({ statut: 'figée', figee_le: new Date().toISOString(), figee_par: user?.email || null, en_edition_par: null, en_edition_le: null }).eq('id', estCourante.id);
+  if (error) { toast('Erreur : ' + error.message, 'error'); return false; }
+  if (r.visible) await estVolet(true);
+  const id = estCourante.id;
+  toast(`« ${estNom(estCourante)} » est figée.`, 'success');
+  await estChoisirProjet(estProjetId); await estOuvrir(id);
+  return true;
+}
+
+// Copie complète d'une estimation (pièces, quantités, prix manuels, commentaires) dans une nouvelle version.
+async function estCopierVersion(src, pieces, qtes) {
   const { data: der } = await db.from('estimations').select('version').eq('projet_id', src.projet_id).order('version', { ascending: false }).limit(1);
   const version = (der?.[0]?.version || 0) + 1;
   const { data: e, error } = await db.from('estimations').insert({
     projet_id: src.projet_id, version, phase: src.phase, type_projet: src.type_projet, gamme_defaut: src.gamme_defaut,
     contingence_pct: src.contingence_pct, notes_internes: src.notes_internes, version_gabarit: 'rev39',
+    commentaire_client: src.commentaire_client ?? null, commentaires_sections: src.commentaires_sections || {},
     nom: (src.nom || 'Estimation').replace(/\s*v\d+$/, '') + ` v${version}`,
   }).select('id').single();
-  if (error) { toast('Erreur : ' + error.message, 'error'); return; }
+  if (error) throw new Error(error.message);
   const map = {};
-  for (const p of estPieces) {
+  for (const p of pieces) {
     const { id, estimation_id, ...rest } = p;
     const { data: np, error: ep } = await db.from('estimation_pieces').insert({ ...rest, estimation_id: e.id }).select('id').single();
-    if (ep) { toast('Erreur (pièces) : ' + ep.message, 'error'); return; }
+    if (ep) throw new Error('pièces : ' + ep.message);
     map[id] = np.id;
   }
-  if (estQtes.length) {
-    const { error: eq } = await db.from('estimation_quantites').insert(estQtes.map(({ id, estimation_id, ...q }) => ({ ...q, estimation_id: e.id, piece_id: q.piece_id ? map[q.piece_id] || null : null })));
-    if (eq) { toast('Erreur (quantités) : ' + eq.message, 'error'); return; }
+  if (qtes.length) {
+    const { error: eq } = await db.from('estimation_quantites').insert(qtes.map(({ id, estimation_id, ...q }) => ({ ...q, estimation_id: e.id, piece_id: q.piece_id ? map[q.piece_id] || null : null })));
+    if (eq) throw new Error('quantités : ' + eq.message);
   }
-  toast(`Version v${version} créée.`, 'success');
-  await estChoisirProjet(estProjetId); estOuvrir(e.id);
+  const { data: pm } = await db.from('estimation_prix_manuels').select('cle_gabarit, prix, note').eq('estimation_id', src.id);
+  if (pm?.length) {
+    const { error: epm } = await db.from('estimation_prix_manuels').insert(pm.map(m => ({ ...m, estimation_id: e.id })));
+    if (epm) throw new Error('prix manuels : ' + epm.message);
+  }
+  return { id: e.id, version };
 }
+
+async function estNouvelleVersion() {
+  const r = await estDialogue('＋ Nouvelle version', `<p>Créer une nouvelle version à partir de « ${escH(estNom(estCourante))} » ?</p>
+      <p style="margin-top:8px;font-size:13px;color:var(--texte-2)">Les pièces, quantités, prix manuels et commentaires sont copiés. La nouvelle version est un brouillon modifiable.</p>`,
+    [{ v: '', lib: 'Annuler' }, { v: 'ok', lib: 'Créer la version', classe: 'btn-dark' }]);
+  if (!r) return;
+  try {
+    const n = await estCopierVersion(estCourante, estPieces, estQtes);
+    toast(`Version v${n.version} créée.`, 'success');
+    await estChoisirProjet(estProjetId); estOuvrir(n.id);
+  } catch (e) { toast('Erreur : ' + e.message, 'error'); }
+}
+
+// ---------- Mise à niveau des prix d'une estimation figée ----------
+async function estMettreAJourPrix() {
+  const src = estCourante;
+  toast('Comparaison avec les prix actuels du catalogue…', 'info');
+  const { data, error } = await db.functions.invoke('calculer-estimation', { body: { estimation_id: src.id, simuler: true } });
+  let rep = data; if (error) { try { rep = await error.context.json(); } catch (e) { rep = { erreur: error.message }; } }
+  if (!rep?.ok) { toast('Comparaison impossible : ' + (rep?.erreur || 'erreur inconnue'), 'error'); return; }
+  const nomDdn = d => estPostes.find(p => p.code === d)?.nom || d;
+  const avant = {}, apres = {};
+  estLignes.forEach(l => { avant[l.ddn] = (avant[l.ddn] || 0) + Number(l.montant || 0); });
+  (rep.lignes || []).forEach(l => { apres[l.ddn] = (apres[l.ddn] || 0) + Number(l.montant || 0); });
+  const ddns = [...new Set([...Object.keys(avant), ...Object.keys(apres)])].sort();
+  const chg = ddns.filter(d => Math.abs((apres[d] || 0) - (avant[d] || 0)) >= 1);
+  const A = src.totaux?.total_ht || 0, B = rep.totaux.total_ht, ec = B - A;
+  const fmtEc = v => `<span style="color:${v > 0 ? 'var(--danger)' : v < 0 ? 'var(--success)' : 'inherit'}">${v > 0 ? '+' : ''}${estMoney(v)}</span>`;
+  const tableau = chg.length ? `<table class="data-table" style="margin-top:10px"><thead><tr><th>Section</th><th style="text-align:right">Figée</th><th style="text-align:right">Prix actuels</th><th style="text-align:right">Écart</th></tr></thead>
+      <tbody>${chg.map(d => `<tr><td>${escH(nomDdn(d))}</td><td style="text-align:right">${estMoney(avant[d] || 0)}</td><td style="text-align:right">${estMoney(apres[d] || 0)}</td><td style="text-align:right">${fmtEc((apres[d] || 0) - (avant[d] || 0))}</td></tr>`).join('')}
+      <tr style="background:var(--fond)"><td><strong>Total avant taxes</strong></td><td style="text-align:right">${estMoney(A)}</td><td style="text-align:right"><strong>${estMoney(B)}</strong></td><td style="text-align:right"><strong>${fmtEc(ec)}</strong></td></tr></tbody></table>`
+    : '<p style="margin-top:10px">Aucun prix n’a changé : l’estimation est déjà à jour.</p>';
+  const r = await estDialogue('⟳ Mettre à jour les prix', `<p>Comparaison de « ${escH(estNom(src))} » avec les prix <strong>actuels</strong> du catalogue et des sélections approuvées. Les quantités ne changent pas.</p>${tableau}
+      ${chg.length ? `<p style="margin-top:12px;font-size:13px;color:var(--texte-2)">« Appliquer » crée une nouvelle version avec les nouveaux prix (les quantités, pièces, prix manuels et commentaires sont repris). La version actuelle est conservée dans l’historique.</p>
+      <label style="display:flex;gap:8px;align-items:center;margin-top:10px;font-size:13px"><input type="checkbox" name="figer" checked> Figer la nouvelle version tout de suite (elle remplace celle que voit le client)</label>` : ''}`,
+    chg.length ? [{ v: '', lib: 'Annuler' }, { v: 'ok', lib: 'Appliquer les nouveaux prix', classe: 'btn-dark' }] : [{ v: '', lib: 'Fermer' }]);
+  if (!r) return;
+  try {
+    const n = await estCopierVersion(src, estPieces, estQtes);
+    const { data: d2, error: e2 } = await db.functions.invoke('calculer-estimation', { body: { estimation_id: n.id } });
+    if (e2 || !d2?.ok) throw new Error('calcul de la nouvelle version');
+    if (r.figer) {
+      const { data: { user } } = await db.auth.getUser();
+      await db.from('estimations').update({ statut: 'remplacée' }).eq('projet_id', src.projet_id).eq('statut', 'figée');
+      await db.from('estimations').update({ statut: 'figée', figee_le: new Date().toISOString(), figee_par: user?.email || null }).eq('id', n.id);
+    }
+    toast(`Prix mis à jour : version v${n.version}${r.figer ? ' figée' : ''} (${estMoney(d2.totaux.total_ht)} avant taxes).`, 'success');
+    await estChoisirProjet(estProjetId); estOuvrir(n.id);
+  } catch (e) { toast('Erreur : ' + e.message, 'error'); }
+}
+
+// ---------- « En cours de modification » ----------
+let estMoi = null, estPouls = null;
+async function estMonCourriel() { if (!estMoi) { const { data: { user } } = await db.auth.getUser(); estMoi = user?.email || '?'; } return estMoi; }
+const estEnEditionAutre = e => e?.en_edition_par && e.en_edition_par !== estMoi && e.en_edition_le && (Date.now() - new Date(e.en_edition_le).getTime() < 3 * 60 * 1000);
+async function estSignalerEdition(e) {
+  clearInterval(estPouls); estPouls = null;
+  if (!e || e.statut !== 'brouillon') return;
+  await estMonCourriel();
+  const battre = () => db.from('estimations').update({ en_edition_par: estMoi, en_edition_le: new Date().toISOString() }).eq('id', e.id).then(() => {});
+  if (!estEnEditionAutre(e)) battre();
+  estPouls = setInterval(async () => {
+    if (!estCourante || estCourante.id !== e.id || !document.getElementById('view-estimation')?.classList.contains('active')) { estLibererEdition(e.id); return; }
+    const { data } = await db.from('estimations').select('en_edition_par, en_edition_le').eq('id', e.id).single();
+    if (data && estEnEditionAutre(data)) { Object.assign(estCourante, data); estRenderEntete(); } else battre();
+  }, 60000);
+}
+async function estLibererEdition(id) {
+  clearInterval(estPouls); estPouls = null;
+  if (!id || !estMoi) return;
+  await db.from('estimations').update({ en_edition_par: null, en_edition_le: null }).eq('id', id).eq('en_edition_par', estMoi);
+}
+window.addEventListener('beforeunload', () => { if (estCourante && estMoi) estLibererEdition(estCourante.id); });
 
 // ============================================================
 // CATALOGUE DES TÂCHES (lignes du gabarit et leurs prix)
@@ -6207,6 +6347,13 @@ async function estCommentaireGeneral(val) {
 }
 async function estPDFResume() {
   const e = estPjChoisie; if (!e) return;
+  if (e.statut === 'brouillon') {
+    const r = await estDialogue('PDF résumé client', `<p>« ${escH(estNom(e))} » n’est <strong>pas figée</strong> : ses prix peuvent encore changer si le catalogue change ou si quelqu’un la recalcule.</p>
+        <p style="margin-top:8px">Pour remettre ce document au client, il est préférable de la figer d’abord (dans le Module d’estimation).</p>`,
+      [{ v: '', lib: 'Annuler' }, { v: 'figer', lib: 'Aller figer l’estimation', classe: 'btn-caramel' }, { v: 'pdf', lib: 'PDF de travail quand même' }]);
+    if (!r) return;
+    if (r.v === 'figer') { estOuvrirDepuisProjet(e.id); return; }
+  }
   if (!window.CMPGEstimation) { toast('Module PDF absent : téléversez estimation-pdf.js avec admin.html.', 'error'); return; }
   const { data: p } = await db.from('projets').select('nom, numero_projet, adresse, responsable_nom, clients(nom)').eq('id', currentProjetId).single();
   toast('Dans la fenêtre d’impression, choisissez « Enregistrer au format PDF ».', 'info');

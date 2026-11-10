@@ -780,15 +780,18 @@ body * { font-variant-numeric: lining-nums; }
       </div>
       <div class="page-body">
         <div class="projet-tabs">
-          <div class="projet-tab active" onclick="showProjetTab('postes', this)">Postes & Sélections</div>
-          <div class="projet-tab" onclick="showProjetTab('volets', this);chargerVolets()">Volets & Documents</div>
-          <div class="projet-tab" onclick="showProjetTab('progression', this)">Progression client</div>
+          <div class="projet-tab active" onclick="showProjetTab('infos', this)">Informations</div>
+          <div class="projet-tab" onclick="showProjetTab('postes', this)">Sélection des finis et produits</div>
           <div class="projet-tab" onclick="showProjetTab('estimation', this)">Estimation</div>
-          <div class="projet-tab" onclick="showProjetTab('infos', this)">Informations</div>
+          <div class="projet-tab" onclick="showProjetTab('volets', this);if(typeof chargerVolets==='function')chargerVolets()">Volets & Documents</div>
         </div>
 
         <!-- TAB: Postes -->
-        <div id="tab-postes" class="projet-tab-content">
+        <div id="tab-postes" class="projet-tab-content" style="display:none">
+          <div class="card" style="margin-bottom:16px">
+            <div style="font-size:11px;letter-spacing:1.5px;text-transform:uppercase;color:var(--texte-2);margin-bottom:12px">Progression des décisions du client</div>
+            <div id="progression-stats" style="display:grid;grid-template-columns:repeat(4,1fr);gap:20px;text-align:center"></div>
+          </div>
           <div style="display:flex;justify-content:flex-end;margin-bottom:16px">
             <button class="btn btn-dark btn-sm" onclick="openModalPoste()">+ Ajouter un poste</button>
           </div>
@@ -804,16 +807,6 @@ body * { font-variant-numeric: lining-nums; }
           </div>
         </div>
 
-        <!-- TAB: Progression -->
-        <div id="tab-progression" class="projet-tab-content" style="display:none">
-          <div id="progression-content">
-            <div class="card">
-              <div id="progression-stats" style="display:grid;grid-template-columns:repeat(4,1fr);gap:20px;text-align:center">
-                <!-- Stats dynamiques -->
-              </div>
-            </div>
-          </div>
-        </div>
 
         <!-- TAB: Estimation -->
         <div id="tab-estimation" class="projet-tab-content" style="display:none">
@@ -821,7 +814,7 @@ body * { font-variant-numeric: lining-nums; }
         </div>
 
         <!-- TAB: Infos -->
-        <div id="tab-infos" class="projet-tab-content" style="display:none">
+        <div id="tab-infos" class="projet-tab-content">
           <div class="card" id="infos-content"></div>
         </div>
       </div>
@@ -1781,6 +1774,7 @@ body * { font-variant-numeric: lining-nums; }
 <div id="toast-container"></div>
 
 <script src="selection-pdf.js"></script>
+<script src="estimation-pdf.js"></script>
 <script>
 // ============================================================
 // CONFIG — à modifier avec vos clés Supabase
@@ -3038,7 +3032,7 @@ function showProjetTab(tab, el) {
   el.classList.add('active');
   document.querySelectorAll('.projet-tab-content').forEach(c => c.style.display = 'none');
   document.getElementById('tab-' + tab).style.display = 'block';
-  if (tab === 'progression') chargerProgression();
+  if (tab === 'postes') chargerProgression();
   if (tab === 'infos') chargerInfosProjet();
   if (tab === 'estimation') estChargerOngletProjet();
 }
@@ -3298,7 +3292,8 @@ async function ouvrirProjet(projetId) {
   document.querySelectorAll('.projet-tab').forEach(t => t.classList.remove('active'));
   document.querySelector('.projet-tab').classList.add('active');
   document.querySelectorAll('.projet-tab-content').forEach(c => c.style.display = 'none');
-  document.getElementById('tab-postes').style.display = 'block';
+  document.getElementById('tab-infos').style.display = 'block';
+  chargerInfosProjet();
 
   chargerPostes();
   chargerProduitsBanqueSelect();
@@ -4683,6 +4678,7 @@ async function chargerInfosProjet() {
         <div style="font-size:15px;font-weight:500;margin-bottom:2px">${p.nom}</div>
         <div style="font-size:13px;color:var(--texte-2)">${p.adresse || '—'}</div>
         <div style="margin-top:12px;font-size:12px;color:var(--texte-2)">Statut : <span class="status-badge status-${p.statut}">${p.statut}</span></div>
+        <div style="margin-top:12px;font-size:12px">Type de projet : ${p.type_projet || '<span style="color:var(--danger)">à inscrire (Modifier le projet)</span>'} · gamme ${p.gamme_defaut || 'Intermédiaire'}</div>
         <div style="margin-top:12px;font-size:12px">Budget : ${p.budget_min ? '$' + Number(p.budget_min).toLocaleString('fr-CA') : '—'} – ${p.budget_max ? '$' + Number(p.budget_max).toLocaleString('fr-CA') : '—'}</div>
       </div>
       <div>
@@ -5852,6 +5848,10 @@ async function estRenderSelections() {
     const bp = Array.isArray(o.banque_produits) ? o.banque_produits[0] : o.banque_produits;
     estSel.push({ po, o, bp, cle: estChoisirLigne(po, corr || []), exception: (corr || []).some(c => c.poste_id === po.id) });
   }
+  const ordreLigne = cle => !cle ? 'zzz' : cle === 'aucune' ? 'zzy' : cle;
+  estSel.sort((a, b) => ordreLigne(a.cle).slice(0, 8).localeCompare(ordreLigne(b.cle).slice(0, 8))
+    || String(a.po.reference || '').localeCompare(String(b.po.reference || ''), 'fr', { numeric: true, sensitivity: 'base' })
+    || String(a.bp?.nom || '').localeCompare(String(b.bp?.nom || ''), 'fr'));
   if (!estSel.length) { div.innerHTML = `<div class="card" style="font-size:13px;color:var(--texte-2)">Aucune sélection approuvée dans ce projet pour l'instant. Dès qu'un client approuve une option, elle apparaît ici et entre dans le calcul.</div>`; return; }
   const fz = estFigee();
   const cc = estTachesCC.filter(t => t.categorie_defaut === 'CHOIX CLIENT'), autres = estTachesCC.filter(t => t.categorie_defaut !== 'CHOIX CLIENT');
@@ -6089,29 +6089,132 @@ async function catSauverTache() {
 }
 
 // ============================================================
-// ONGLET « ESTIMATION » DANS LA FICHE D'UN PROJET
+// ONGLET « ESTIMATION » DANS LA FICHE D'UN PROJET — résumé client, commentaires, PDF
 // ============================================================
-async function estChargerOngletProjet() {
+let estPjEstimations = [], estPjChoisie = null, estPjLignes = [], estPjPieces = [];
+
+// Texte client : on retire le jargon interne des libellés du catalogue.
+const estLibClient = t => String(t || '')
+  .replace(/\s*\((fourni-posé|fourniture[^)]*|matériaux[^)]*|installation[^)]*|pose incluse[^)]*|main-d'œuvre[^)]*|forfait à inscrire)\)/gi, '')
+  .replace(/\s*—\s*reste au plan \(au prix de la gamme\)/i, '').replace(/\s+/g, ' ').trim();
+
+function estResumeSections(lignes, pieces, commentaires) {
+  const nom = d => estPostes.find(p => p.code === d)?.nom || d;
+  const par = {};
+  for (const l of lignes) {
+    if (!Number(l.montant)) continue;
+    const s = par[l.ddn] = par[l.ddn] || { ddn: l.ddn, nom: nom(l.ddn), base: 0, choix: 0, total: 0, inc: new Set(), pcs: {} };
+    const m = Number(l.montant);
+    s.total += m; if (l.categorie === 'CHOIX CLIENT') s.choix += m; else s.base += m;
+    s.inc.add(estLibClient(l.description.split(' — ').filter(x => !pieces.some(p => p.nom === x)).join(' — ')));
+    const pc = pieces.find(p => p.id === l.piece_id)?.nom; if (pc) s.pcs[pc] = (s.pcs[pc] || 0) + m;
+  }
+  return Object.values(par).sort((a, b) => a.ddn.localeCompare(b.ddn)).map(s => ({
+    ddn: s.ddn, nom: s.nom, base: s.base, choix: s.choix, total: s.total, inclusions: [...s.inc].filter(Boolean),
+    par_piece: Object.entries(s.pcs).map(([piece, total]) => ({ piece, total })), commentaire: (commentaires || {})[s.ddn] || '' }));
+}
+
+async function estChargerOngletProjet(choix) {
   const div = document.getElementById('tab-estimation-contenu'); if (!div || !currentProjetId) return;
+  if (!estPostes.length) { const { data } = await db.from('ddn_postes').select('id, code, nom').eq('actif', true).order('code'); estPostes = data || []; }
   const [{ data: ests }, { data: volet }] = await Promise.all([
-    db.from('estimations').select('id, nom, version, statut, total_ht, totaux, calculee_le, figee_le').eq('projet_id', currentProjetId).order('version', { ascending: false }),
+    db.from('estimations').select('*').eq('projet_id', currentProjetId).order('version', { ascending: false }),
     db.from('volets_projet').select('actif').eq('projet_id', currentProjetId).eq('type_volet', 'estimation').maybeSingle(),
   ]);
+  estPjEstimations = ests || [];
   const ouvrir = id => `estOuvrirDepuisProjet('${id || ''}')`;
+  if (!estPjEstimations.length) {
+    div.innerHTML = `<div class="empty-state"><div class="icon">📐</div><h3>Aucune estimation</h3><p>Créez-la dans le Module d'estimation.</p>
+      <button class="btn btn-dark btn-sm" onclick="${ouvrir('')}">Ouvrir le Module d'estimation</button></div>`; return;
+  }
+  const ref = estPjEstimations.find(e => e.id === choix) || estPjEstimations.find(e => e.statut === 'figée') || estPjEstimations.find(e => e.calculee_le) || estPjEstimations[0];
+  estPjChoisie = ref;
+  const [{ data: ls }, { data: pcs }] = await Promise.all([
+    db.from('estimation_lignes').select('ddn, description, categorie, montant, piece_id').eq('estimation_id', ref.id),
+    db.from('estimation_pieces').select('id, nom').eq('estimation_id', ref.id),
+  ]);
+  estPjLignes = ls || []; estPjPieces = pcs || [];
+  const secs = estResumeSections(estPjLignes, estPjPieces, ref.commentaires_sections);
+  const fz = ref.statut !== 'brouillon', T = ref.totaux;
+  const dis = fz ? 'disabled' : '';
+  const aire = (ddn, val) => `<textarea ${dis} placeholder="Commentaire pour le client (facultatif)" onchange="estCommentaireSection('${ddn}',this.value)"
+      style="width:100%;min-height:${val ? 52 : 30}px;margin-top:6px;padding:6px 8px;border:1px solid var(--bord);font-size:12px;font-family:inherit;resize:vertical">${escH(val || '')}</textarea>`;
+  const L = (lib, v, fort) => `<tr${fort ? ' style="background:var(--fond)"' : ''}><td colspan="4" style="${fort ? 'font-weight:500' : ''}">${lib}</td><td style="text-align:right;${fort ? 'font-weight:500' : ''}">${estMoney(v)}</td></tr>`;
   div.innerHTML = `
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;flex-wrap:wrap;gap:10px">
-      <div style="font-size:13px;color:var(--texte-2)">${volet?.actif ? '👁 Visible au client (dernière estimation figée)' : 'Non visible au client'}</div>
-      <button class="btn btn-dark btn-sm" onclick="${ouvrir('')}">Ouvrir dans le Module d'estimation</button>
+      <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
+        <select onchange="estChargerOngletProjet(this.value)" style="padding:9px 12px;border:1px solid var(--bord);min-width:280px">
+          ${estPjEstimations.map(e => `<option value="${e.id}" ${e.id === ref.id ? 'selected' : ''}>${escH(estNom(e))} — ${e.statut}</option>`).join('')}</select>
+        ${estBadgeStatut(ref.statut)}
+        <span style="font-size:12px;color:var(--texte-2)">${volet?.actif ? '👁 Visible au client (dernière estimation figée)' : 'Non visible au client'}</span>
+      </div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap">
+        <button class="btn btn-caramel btn-sm" onclick="estPDFResume()" ${secs.length ? '' : 'disabled'}>⬇ PDF résumé client</button>
+        <button class="btn btn-outline btn-sm" onclick="${ouvrir(ref.id)}">Ouvrir dans le Module d'estimation</button>
+      </div>
     </div>
-    ${ests?.length ? `<div class="card" style="padding:0;overflow:hidden"><table class="data-table" style="margin:0">
+    ${fz ? `<div style="font-size:12px;color:var(--texte-2);margin-bottom:10px">🔒 Estimation figée : les commentaires ne peuvent plus être modifiés. Défigez-la dans le Module d'estimation pour les changer.</div>` : ''}
+    ${!secs.length ? `<div class="card" style="font-size:13px;color:var(--texte-2)">Cette estimation n'est pas encore calculée. Ouvrez-la dans le Module d'estimation et cliquez sur « Calculer ».</div>` : `
+    <div class="card" style="padding:0;overflow:hidden">
+      <div style="padding:16px 20px;background:var(--fond);border-bottom:1px solid var(--bord);display:flex;justify-content:space-between;align-items:baseline;flex-wrap:wrap;gap:8px">
+        <div><div style="font-size:10px;letter-spacing:1.5px;text-transform:uppercase;color:var(--texte-2)">Résumé client</div>
+          <div style="font-family:'Playfair Display',serif;font-size:20px">${escH(estNom(ref))}</div></div>
+        <div style="text-align:right"><div style="font-size:10px;letter-spacing:1.5px;text-transform:uppercase;color:var(--texte-2)">Total avant taxes</div>
+          <div style="font-family:'Playfair Display',serif;font-size:22px">${T ? estMoney(T.total_ht) : '—'}</div></div>
+      </div>
+      <table class="data-table" style="margin:0"><thead><tr><th style="width:22%">Section</th><th>Ce qui est inclus · commentaire</th>
+        <th style="text-align:right;width:110px">Coûts de base</th><th style="text-align:right;width:110px">Choix client</th><th style="text-align:right;width:120px">Total</th></tr></thead>
+      <tbody>${secs.map(sc => `<tr style="vertical-align:top">
+        <td><strong>${escH(sc.nom)}</strong><div style="font-size:11px;color:var(--texte-2);font-family:monospace">${sc.ddn}</div></td>
+        <td><div style="font-size:12px;color:var(--texte-2);line-height:1.6">${sc.inclusions.map(escH).join(' · ')}</div>
+          ${sc.par_piece.length > 1 ? `<div style="font-size:11px;color:var(--caramel);margin-top:3px">Par pièce : ${sc.par_piece.map(p => `${escH(p.piece)} ${estMoney(p.total)}`).join(' · ')}</div>` : ''}
+          ${fz && !sc.commentaire ? '' : aire(sc.ddn, sc.commentaire)}</td>
+        <td style="text-align:right">${sc.base ? estMoney(sc.base) : '—'}</td><td style="text-align:right">${sc.choix ? estMoney(sc.choix) : '—'}</td>
+        <td style="text-align:right"><strong>${estMoney(sc.total)}</strong></td></tr>`).join('')}
+        ${T ? [L('Sous-total des travaux', T.travaux, true), L(`Contingence (${+(T.contingence_pct * 100).toFixed(1)} %)`, T.contingence), L('Frais de gestion et d’administration', T.frais),
+               L('Total avant taxes', T.total_ht, true), L('TPS', T.tps), L('TVQ', T.tvq), L('Total taxes incluses', T.ttc, true)].join('') : ''}
+      </tbody></table>
+      <div style="padding:16px 20px;border-top:1px solid var(--bord)">
+        <label style="font-size:11px;letter-spacing:1.5px;text-transform:uppercase;color:var(--texte-2)">Notes de CMPG au client (imprimées dans le PDF)</label>
+        <textarea ${dis} onchange="estCommentaireGeneral(this.value)" placeholder="Ex. : Les prix de l'ébénisterie seront confirmés à la réception des soumissions…"
+          style="width:100%;min-height:70px;margin-top:6px;padding:8px 10px;border:1px solid var(--bord);font-size:13px;font-family:inherit;resize:vertical">${escH(ref.commentaire_client || '')}</textarea>
+      </div>
+    </div>`}
+    <div style="font-size:11px;letter-spacing:1.5px;text-transform:uppercase;color:var(--texte-2);margin:24px 0 8px">Toutes les estimations du projet</div>
+    <div class="card" style="padding:0;overflow:hidden"><table class="data-table" style="margin:0">
       <thead><tr><th>Estimation</th><th>Statut</th><th style="text-align:right">Total avant taxes</th><th style="text-align:right">Total TTC</th><th>Calculée le</th><th></th></tr></thead>
-      <tbody>${ests.map(e => `<tr style="cursor:pointer" onclick="${ouvrir(e.id)}">
+      <tbody>${estPjEstimations.map(e => `<tr style="cursor:pointer" onclick="estChargerOngletProjet('${e.id}')">
         <td><strong>${escH(estNom(e))}</strong><div style="font-size:11px;color:var(--texte-2)">v${e.version}</div></td><td>${estBadgeStatut(e.statut)}</td>
         <td style="text-align:right">${e.total_ht != null ? estMoney(e.total_ht) : '—'}</td>
         <td style="text-align:right">${e.totaux?.ttc != null ? estMoney(e.totaux.ttc) : '—'}</td>
         <td style="font-size:12px">${e.calculee_le ? new Date(e.calculee_le).toLocaleDateString('fr-CA') : '—'}</td>
-        <td style="text-align:right"><button class="btn btn-outline btn-sm" onclick="event.stopPropagation();${ouvrir(e.id)}">Ouvrir</button></td></tr>`).join('')}</tbody></table></div>`
-      : `<div class="empty-state"><div class="icon">📐</div><h3>Aucune estimation</h3><p>Créez-la dans le Module d'estimation.</p></div>`}`;
+        <td style="text-align:right"><button class="btn btn-outline btn-sm" onclick="event.stopPropagation();${ouvrir(e.id)}">Ouvrir</button></td></tr>`).join('')}</tbody></table></div>`;
+}
+
+async function estCommentaireSection(ddn, val) {
+  const e = estPjChoisie; if (!e || e.statut !== 'brouillon') return;
+  const c = { ...(e.commentaires_sections || {}) };
+  if (val.trim()) c[ddn] = val.trim(); else delete c[ddn];
+  const { error } = await db.from('estimations').update({ commentaires_sections: c }).eq('id', e.id);
+  if (error) { toast('Erreur : ' + error.message, 'error'); return; }
+  e.commentaires_sections = c; toast('Commentaire enregistré.', 'success');
+}
+async function estCommentaireGeneral(val) {
+  const e = estPjChoisie; if (!e || e.statut !== 'brouillon') return;
+  const { error } = await db.from('estimations').update({ commentaire_client: val.trim() || null }).eq('id', e.id);
+  if (error) { toast('Erreur : ' + error.message, 'error'); return; }
+  e.commentaire_client = val.trim() || null; toast('Notes enregistrées.', 'success');
+}
+async function estPDFResume() {
+  const e = estPjChoisie; if (!e) return;
+  if (!window.CMPGEstimation) { toast('Module PDF absent : téléversez estimation-pdf.js avec admin.html.', 'error'); return; }
+  const { data: p } = await db.from('projets').select('nom, numero_projet, adresse, responsable_nom, clients(nom)').eq('id', currentProjetId).single();
+  toast('Dans la fenêtre d’impression, choisissez « Enregistrer au format PDF ».', 'info');
+  await CMPGEstimation.imprimer({
+    projet: { nom: p?.nom, numero: p?.numero_projet, adresse: p?.adresse, responsable: p?.responsable_nom, client: p?.clients?.nom },
+    estimation: { nom: estNom(e), statut: e.statut, type_projet: e.type_projet },
+    sections: estResumeSections(estPjLignes, estPjPieces, e.commentaires_sections), totaux: e.totaux, commentaire: e.commentaire_client,
+  });
 }
 let estAOuvrir = null;
 function estOuvrirDepuisProjet(id) {

@@ -783,6 +783,7 @@ body * { font-variant-numeric: lining-nums; }
           <div class="projet-tab active" onclick="showProjetTab('postes', this)">Postes & Sélections</div>
           <div class="projet-tab" onclick="showProjetTab('volets', this);chargerVolets()">Volets & Documents</div>
           <div class="projet-tab" onclick="showProjetTab('progression', this)">Progression client</div>
+          <div class="projet-tab" onclick="showProjetTab('estimation', this)">Estimation</div>
           <div class="projet-tab" onclick="showProjetTab('infos', this)">Informations</div>
         </div>
 
@@ -812,6 +813,11 @@ body * { font-variant-numeric: lining-nums; }
               </div>
             </div>
           </div>
+        </div>
+
+        <!-- TAB: Estimation -->
+        <div id="tab-estimation" class="projet-tab-content" style="display:none">
+          <div id="tab-estimation-contenu"></div>
         </div>
 
         <!-- TAB: Infos -->
@@ -3034,6 +3040,7 @@ function showProjetTab(tab, el) {
   document.getElementById('tab-' + tab).style.display = 'block';
   if (tab === 'progression') chargerProgression();
   if (tab === 'infos') chargerInfosProjet();
+  if (tab === 'estimation') estChargerOngletProjet();
 }
 
 // ============================================================
@@ -5371,32 +5378,34 @@ async function estChoisirProjet(id) {
     : `<span style="color:var(--danger)">Type de projet manquant — à inscrire dans la fiche du projet (Modifier le projet).</span>`;
 
   const [{ data: ests }, { data: volet }] = await Promise.all([
-    db.from('estimations').select('id, version, phase, statut, type_projet, gamme_defaut, total_ht, calculee_le, cree_le, figee_le, figee_par').eq('projet_id', id).order('version', { ascending: false }),
+    db.from('estimations').select('id, nom, version, phase, statut, type_projet, gamme_defaut, total_ht, calculee_le, cree_le, figee_le, figee_par').eq('projet_id', id).order('version', { ascending: false }),
     db.from('volets_projet').select('id, actif').eq('projet_id', id).eq('type_volet', 'estimation').maybeSingle(),
   ]);
   document.getElementById('est-volet').checked = !!volet?.actif;
+  if (estAOuvrir) { const a = estAOuvrir; estAOuvrir = null; setTimeout(() => estOuvrir(a), 0); }
   if (!ests?.length) {
     liste.innerHTML = `<div class="empty-state"><div class="icon">📐</div><h3>Aucune estimation</h3><p>Démarrez la première estimation de ce projet.</p></div>`;
     return;
   }
   liste.innerHTML = `<div class="card" style="padding:0;overflow:hidden"><table class="data-table" style="margin:0">
-    <thead><tr><th>Version</th><th>Statut</th><th>Type · gamme</th><th style="text-align:right">Total HT</th><th>Calculée le</th><th></th></tr></thead>
+    <thead><tr><th>Estimation</th><th>Statut</th><th>Type · gamme</th><th style="text-align:right">Total HT</th><th>Calculée le</th><th></th></tr></thead>
     <tbody>${ests.map(e => `<tr style="cursor:pointer" onclick="estOuvrir('${e.id}')">
-      <td><strong>v${e.version}</strong> <span style="font-size:11px;color:var(--texte-2)">${escH(e.phase)}</span></td>
+      <td><strong>${escH(estNom(e))}</strong><div style="font-size:11px;color:var(--texte-2)">v${e.version} · ${escH(e.phase)}</div></td>
       <td>${estBadgeStatut(e.statut)}${e.figee_le ? `<div style="font-size:11px;color:var(--texte-2)">${new Date(e.figee_le).toLocaleDateString('fr-CA')} · ${escH(e.figee_par || '')}</div>` : ''}</td>
       <td style="font-size:12px">${escH(e.type_projet || '—')} · ${escH(e.gamme_defaut || '—')}</td>
       <td style="text-align:right">${e.total_ht != null ? estMoney(e.total_ht) : '—'}</td>
       <td style="font-size:12px">${e.calculee_le ? new Date(e.calculee_le).toLocaleString('fr-CA') : '—'}</td>
       <td style="white-space:nowrap;text-align:right">
         <button class="btn btn-outline btn-sm" onclick="event.stopPropagation();estOuvrir('${e.id}')">Ouvrir</button>
-        ${e.statut === 'brouillon' ? `<button class="btn btn-outline btn-sm" style="color:var(--danger);border-color:var(--danger)" onclick="event.stopPropagation();estSupprimer('${e.id}',${e.version})" title="Supprimer le brouillon">🗑</button>` : ''}
+        <button class="btn btn-outline btn-sm" style="color:var(--danger);border-color:var(--danger)" onclick="event.stopPropagation();estSupprimer('${e.id}')" title="Supprimer l'estimation">🗑</button>
       </td></tr>`).join('')}</tbody></table></div>`;
 }
 
 function estBadgeStatut(s) {
   const st = { 'brouillon': ['var(--fond)', 'var(--texte-2)', 'Brouillon'], 'figée': ['#e6f4ec', 'var(--success)', '🔒 Figée'], 'remplacée': ['var(--fond)', 'var(--texte-2)', 'Remplacée'] }[s] || ['var(--fond)', 'var(--texte-2)', s];
-  return `<span style="background:${st[0]};color:${st[1]};font-size:10px;letter-spacing:1px;text-transform:uppercase;padding:3px 8px;border-radius:999px">${st[2]}</span>`;
+  return `<span style="display:inline-block;vertical-align:middle;line-height:1.4;white-space:nowrap;background:${st[0]};color:${st[1]};font-size:10px;letter-spacing:1px;text-transform:uppercase;padding:3px 8px;border-radius:999px;margin-bottom:3px">${st[2]}</span>`;
 }
+const estNom = e => e?.nom || `Estimation v${e?.version}`;
 
 async function estNouvelle() {
   if (!estProjetId) { toast('Choisissez un projet.', 'error'); return; }
@@ -5405,7 +5414,8 @@ async function estNouvelle() {
   const { data: der } = await db.from('estimations').select('version').eq('projet_id', estProjetId).order('version', { ascending: false }).limit(1);
   const version = (der?.[0]?.version || 0) + 1;
   const { data, error } = await db.from('estimations').insert({
-    projet_id: estProjetId, version, type_projet: p.type_projet, gamme_defaut: p.gamme_defaut || 'Intermédiaire', version_gabarit: 'rev39',
+    projet_id: estProjetId, version, type_projet: p.type_projet, gamme_defaut: p.gamme_defaut || 'Intermédiaire', version_gabarit: 'rev39', contingence_pct: 0.15,
+    nom: `Estimation ${p.type_projet.toLowerCase()} v${version}`,
   }).select('id').single();
   if (error) { toast('Erreur : ' + error.message, 'error'); return; }
   toast(`Estimation v${version} créée.`, 'success');
@@ -5413,12 +5423,26 @@ async function estNouvelle() {
   estOuvrir(data.id);
 }
 
-async function estSupprimer(id, version) {
-  if (!confirm(`Supprimer le brouillon v${version} ? Ses pièces et quantités seront effacées.`)) return;
-  const { error } = await db.from('estimations').delete().eq('id', id).eq('statut', 'brouillon');
+async function estSupprimer(id) {
+  const { data: e } = await db.from('estimations').select('id, nom, version, statut').eq('id', id).single();
+  if (!e) return;
+  const fig = e.statut !== 'brouillon';
+  if (!confirm(`Supprimer « ${estNom(e)} » ?${fig ? '\n\nElle est figée : si elle est visible au client, il ne la verra plus.' : ''}\n\nSes pièces, quantités et lignes seront effacées. Cette action est définitive.`)) return;
+  if (fig) await db.from('estimations').update({ statut: 'brouillon' }).eq('id', id);   // le verrou bloque l'effacement des lignes d'une estimation figée
+  const { error } = await db.from('estimations').delete().eq('id', id);
   if (error) { toast('Erreur : ' + error.message, 'error'); return; }
-  toast('Brouillon supprimé.', 'success');
+  toast('Estimation supprimée.', 'success');
+  if (estCourante?.id === id) estCourante = null;
   estChoisirProjet(estProjetId);
+}
+
+async function estDefiger() {
+  if (!confirm(`Défiger « ${estNom(estCourante)} » ?\n\nElle redevient modifiable. Tant qu'elle n'est pas figée de nouveau, le client ne la voit plus.`)) return;
+  const id = estCourante.id;
+  const { error } = await db.from('estimations').update({ statut: 'brouillon', figee_le: null, figee_par: null }).eq('id', id);
+  if (error) { toast('Erreur : ' + error.message, 'error'); return; }
+  toast('Estimation défigée : elle est de nouveau modifiable.', 'success');
+  await estChoisirProjet(estProjetId); estOuvrir(id);
 }
 
 async function estVolet(actif) {
@@ -5429,6 +5453,12 @@ async function estVolet(actif) {
     : await db.from('volets_projet').insert({ projet_id: estProjetId, type_volet: 'estimation', actif, ordre: 90 });
   if (error) { toast('Erreur : ' + error.message, 'error'); document.getElementById('est-volet').checked = !actif; return; }
   toast(actif ? 'Le client verra la dernière estimation figée.' : 'Estimation masquée au client.', 'success');
+}
+
+// Rafraîchit la liste sans fermer l'éditeur.
+async function estChoisirListeSeule() {
+  const cur = estCourante; await estChoisirProjet(estProjetId); estCourante = cur;
+  document.getElementById('est-editeur').style.display = 'block';
 }
 
 // ---------- Éditeur d'une estimation ----------
@@ -5448,24 +5478,46 @@ async function estOuvrir(id) {
 }
 
 function estRenderEntete() {
-  const e = estCourante, fz = estFigee();
-  const dis = fz ? 'disabled' : '';
+  const e = estCourante, fz = estFigee(), dis = fz ? 'disabled' : '';
+  const p = estProjets.find(x => x.id === e.projet_id);
+  const T = e.totaux, nq = new Set(estQtes.map(q => q.cle)).size;
+  const sansPrix = estLignes.filter(l => l.source_prix && !['catalogue', 'sélection', 'manuel'].includes(l.source_prix)).length;
+  const nSel = estLignes.filter(l => l.source_prix === 'sélection').length;
+  const chiffre = (lib, val, sous) => `<div style="padding:10px 16px;background:var(--fond);border-radius:10px;min-width:130px">
+      <div style="font-size:10px;letter-spacing:1.2px;text-transform:uppercase;color:var(--texte-2)">${lib}</div>
+      <div style="font-size:18px;margin-top:2px">${val}</div>${sous ? `<div style="font-size:11px;color:var(--texte-2)">${sous}</div>` : ''}</div>`;
   document.getElementById('est-entete').innerHTML = `
-    <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:16px;flex-wrap:wrap">
-      <div>
-        <div style="font-family:'Playfair Display',serif;font-size:20px">Estimation v${e.version} ${estBadgeStatut(e.statut)}</div>
-        <div style="font-size:12px;color:var(--texte-2);margin-top:4px">Gabarit ${escH(e.version_gabarit || '—')} · créée le ${new Date(e.cree_le).toLocaleDateString('fr-CA')} par ${escH(e.cree_par || '')}</div>
+    <div style="display:flex;justify-content:space-between;gap:16px;flex-wrap:wrap;align-items:flex-start">
+      <div style="flex:1;min-width:280px">
+        <input ${dis} value="${escH(estNom(e))}" onchange="estMajEntete('nom',this.value.trim()||null);this.value=estNom(estCourante)"
+               title="Cliquer pour renommer" style="font-family:'Playfair Display',serif;font-size:21px;border:1px solid transparent;background:transparent;padding:4px 6px;margin-left:-6px;width:100%;border-radius:6px"
+               onfocus="this.style.borderColor='var(--bord)'" onblur="this.style.borderColor='transparent'" />
+        <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-top:6px;font-size:12px;color:var(--texte-2)">
+          ${estBadgeStatut(e.statut)}
+          <span>${escH(p?.nom || '')} · v${e.version}</span>
+          <span>Créée le ${new Date(e.cree_le).toLocaleDateString('fr-CA')}${e.cree_par ? ' par ' + escH(e.cree_par) : ''}</span>
+          ${e.figee_le ? `<span>Figée le ${new Date(e.figee_le).toLocaleDateString('fr-CA')}${e.figee_par ? ' par ' + escH(e.figee_par) : ''}</span>` : ''}
+        </div>
       </div>
-      <div style="display:flex;gap:8px;flex-wrap:wrap">
-        ${fz ? '' : `<button class="btn btn-dark btn-sm" onclick="estCalculer()">⟳ Calculer</button>
-                     <button class="btn btn-caramel btn-sm" onclick="estFiger()">🔒 Figer</button>`}
+      <div style="display:flex;gap:8px;flex-wrap:wrap;justify-content:flex-end">
+        ${fz ? `<button class="btn btn-outline btn-sm" onclick="estDefiger()">🔓 Défiger</button>`
+             : `<button class="btn btn-dark btn-sm" onclick="estCalculer()">⟳ Calculer</button>
+                <button class="btn btn-caramel btn-sm" onclick="estFiger()">🔒 Figer</button>`}
         <button class="btn btn-outline btn-sm" onclick="estNouvelleVersion()">＋ Nouvelle version</button>
+        <button class="btn btn-outline btn-sm" style="color:var(--danger);border-color:var(--danger)" onclick="estSupprimer('${e.id}')" title="Supprimer l'estimation">🗑</button>
       </div>
+    </div>
+    <div style="display:flex;gap:10px;flex-wrap:wrap;margin-top:16px">
+      ${chiffre('Total avant taxes', T ? estMoney(T.total_ht) : '—', e.calculee_le ? 'calculé le ' + new Date(e.calculee_le).toLocaleString('fr-CA', { dateStyle: 'short', timeStyle: 'short' }) : 'pas encore calculé')}
+      ${chiffre('Total TTC', T ? estMoney(T.ttc) : '—')}
+      ${chiffre('Quantités', `${nq}`, `${estPieces.length} pièce(s)`)}
+      ${chiffre('Sélections approuvées', `${nSel}`, 'lignes au prix du produit')}
+      ${chiffre('Sans prix', `<span style="color:${sansPrix ? 'var(--danger)' : 'inherit'}">${sansPrix}</span>`, sansPrix ? 'voir Résultat' : '')}
     </div>
     <div class="form-grid" style="grid-template-columns:repeat(4,1fr);margin-top:18px">
       <div class="form-group"><label>Type de projet</label><select ${dis} onchange="estMajEntete('type_projet',this.value)">${estOpts(EST_TYPES, e.type_projet)}</select></div>
       <div class="form-group"><label>Gamme par défaut</label><select ${dis} onchange="estMajEntete('gamme_defaut',this.value)">${estOpts(EST_GAMMES, e.gamme_defaut)}</select></div>
-      <div class="form-group"><label>Contingence (vide = gabarit)</label><input ${dis} type="number" step="0.5" min="0" placeholder="Auto"
+      <div class="form-group"><label>Contingence (%)</label><input ${dis} type="number" step="0.5" min="0" placeholder="15"
            value="${e.contingence_pct != null ? +(e.contingence_pct * 100).toFixed(2) : ''}" onchange="estMajEntete('contingence_pct',this.value===''?null:this.value/100)" /></div>
       <div class="form-group"><label>Phase</label><select ${dis} onchange="estMajEntete('phase',this.value)">${estOpts(['Préliminaire', 'Exécution'], e.phase)}</select></div>
     </div>
@@ -5478,11 +5530,13 @@ async function estMajEntete(champ, valeur) {
   const { error } = await db.from('estimations').update({ [champ]: valeur }).eq('id', estCourante.id);
   if (error) { toast('Erreur : ' + error.message, 'error'); return; }
   estCourante[champ] = valeur;
+  if (champ === 'nom') { estChoisirListeSeule(); return; }
   if (['type_projet', 'gamme_defaut', 'contingence_pct'].includes(champ) && estLignes.length) toast('Recalculez pour mettre le résultat à jour.', 'info');
 }
 
 function estAfficher(onglet) {
   estOnglet = onglet;
+  if (estCourante) estRenderEntete();
   document.querySelectorAll('#est-editeur .est-subtab').forEach(t => t.classList.toggle('active', t.dataset.o === onglet));
   ({ pieces: estRenderPieces, quantites: estRenderQuantites, resultat: estRenderResultat })[onglet]();
 }
@@ -5512,7 +5566,9 @@ function estRenderPieces() {
     : `<div class="empty-state" style="padding:30px"><p>${estCourante.type_projet === 'Construction neuve' ? 'Construction neuve : la grille par pièce est facultative.' : 'Réno / agrandissement : remplissez la grille avant les quantités.'}</p></div>`;
   document.getElementById('est-contenu').innerHTML = `
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
-      <div style="font-size:12px;color:var(--texte-2)">La zone de chaque pièce donne le type de prix de ses lignes.</div>
+      <div style="font-size:12px;color:var(--texte-2);max-width:760px;line-height:1.6"><strong>Facultatif.</strong> Les pièces servent à trois choses :
+        séparer une quantité par pièce (ex. céramique de la cuisine vs de la SDB), donner à chaque pièce son type de prix quand le projet est mixte
+        (zone Agrandissement ou Réno), et afficher au client le détail par pièce. Sans plan et pour un projet simple, vous pouvez passer directement aux Quantités.</div>
       ${fz ? '' : `<button class="btn btn-dark btn-sm" onclick="estAjouterPiece()">+ Ajouter une pièce</button>`}
     </div>${html}`;
 }
@@ -5546,39 +5602,102 @@ function estLibelleCle(cle) {
   const t = estTachesDirectes.find(x => x.cle_gabarit === cle);
   return t ? { cle, parametre: t.libelle, unite: t.unite, ddn: cle.slice(0, 8) } : { cle, parametre: cle, unite: '', ddn: cle.slice(0, 8) };
 }
+// Liste complète des paramètres, section par section : rien n'est oublié.
+let estQFiltre = { q: '', etat: '' }, estQOuvertes = new Set();
+function estSections() {
+  const sec = new Map();
+  const nomDdn = (code, txt) => estPostes.find(p => p.code === code)?.nom || (txt || '').split(' — ')[1] || '';
+  for (const p of estParams) {
+    const code = p.cle.slice(0, 8);
+    if (!sec.has(code)) sec.set(code, { code, nom: nomDdn(code, p.ddn), items: [] });
+    sec.get(code).items.push({ cle: p.cle, nom: p.parametre, unite: p.unite, aide: [p.ou_chercher, p.question && p.question !== p.parametre ? p.question : null].filter(Boolean).join(' · ') });
+  }
+  for (const t of estTachesDirectes) {
+    const code = t.cle_gabarit.slice(0, 8);
+    if (!sec.has(code)) sec.set(code, { code, nom: nomDdn(code), items: [] });
+    sec.get(code).items.push({ cle: t.cle_gabarit, nom: t.libelle, unite: t.unite, aide: 'Montant ou quantité directe' });
+  }
+  return [...sec.values()].sort((a, b) => a.code.localeCompare(b.code));
+}
 function estRenderQuantites() {
   const fz = estFigee(), dis = fz ? 'disabled' : '';
-  const nomDdn = c => estPostes.find(p => p.code === c)?.nom || '';
-  const parDdn = {};
-  estQtes.forEach(q => { const d = q.cle.slice(0, 8); (parDdn[d] = parDdn[d] || []).push(q); });
-  const optPieces = q => `<option value="">—</option>` + estPieces.map(p => `<option value="${p.id}" ${p.id === q.piece_id ? 'selected' : ''}>${escH(p.nom)}</option>`).join('');
-  const blocs = Object.keys(parDdn).sort().map(d => `
-    <div class="card" style="padding:0;overflow:hidden;margin-bottom:14px">
-      <div style="padding:10px 16px;background:var(--fond);border-bottom:1px solid var(--bord)">
-        <span style="font-family:monospace;font-size:12px;color:var(--texte-2)">${d}</span><strong style="margin-left:10px">${escH(nomDdn(d))}</strong></div>
-      <table class="data-table" style="margin:0"><thead><tr><th style="width:36%">Paramètre</th><th>Pièce</th><th>Type (vide = projet)</th><th>Gamme</th><th style="width:110px">Quantité</th><th>Unité</th><th>Note</th><th></th></tr></thead>
-      <tbody>${parDdn[d].map(q => { const p = estLibelleCle(q.cle); return `<tr>
-        <td>${escH(p.parametre)}<div style="font-size:11px;color:var(--texte-2);font-family:monospace">${escH(q.cle)}</div></td>
-        <td><select ${dis} onchange="estMajQte('${q.id}','piece_id',this.value||null)">${optPieces(q)}</select></td>
-        <td><select ${dis} onchange="estMajQte('${q.id}','type_projet',this.value||null)">${estOpts(EST_TYPES, q.type_projet, '—')}</select></td>
-        <td><select ${dis} onchange="estMajQte('${q.id}','gamme',this.value||null)">${estOpts(EST_GAMMES, q.gamme, '—')}</select></td>
-        <td><input ${dis} type="number" step="any" value="${q.quantite ?? ''}" onchange="estMajQte('${q.id}','quantite',this.value===''?null:Number(this.value))" style="width:100%;text-align:right" /></td>
-        <td style="font-size:12px;color:var(--texte-2)">${escH(q.unite || p.unite || '')}</td>
-        <td><input ${dis} value="${escH(q.note || '')}" onchange="estMajQte('${q.id}','note',this.value.trim()||null)" placeholder="Réf. plan, hypothèse…" /></td>
-        <td>${fz ? '' : `<button class="btn btn-outline btn-sm" style="color:var(--danger);border-color:var(--danger)" onclick="estSupprimerQte('${q.id}')">🗑</button>`}</td>
-      </tr>`; }).join('')}</tbody></table></div>`).join('');
+  const q = estQFiltre.q.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
+  const norm = s => (s || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
+  const rangs = cle => estQtes.filter(x => x.cle === cle);
+  const optPieces = r => `<option value="">— Pièce —</option>` + estPieces.map(p => `<option value="${p.id}" ${p.id === r.piece_id ? 'selected' : ''}>${escH(p.nom)}</option>`).join('');
+  let totRemplis = 0, totItems = 0;
+  const blocs = estSections().map(s => {
+    const items = s.items.filter(it => {
+      const n = rangs(it.cle).length;
+      if (estQFiltre.etat === 'remplis' && !n) return false;
+      if (estQFiltre.etat === 'vides' && n) return false;
+      return !q || norm(it.nom).includes(q) || norm(s.nom).includes(q) || it.cle.includes(q) || s.code.includes(q);
+    });
+    const remplis = s.items.filter(it => rangs(it.cle).length).length;
+    totRemplis += remplis; totItems += s.items.length;
+    if (!items.length) return '';
+    const ouvert = q || estQFiltre.etat || estQOuvertes.has(s.code);
+    const lignes = items.map(it => {
+      const rs = rangs(it.cle);
+      const simple = rs.length === 0 || (rs.length === 1 && !rs[0].piece_id && !rs[0].type_projet && !rs[0].gamme);
+      const champ = simple
+        ? `<input ${dis} type="number" step="any" value="${rs[0]?.quantite ?? ''}" placeholder="—" onchange="estQteSimple('${it.cle}',this.value)" style="width:110px;text-align:right" />`
+        : `<strong>${estNum(rs.reduce((t, r) => t + Number(r.quantite || 0), 0))}</strong> <span style="font-size:11px;color:var(--texte-2)">(${rs.length} lignes)</span>`;
+      const detail = simple ? '' : rs.map(r => `<tr class="est-sousligne"><td style="padding-left:28px">↳
+          <select ${dis} onchange="estMajQte('${r.id}','piece_id',this.value||null)" style="width:auto">${optPieces(r)}</select>
+          <select ${dis} onchange="estMajQte('${r.id}','type_projet',this.value||null)" style="width:auto">${estOpts(EST_TYPES, r.type_projet, '— Type —')}</select>
+          <select ${dis} onchange="estMajQte('${r.id}','gamme',this.value||null)" style="width:auto">${estOpts(EST_GAMMES, r.gamme, '— Gamme —')}</select></td>
+        <td></td><td><input ${dis} type="number" step="any" value="${r.quantite ?? ''}" onchange="estMajQte('${r.id}','quantite',this.value===''?null:Number(this.value))" style="width:110px;text-align:right" /></td>
+        <td>${fz ? '' : `<button class="btn btn-outline btn-sm" style="color:var(--danger);border-color:var(--danger)" onclick="estSupprimerQte('${r.id}')">🗑</button>`}</td></tr>`).join('');
+      return `<tr${rs.length ? ' style="background:#fbfaf6"' : ''}>
+          <td>${rs.length ? '<span style="color:var(--success)">●</span> ' : '<span style="color:var(--bord)">○</span> '}${escH(it.nom)}
+            <span style="font-size:10px;color:var(--texte-2);font-family:monospace;margin-left:6px">${escH(it.cle)}</span>
+            ${it.aide ? `<div style="font-size:11px;color:var(--texte-2);margin:2px 0 0 18px">${escH(it.aide)}</div>` : ''}</td>
+          <td style="font-size:12px;color:var(--texte-2)">${escH(it.unite || '')}</td>
+          <td>${champ}</td>
+          <td style="white-space:nowrap">${fz ? '' : `<button class="btn btn-outline btn-sm" onclick="estOuvrirModalQte('${it.cle}')" title="Ajouter une ligne par pièce, par type ou par gamme">+ pièce / type</button>`}</td></tr>${detail}`;
+    }).join('');
+    return `<div class="card" style="padding:0;overflow:hidden;margin-bottom:10px">
+      <div onclick="estBasculerSection('${s.code}')" style="padding:12px 16px;background:var(--fond);cursor:pointer;display:flex;justify-content:space-between;align-items:center">
+        <div><span style="font-size:12px;color:var(--texte-2)">${ouvert ? '▾' : '▸'}</span>
+          <span style="font-family:monospace;font-size:12px;color:var(--texte-2);margin-left:6px">${s.code}</span>
+          <strong style="margin-left:10px">${escH(s.nom)}</strong></div>
+        <span style="font-size:12px;color:${remplis ? 'var(--success)' : 'var(--texte-2)'}">${remplis} / ${s.items.length} rempli(s)</span></div>
+      ${ouvert ? `<table class="data-table" style="margin:0"><thead><tr><th>Paramètre</th><th style="width:70px">Unité</th><th style="width:190px">Quantité</th><th style="width:130px"></th></tr></thead><tbody>${lignes}</tbody></table>` : ''}
+    </div>`;
+  }).join('');
   document.getElementById('est-contenu').innerHTML = `
-    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
-      <div style="font-size:12px;color:var(--texte-2)"><strong>${estQtes.length}</strong> quantité(s) · une ligne par pièce ou par type quand le projet est mixte.</div>
-      ${fz ? '' : `<button class="btn btn-dark btn-sm" onclick="estOuvrirModalQte()">+ Ajouter une quantité</button>`}
-    </div>${blocs || '<div class="empty-state" style="padding:30px"><p>Aucune quantité saisie.</p></div>'}`;
+    <div style="display:flex;gap:12px;align-items:center;margin-bottom:14px;flex-wrap:wrap">
+      <input id="est-q-recherche" type="text" placeholder="Rechercher par nom (gypse, fenêtre, céramique…) ou par DDN" value="${escH(estQFiltre.q)}"
+             oninput="estQFiltre.q=this.value;estRenderQuantites();const e=document.getElementById('est-q-recherche');e.focus();e.setSelectionRange(e.value.length,e.value.length)"
+             style="flex:1;min-width:280px;padding:11px 14px;border:1px solid var(--bord)" />
+      <select onchange="estQFiltre.etat=this.value;estRenderQuantites()" style="padding:10px 12px;border:1px solid var(--bord)">
+        <option value="" ${!estQFiltre.etat ? 'selected' : ''}>Tous les paramètres</option>
+        <option value="vides" ${estQFiltre.etat === 'vides' ? 'selected' : ''}>À remplir</option>
+        <option value="remplis" ${estQFiltre.etat === 'remplis' ? 'selected' : ''}>Remplis</option></select>
+      <div style="font-size:12px;color:var(--texte-2)"><strong>${totRemplis}</strong> / ${totItems} paramètres remplis</div>
+    </div>
+    <div style="font-size:12px;color:var(--texte-2);margin-bottom:12px">Ouvrez chaque section et inscrivez les quantités du projet. « + pièce / type » sépare une quantité par pièce, par type de projet (projet mixte) ou par gamme.</div>
+    ${blocs || '<div class="empty-state" style="padding:30px"><p>Aucun paramètre ne correspond à la recherche.</p></div>'}`;
+}
+function estBasculerSection(code) { estQOuvertes.has(code) ? estQOuvertes.delete(code) : estQOuvertes.add(code); estRenderQuantites(); }
+async function estQteSimple(cle, valeur) {
+  const r = estQtes.find(x => x.cle === cle);
+  if (valeur === '') { if (r) await estSupprimerQte(r.id); return; }
+  const v = Number(valeur);
+  if (r) { await estMajQte(r.id, 'quantite', v); estRenderQuantites(); return; }
+  const info = estLibelleCle(cle);
+  const { data, error } = await db.from('estimation_quantites').insert({ estimation_id: estCourante.id, cle, quantite: v, unite: info.unite || null, source: 'plan', fiabilite: 'Fiable' }).select('*').single();
+  if (error) { toast('Erreur : ' + error.message, 'error'); return; }
+  estQtes.push(data); estRenderQuantites();
 }
 
-function estOuvrirModalQte() {
+function estOuvrirModalQte(cleInit) {
   const dl = document.getElementById('eq-liste');
   dl.innerHTML = estParams.map(p => `<option value="${escH(p.cle)} — ${escH(p.parametre)}${p.unite ? ' (' + escH(p.unite) + ')' : ''}"></option>`).join('') +
     estTachesDirectes.map(t => `<option value="${escH(t.cle_gabarit)} — ${escH(t.libelle)}${t.unite ? ' (' + escH(t.unite) + ')' : ''}"></option>`).join('');
-  document.getElementById('eq-param').value = '';
+  const pi = cleInit ? estLibelleCle(cleInit) : null;
+  document.getElementById('eq-param').value = pi ? `${cleInit} — ${pi.parametre}${pi.unite ? ' (' + pi.unite + ')' : ''}` : '';
   document.getElementById('eq-piece').innerHTML = '<option value="">— Aucune —</option>' + estPieces.map(p => `<option value="${p.id}">${escH(p.nom)}</option>`).join('');
   document.getElementById('eq-type').innerHTML = estOpts(EST_TYPES, null, '— Type du projet / de la pièce —');
   document.getElementById('eq-gamme').innerHTML = estOpts(EST_GAMMES, null, '— Gamme par défaut —');
@@ -5633,33 +5752,37 @@ async function estCalculer() {
   let rep = data;
   if (error) { try { rep = await error.context.json(); } catch (e) { rep = { erreur: error.message }; } }
   if (!rep?.ok) { toast('Calcul impossible : ' + (rep?.erreur || 'erreur inconnue'), 'error'); return; }
-  estCourante.totaux = rep.totaux; estCourante.total_ht = rep.totaux.total_ht; estCourante.a_inscrire = rep.a_inscrire || [];
+  estCourante.totaux = rep.totaux; estCourante.total_ht = rep.totaux.total_ht;
   const { data: ls } = await db.from('estimation_lignes').select('*').eq('estimation_id', estCourante.id).order('ordre');
   estLignes = ls || [];
+  estCourante.calculee_le = new Date().toISOString();
   toast(`Estimation calculée : ${estMoney(rep.totaux.total_ht)} HT.`, 'success');
-  estAfficher('resultat');
+  estRenderEntete(); estAfficher('resultat');
 }
 
 function estRenderResultat() {
-  const c = document.getElementById('est-contenu');
-  if (!estLignes.length) { c.innerHTML = `<div class="empty-state" style="padding:30px"><p>${estFigee() ? 'Aucune ligne.' : 'Saisissez les quantités puis cliquez sur « Calculer ».'}</p></div>`; return; }
+  const c = document.getElementById('est-contenu'), fz = estFigee();
+  const blocSel = `<div id="est-selections" style="margin-top:18px"></div>`;
+  if (!estLignes.length) { c.innerHTML = `<div class="empty-state" style="padding:30px"><p>${fz ? 'Aucune ligne.' : 'Saisissez les quantités puis cliquez sur « Calculer ».'}</p></div>${blocSel}`; estRenderSelections(); return; }
   const T = estCourante.totaux;
   const nomDdn = d => estPostes.find(p => p.code === d)?.nom || '';
+  const SANS = l => l.source_prix && !['catalogue', 'sélection', 'manuel'].includes(l.source_prix);
+  const etiquette = l => l.source_prix === 'sélection' ? '<span style="color:var(--success);font-size:11px"> · sélection approuvée</span>'
+    : l.source_prix === 'manuel' ? '<span style="color:var(--caramel);font-size:11px"> · prix manuel</span>'
+    : SANS(l) ? `<span style="color:var(--danger);font-size:11px"> · ${escH(l.source_prix)}</span>` : '';
   const parDdn = {};
   estLignes.forEach(l => { (parDdn[l.ddn] = parDdn[l.ddn] || []).push(l); });
   const pieceNom = id => estPieces.find(p => p.id === id)?.nom;
   const rangees = Object.keys(parDdn).sort().map((d, i) => {
-    const ls = parDdn[d], tot = ls.reduce((s, l) => s + Number(l.montant || 0), 0);
-    const ainscrire = ls.filter(l => l.source_prix === 'à inscrire').length;
+    const ls = parDdn[d], tot = ls.reduce((s, l) => s + Number(l.montant || 0), 0), n = ls.filter(SANS).length;
     return `<tr style="cursor:pointer" onclick="document.getElementById('est-det-${i}').classList.toggle('ouvert')">
         <td style="font-family:monospace;font-size:12px;color:var(--texte-2)">${d}</td><td><strong>${escH(nomDdn(d))}</strong>
-        ${ainscrire ? `<span style="margin-left:8px;font-size:11px;color:var(--danger)">⚠ ${ainscrire} prix à inscrire</span>` : ''}</td>
+        ${n ? `<span style="margin-left:8px;font-size:11px;color:var(--danger)">⚠ ${n} sans prix</span>` : ''}</td>
         <td style="text-align:right">${estMoney(tot)}</td></tr>
       <tr id="est-det-${i}" class="est-detail"><td></td><td colspan="2" style="padding:0 0 10px">
         <table class="data-table" style="margin:0;background:var(--fond)"><thead><tr><th>Ligne</th><th>Catégorie</th><th style="text-align:right">Qté</th><th>Unité</th>
           <th style="text-align:right">Prix unit.</th><th>Gamme</th><th style="text-align:right">Montant</th></tr></thead>
-        <tbody>${ls.map(l => `<tr><td>${escH(l.description)}${l.piece_id && pieceNom(l.piece_id) && !l.description.includes(pieceNom(l.piece_id)) ? ' — ' + escH(pieceNom(l.piece_id)) : ''}
-            ${l.source_prix === 'à inscrire' ? '<span style="color:var(--danger);font-size:11px"> · prix à inscrire</span>' : ''}</td>
+        <tbody>${ls.map(l => `<tr><td>${escH(l.description)}${l.piece_id && pieceNom(l.piece_id) && !l.description.includes(pieceNom(l.piece_id)) ? ' — ' + escH(pieceNom(l.piece_id)) : ''}${etiquette(l)}</td>
           <td style="font-size:11px">${escH(l.categorie || '')}</td><td style="text-align:right">${estNum(l.quantite)}</td><td style="font-size:12px">${escH(l.unite || '')}</td>
           <td style="text-align:right">${estMoney2(l.prix_unitaire)}</td><td style="font-size:11px">${escH(l.gamme || '')}</td>
           <td style="text-align:right">${estMoney2(l.montant)}</td></tr>`).join('')}</tbody></table></td></tr>`;
@@ -5670,13 +5793,92 @@ function estRenderResultat() {
     ligneTot(`Contingence (${+(T.contingence_pct * 100).toFixed(1)} %)`, T.contingence), ligneTot('Frais de gestion et d’administration', T.frais),
     ligneTot('Total avant taxes', T.total_ht, true), ligneTot('TPS', T.tps), ligneTot('TVQ', T.tvq), ligneTot('Grand total TTC', T.ttc, true),
   ].join('') : '';
-  c.innerHTML = `
-    ${(estCourante.a_inscrire || []).length ? `<div class="card" style="margin-bottom:14px;border-left:3px solid var(--danger)"><div style="font-size:13px">
-      <strong>${estCourante.a_inscrire.length} ligne(s) ont une quantité mais aucun prix au catalogue</strong> — à inscrire dans le catalogue des tâches :
-      <div style="font-size:12px;color:var(--texte-2);margin-top:6px">${estCourante.a_inscrire.map(escH).join(' · ')}</div></div></div>` : ''}
+  // Lignes sans prix (et prix manuels déjà inscrits) : le prix se saisit ici, pour cette estimation seulement.
+  const vus = new Set();
+  const aCompleter = estLignes.filter(l => (SANS(l) || l.source_prix === 'manuel') && !vus.has(l.cle) && vus.add(l.cle));
+  const raison = { 'à inscrire': 'Aucun prix au catalogue', 'forfait à inscrire': 'Forfait propre au projet', 'choix client': 'Choix client sans sélection approuvée', 'manuel': 'Prix manuel inscrit' };
+  const tableCompleter = aCompleter.length ? `<div class="card" style="margin-bottom:14px;border-left:3px solid ${aCompleter.some(SANS) ? 'var(--danger)' : 'var(--caramel)'}">
+      <div style="font-size:13px;margin-bottom:8px">${aCompleter.filter(SANS).length
+        ? `<strong>${aCompleter.filter(SANS).length} ligne(s) sans prix</strong> — elles comptent pour 0 $. Inscrivez un prix manuel (pour cette estimation seulement) ou ajoutez le prix au catalogue des tâches.`
+        : '<strong>Prix manuels de cette estimation</strong>'}</div>
+      <table class="data-table" style="margin:0"><thead><tr><th>Ligne</th><th>Pourquoi</th><th style="text-align:right">Qté</th><th>Unité</th><th style="width:150px">Prix manuel $ / unité</th><th></th></tr></thead>
+      <tbody>${aCompleter.map(l => { const q = estLignes.filter(x => x.cle === l.cle).reduce((s, x) => s + Number(x.quantite || 0), 0); return `<tr>
+        <td>${escH(l.description)}</td>
+        <td style="font-size:12px;color:${l.source_prix === 'manuel' ? 'var(--caramel)' : 'var(--danger)'}">${raison[l.source_prix] || escH(l.source_prix)}</td>
+        <td style="text-align:right">${estNum(q)}</td><td style="font-size:12px">${escH(l.unite || '')}</td>
+        <td><input ${fz ? 'disabled' : ''} type="number" step="0.01" min="0" value="${l.source_prix === 'manuel' ? l.prix_unitaire ?? '' : ''}" placeholder="—"
+             onchange="estPrixManuel('${l.cle}',this.value)" style="width:100%;text-align:right" /></td>
+        <td>${l.source_prix === 'manuel' && !fz ? `<button class="btn btn-outline btn-sm" onclick="estPrixManuel('${l.cle}','')" title="Retirer le prix manuel">×</button>` : ''}</td></tr>`; }).join('')}</tbody></table></div>` : '';
+  c.innerHTML = `${tableCompleter}
     <div class="card" style="padding:0;overflow:hidden"><table class="data-table" style="margin:0">
       <thead><tr><th style="width:110px">DDN</th><th>Section (cliquer pour le détail)</th><th style="text-align:right;width:160px">Montant HT</th></tr></thead>
-      <tbody>${rangees}${totaux}</tbody></table></div>`;
+      <tbody>${rangees}${totaux}</tbody></table></div>${blocSel}`;
+  estRenderSelections();
+}
+
+async function estPrixManuel(cle, valeur) {
+  if (estFigee()) return;
+  const { error } = valeur === ''
+    ? await db.from('estimation_prix_manuels').delete().eq('estimation_id', estCourante.id).eq('cle_gabarit', cle)
+    : await db.from('estimation_prix_manuels').upsert({ estimation_id: estCourante.id, cle_gabarit: cle, prix: Number(valeur) }, { onConflict: 'estimation_id,cle_gabarit' });
+  if (error) { toast('Erreur : ' + error.message, 'error'); return; }
+  estCalculer();
+}
+
+// ---------- Sélections approuvées du projet ----------
+let estSel = [], estTachesCC = [];
+function estChoisirLigne(po, corr) {
+  const piece = String(po.piece || (po.pieces || []).join(' ')).toLowerCase();
+  const r = corr.find(c => c.poste_id === po.id)
+    || corr.find(c => !c.poste_id && c.sous_categorie_id && c.sous_categorie_id === po.sous_categorie_id && c.mot_piece && piece.includes(c.mot_piece.toLowerCase()))
+    || corr.find(c => !c.poste_id && c.sous_categorie_id && c.sous_categorie_id === po.sous_categorie_id && !c.mot_piece)
+    || corr.find(c => !c.poste_id && !c.sous_categorie_id && c.categorie_id === po.categorie_id);
+  return r ? r.cle_gabarit : null;
+}
+async function estRenderSelections() {
+  const div = document.getElementById('est-selections'); if (!div || !estCourante) return;
+  const [{ data: postes }, { data: corr }, { data: taches }] = await Promise.all([
+    db.from('postes').select('id, reference, piece, pieces, categorie_id, sous_categorie_id, categories(nom), sous_categories(nom), options_produits(id, statut_client, quantite, perte_pct, banque_produits(id, nom, fabricant, prix, unite_prix))').eq('projet_id', estCourante.projet_id),
+    db.from('correspondance_selections').select('id, categorie_id, sous_categorie_id, poste_id, mot_piece, cle_gabarit'),
+    estTachesCC.length ? Promise.resolve({ data: estTachesCC }) : db.from('catalogue_taches').select('cle_gabarit, libelle, categorie_defaut, ordre, calcul').eq('actif', true).not('calcul', 'is', null).order('ordre'),
+  ]);
+  estTachesCC = (taches || []).filter(t => t.calcul?.m !== 'pct');
+  estSel = [];
+  for (const po of postes || []) for (const o of po.options_produits || []) {
+    if (o.statut_client !== 'approuvé') continue;
+    const bp = Array.isArray(o.banque_produits) ? o.banque_produits[0] : o.banque_produits;
+    estSel.push({ po, o, bp, cle: estChoisirLigne(po, corr || []), exception: (corr || []).some(c => c.poste_id === po.id) });
+  }
+  if (!estSel.length) { div.innerHTML = `<div class="card" style="font-size:13px;color:var(--texte-2)">Aucune sélection approuvée dans ce projet pour l'instant. Dès qu'un client approuve une option, elle apparaît ici et entre dans le calcul.</div>`; return; }
+  const fz = estFigee();
+  const cc = estTachesCC.filter(t => t.categorie_defaut === 'CHOIX CLIENT'), autres = estTachesCC.filter(t => t.categorie_defaut !== 'CHOIX CLIENT');
+  const opts = cle => `<option value="aucune" ${cle === 'aucune' ? 'selected' : ''}>Aucune ligne (déjà inclus / hors construction)</option>
+    <optgroup label="Choix client">${cc.map(t => `<option value="${escH(t.cle_gabarit)}" ${t.cle_gabarit === cle ? 'selected' : ''}>${escH(t.cle_gabarit.slice(0, 8))} — ${escH(t.libelle.slice(0, 70))}</option>`).join('')}</optgroup>
+    <optgroup label="Autres lignes">${autres.map(t => `<option value="${escH(t.cle_gabarit)}" ${t.cle_gabarit === cle ? 'selected' : ''}>${escH(t.cle_gabarit.slice(0, 8))} — ${escH(t.libelle.slice(0, 70))}</option>`).join('')}</optgroup>`;
+  const nonAssoc = estSel.filter(s => !s.cle).length;
+  div.innerHTML = `<div class="card" style="padding:0;overflow:hidden">
+    <div style="padding:12px 16px;background:var(--fond);border-bottom:1px solid var(--bord);display:flex;justify-content:space-between;flex-wrap:wrap;gap:8px">
+      <strong>Sélections approuvées du projet (${estSel.length})</strong>
+      <span style="font-size:12px;color:${nonAssoc ? 'var(--danger)' : 'var(--texte-2)'}">${nonAssoc ? `⚠ ${nonAssoc} à associer à une ligne` : 'Chaque sélection remplace le prix de la gamme sur sa ligne'}</span></div>
+    <table class="data-table" style="margin:0"><thead><tr><th>Réf.</th><th>Pièce</th><th>Produit</th><th style="text-align:right">Qté</th><th style="text-align:right">Prix</th><th style="width:38%">Ligne de l'estimation</th></tr></thead>
+    <tbody>${estSel.map((s, i) => `<tr${!s.cle ? ' style="background:#fbf3f1"' : ''}>
+      <td style="font-family:monospace;font-size:12px">${escH(s.po.reference || '')}</td>
+      <td style="font-size:12px">${escH(s.po.piece || (s.po.pieces || []).join(', '))}</td>
+      <td>${escH(s.bp?.nom || '—')}<div style="font-size:11px;color:var(--texte-2)">${escH([s.po.categories?.nom, s.po.sous_categories?.nom].filter(Boolean).join(' · '))}</div></td>
+      <td style="text-align:right">${estNum(s.o.quantite ?? 1)}</td>
+      <td style="text-align:right;white-space:nowrap">${s.bp?.prix != null ? estMoney2(s.bp.prix) + (s.bp.unite_prix && s.bp.unite_prix !== 'unité' ? '/' + escH(s.bp.unite_prix) : '') : '<span style="color:var(--danger)">sans prix</span>'}</td>
+      <td><select ${fz ? 'disabled' : ''} onchange="estAssocierSelection(${i},this.value)" style="width:100%;padding:6px 8px;border:1px solid var(--bord);font-size:12px">
+          ${s.cle ? '' : '<option value="" selected>— Choisir une ligne —</option>'}${opts(s.cle)}</select>
+        ${s.exception ? '<div style="font-size:10px;color:var(--texte-2);margin-top:2px">exception pour ce poste</div>' : ''}</td></tr>`).join('')}</tbody></table>
+    <div style="padding:10px 16px;font-size:11px;color:var(--texte-2)">Changer la ligne crée une exception pour ce poste seulement. Les autres projets gardent la correspondance par défaut de la sous-catégorie. Recalculez après un changement.</div></div>`;
+}
+async function estAssocierSelection(i, cle) {
+  const s = estSel[i]; if (!s || !cle) return;
+  await db.from('correspondance_selections').delete().eq('poste_id', s.po.id);
+  const { error } = await db.from('correspondance_selections').insert({ poste_id: s.po.id, categorie_id: s.po.categorie_id, sous_categorie_id: s.po.sous_categorie_id, cle_gabarit: cle, note: 'exception poste' });
+  if (error) { toast('Erreur : ' + error.message, 'error'); return; }
+  toast('Ligne associée. Recalculez pour mettre le total à jour.', 'success');
+  estRenderSelections();
 }
 
 // ---------- Gel et versions ----------
@@ -5700,6 +5902,7 @@ async function estNouvelleVersion() {
   const { data: e, error } = await db.from('estimations').insert({
     projet_id: src.projet_id, version, phase: src.phase, type_projet: src.type_projet, gamme_defaut: src.gamme_defaut,
     contingence_pct: src.contingence_pct, notes_internes: src.notes_internes, version_gabarit: 'rev39',
+    nom: (src.nom || 'Estimation').replace(/\s*v\d+$/, '') + ` v${version}`,
   }).select('id').single();
   if (error) { toast('Erreur : ' + error.message, 'error'); return; }
   const map = {};
@@ -5771,6 +5974,7 @@ function catResumePrix(t) {
   if (unique && px.length === 1) return `${v(unique)} $`;
   const parType = px.filter(p => p.type_projet && !p.gamme), parGamme = px.filter(p => !p.type_projet && p.gamme), croises = px.filter(p => p.type_projet && p.gamme);
   const morceaux = [];
+  if (unique) morceaux.push(`Autres ${v(unique)}`);
   if (parType.length) morceaux.push(parType.map(p => `${EST_COURT[p.type_projet]} ${v(p)}`).join(' · '));
   if (parGamme.length) morceaux.push(EST_GAMMES.map(g => parGamme.find(p => p.gamme === g)).filter(Boolean).map(p => `${EST_COURT[p.gamme]} ${v(p)}`).join(' · '));
   if (croises.length) { const g = EST_GAMMES.map(x => croises.find(p => p.gamme === x)).filter(Boolean); morceaux.push('Réno/agr. ' + g.map(p => `${EST_COURT[p.gamme]} ${v(p)}`).join(' · ')); }
@@ -5873,6 +6077,40 @@ async function catSauverTache() {
   closeModal('modal-est-tache');
   toast(catEdition ? 'Tâche modifiée.' : 'Tâche ajoutée.', 'success');
   chargerCatalogueTaches();
+}
+
+// ============================================================
+// ONGLET « ESTIMATION » DANS LA FICHE D'UN PROJET
+// ============================================================
+async function estChargerOngletProjet() {
+  const div = document.getElementById('tab-estimation-contenu'); if (!div || !currentProjetId) return;
+  const [{ data: ests }, { data: volet }] = await Promise.all([
+    db.from('estimations').select('id, nom, version, statut, total_ht, totaux, calculee_le, figee_le').eq('projet_id', currentProjetId).order('version', { ascending: false }),
+    db.from('volets_projet').select('actif').eq('projet_id', currentProjetId).eq('type_volet', 'estimation').maybeSingle(),
+  ]);
+  const ouvrir = id => `estOuvrirDepuisProjet('${id || ''}')`;
+  div.innerHTML = `
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;flex-wrap:wrap;gap:10px">
+      <div style="font-size:13px;color:var(--texte-2)">${volet?.actif ? '👁 Visible au client (dernière estimation figée)' : 'Non visible au client'}</div>
+      <button class="btn btn-dark btn-sm" onclick="${ouvrir('')}">Ouvrir dans le Module d'estimation</button>
+    </div>
+    ${ests?.length ? `<div class="card" style="padding:0;overflow:hidden"><table class="data-table" style="margin:0">
+      <thead><tr><th>Estimation</th><th>Statut</th><th style="text-align:right">Total avant taxes</th><th style="text-align:right">Total TTC</th><th>Calculée le</th><th></th></tr></thead>
+      <tbody>${ests.map(e => `<tr style="cursor:pointer" onclick="${ouvrir(e.id)}">
+        <td><strong>${escH(estNom(e))}</strong><div style="font-size:11px;color:var(--texte-2)">v${e.version}</div></td><td>${estBadgeStatut(e.statut)}</td>
+        <td style="text-align:right">${e.total_ht != null ? estMoney(e.total_ht) : '—'}</td>
+        <td style="text-align:right">${e.totaux?.ttc != null ? estMoney(e.totaux.ttc) : '—'}</td>
+        <td style="font-size:12px">${e.calculee_le ? new Date(e.calculee_le).toLocaleDateString('fr-CA') : '—'}</td>
+        <td style="text-align:right"><button class="btn btn-outline btn-sm" onclick="event.stopPropagation();${ouvrir(e.id)}">Ouvrir</button></td></tr>`).join('')}</tbody></table></div>`
+      : `<div class="empty-state"><div class="icon">📐</div><h3>Aucune estimation</h3><p>Créez-la dans le Module d'estimation.</p></div>`}`;
+}
+let estAOuvrir = null;
+function estOuvrirDepuisProjet(id) {
+  estProjetId = currentProjetId; estAOuvrir = id || null;
+  try { localStorage.setItem('est-projet', currentProjetId); } catch (e) {}
+  const onglet = document.querySelector('#view-estimation .est-tab');
+  if (onglet) estShowOnglet('estimations', onglet);
+  showView('estimation');
 }
 
 </script>

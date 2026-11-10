@@ -5767,6 +5767,7 @@ function estRenderResultat() {
   const T = estCourante.totaux;
   const nomDdn = d => estPostes.find(p => p.code === d)?.nom || '';
   const SANS = l => l.source_prix && !['catalogue', 'sélection', 'manuel'].includes(l.source_prix);
+  const bandeauFige = fz ? `<div class="card" style="margin-bottom:14px;border-left:3px solid var(--success);font-size:13px">🔒 <strong>Cette estimation est figée</strong> : rien ne peut être modifié. Cliquez sur « Défiger » en haut pour la modifier, puis « Calculer ».</div>` : '';
   const etiquette = l => l.source_prix === 'sélection' ? '<span style="color:var(--success);font-size:11px"> · sélection approuvée</span>'
     : l.source_prix === 'manuel' ? '<span style="color:var(--caramel);font-size:11px"> · prix manuel</span>'
     : SANS(l) ? `<span style="color:var(--danger);font-size:11px"> · ${escH(l.source_prix)}</span>` : '';
@@ -5795,8 +5796,8 @@ function estRenderResultat() {
   ].join('') : '';
   // Lignes sans prix (et prix manuels déjà inscrits) : le prix se saisit ici, pour cette estimation seulement.
   const vus = new Set();
-  const aCompleter = estLignes.filter(l => (SANS(l) || l.source_prix === 'manuel') && !vus.has(l.cle) && vus.add(l.cle));
-  const raison = { 'à inscrire': 'Aucun prix au catalogue', 'forfait à inscrire': 'Forfait propre au projet', 'choix client': 'Choix client sans sélection approuvée', 'manuel': 'Prix manuel inscrit' };
+  const aCompleter = estLignes.filter(l => !l.produit_id && (SANS(l) || l.source_prix === 'manuel') && !vus.has(l.cle) && vus.add(l.cle));
+  const raison = { 'sélection sans prix': 'Sélection sans prix (voir Sélections approuvées)', 'à inscrire': 'Aucun prix au catalogue', 'forfait à inscrire': 'Forfait propre au projet', 'choix client': 'Choix client sans sélection approuvée', 'manuel': 'Prix manuel inscrit' };
   const tableCompleter = aCompleter.length ? `<div class="card" style="margin-bottom:14px;border-left:3px solid ${aCompleter.some(SANS) ? 'var(--danger)' : 'var(--caramel)'}">
       <div style="font-size:13px;margin-bottom:8px">${aCompleter.filter(SANS).length
         ? `<strong>${aCompleter.filter(SANS).length} ligne(s) sans prix</strong> — elles comptent pour 0 $. Inscrivez un prix manuel (pour cette estimation seulement) ou ajoutez le prix au catalogue des tâches.`
@@ -5809,7 +5810,7 @@ function estRenderResultat() {
         <td><input ${fz ? 'disabled' : ''} type="number" step="0.01" min="0" value="${l.source_prix === 'manuel' ? l.prix_unitaire ?? '' : ''}" placeholder="—"
              onchange="estPrixManuel('${l.cle}',this.value)" style="width:100%;text-align:right" /></td>
         <td>${l.source_prix === 'manuel' && !fz ? `<button class="btn btn-outline btn-sm" onclick="estPrixManuel('${l.cle}','')" title="Retirer le prix manuel">×</button>` : ''}</td></tr>`; }).join('')}</tbody></table></div>` : '';
-  c.innerHTML = `${tableCompleter}
+  c.innerHTML = `${bandeauFige}${tableCompleter}
     <div class="card" style="padding:0;overflow:hidden"><table class="data-table" style="margin:0">
       <thead><tr><th style="width:110px">DDN</th><th>Section (cliquer pour le détail)</th><th style="text-align:right;width:160px">Montant HT</th></tr></thead>
       <tbody>${rangees}${totaux}</tbody></table></div>${blocSel}`;
@@ -5826,7 +5827,7 @@ async function estPrixManuel(cle, valeur) {
 }
 
 // ---------- Sélections approuvées du projet ----------
-let estSel = [], estTachesCC = [];
+let estSel = [], estTachesCC = [], estPrixSel = {};
 function estChoisirLigne(po, corr) {
   const piece = String(po.piece || (po.pieces || []).join(' ')).toLowerCase();
   const r = corr.find(c => c.poste_id === po.id)
@@ -5843,6 +5844,8 @@ async function estRenderSelections() {
     estTachesCC.length ? Promise.resolve({ data: estTachesCC }) : db.from('catalogue_taches').select('cle_gabarit, libelle, categorie_defaut, ordre, calcul').eq('actif', true).not('calcul', 'is', null).order('ordre'),
   ]);
   estTachesCC = (taches || []).filter(t => t.calcul?.m !== 'pct');
+  const { data: pm } = await db.from('estimation_prix_manuels').select('cle_gabarit, prix').eq('estimation_id', estCourante.id).like('cle_gabarit', 'SEL:%');
+  estPrixSel = {}; (pm || []).forEach(m => { estPrixSel[m.cle_gabarit.slice(4)] = m.prix; });
   estSel = [];
   for (const po of postes || []) for (const o of po.options_produits || []) {
     if (o.statut_client !== 'approuvé') continue;
@@ -5860,16 +5863,22 @@ async function estRenderSelections() {
     <div style="padding:12px 16px;background:var(--fond);border-bottom:1px solid var(--bord);display:flex;justify-content:space-between;flex-wrap:wrap;gap:8px">
       <strong>Sélections approuvées du projet (${estSel.length})</strong>
       <span style="font-size:12px;color:${nonAssoc ? 'var(--danger)' : 'var(--texte-2)'}">${nonAssoc ? `⚠ ${nonAssoc} à associer à une ligne` : 'Chaque sélection remplace le prix de la gamme sur sa ligne'}</span></div>
-    <table class="data-table" style="margin:0"><thead><tr><th>Réf.</th><th>Pièce</th><th>Produit</th><th style="text-align:right">Qté</th><th style="text-align:right">Prix</th><th style="width:38%">Ligne de l'estimation</th></tr></thead>
+    <div style="padding:10px 16px;font-size:12px;color:var(--texte-2);border-bottom:1px solid var(--bord)">« Remplace la ligne » indique quelle ligne de l'estimation prend le prix de ce produit au lieu du prix de la gamme. Les produits vendus au pi² ou au pi linéaire prennent la quantité du plan.</div>
+    <table class="data-table" style="margin:0"><thead><tr><th>Réf.</th><th>Pièce</th><th>Produit</th><th style="text-align:right">Qté</th><th style="text-align:right;width:120px">Prix</th><th style="width:34%">Remplace la ligne</th><th>Dans l'estimation</th></tr></thead>
     <tbody>${estSel.map((s, i) => `<tr${!s.cle ? ' style="background:#fbf3f1"' : ''}>
       <td style="font-family:monospace;font-size:12px">${escH(s.po.reference || '')}</td>
       <td style="font-size:12px">${escH(s.po.piece || (s.po.pieces || []).join(', '))}</td>
       <td>${escH(s.bp?.nom || '—')}<div style="font-size:11px;color:var(--texte-2)">${escH([s.po.categories?.nom, s.po.sous_categories?.nom].filter(Boolean).join(' · '))}</div></td>
       <td style="text-align:right">${estNum(s.o.quantite ?? 1)}</td>
-      <td style="text-align:right;white-space:nowrap">${s.bp?.prix != null ? estMoney2(s.bp.prix) + (s.bp.unite_prix && s.bp.unite_prix !== 'unité' ? '/' + escH(s.bp.unite_prix) : '') : '<span style="color:var(--danger)">sans prix</span>'}</td>
+      <td style="text-align:right;white-space:nowrap">${s.bp?.prix != null ? estMoney2(s.bp.prix) + (s.bp.unite_prix && s.bp.unite_prix !== 'unité' ? '/' + escH(s.bp.unite_prix) : '')
+        : `<input ${fz ? 'disabled' : ''} type="number" step="0.01" min="0" placeholder="Prix $" value="${estPrixSel[s.o.id] ?? ''}" onchange="estPrixManuel('SEL:${s.o.id}',this.value)"
+             style="width:100%;text-align:right;padding:6px 8px;border:1px solid var(--danger);font-size:12px" title="Aucun prix dans la Banque de produits : prix manuel pour cette estimation" />`}</td>
       <td><select ${fz ? 'disabled' : ''} onchange="estAssocierSelection(${i},this.value)" style="width:100%;padding:6px 8px;border:1px solid var(--bord);font-size:12px">
           ${s.cle ? '' : '<option value="" selected>— Choisir une ligne —</option>'}${opts(s.cle)}</select>
-        ${s.exception ? '<div style="font-size:10px;color:var(--texte-2);margin-top:2px">exception pour ce poste</div>' : ''}</td></tr>`).join('')}</tbody></table>
+        ${s.exception ? '<div style="font-size:10px;color:var(--texte-2);margin-top:2px">exception pour ce poste</div>' : ''}</td>
+      <td style="font-size:12px;white-space:nowrap">${s.cle === 'aucune' ? '<span style="color:var(--texte-2)">non (inclus ailleurs)</span>'
+        : estLignes.some(l => l.produit_id && l.produit_id === s.bp?.id) ? '<span style="color:var(--success)">✓ incluse</span>'
+        : `<span style="color:var(--danger)">${s.cle ? 'pas encore — recalculer' : 'choisir une ligne'}</span>`}</td></tr>`).join('')}</tbody></table>
     <div style="padding:10px 16px;font-size:11px;color:var(--texte-2)">Changer la ligne crée une exception pour ce poste seulement. Les autres projets gardent la correspondance par défaut de la sous-catégorie. Recalculez après un changement.</div></div>`;
 }
 async function estAssocierSelection(i, cle) {

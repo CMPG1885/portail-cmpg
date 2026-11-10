@@ -6382,7 +6382,7 @@ const EST_LOTS = [
   ['enveloppe', 'Isolation, toiture, revêtements, portes et fenêtres'], ['interieur', 'Gypse, finis, ébénisterie'],
   ['mecanique', 'Plomberie, ventilation, électricité'], ['exterieur', 'Excavation, aménagement, branchements'],
 ];
-let estPlanDoc = null, estLectureEnCours = false;
+let estPlanDoc = null, estLectureEnCours = false;  // lecture en différé : voir estSuivreLecture
 
 async function estRenderPlan() {
   const c = document.getElementById('est-contenu'), e = estCourante, fz = estFigee();
@@ -6390,7 +6390,7 @@ async function estRenderPlan() {
   if (e.plan_document_id) { const { data } = await db.from('documents_projet').select('id, nom, taille_bytes, created_at, storage_path').eq('id', e.plan_document_id).single(); estPlanDoc = data; }
   const { count: nq } = await db.from('estimation_questions').select('id', { count: 'exact', head: true }).eq('estimation_id', e.id).eq('statut', 'à répondre');
   const L = e.lecture?.lots || {};
-  const etat = k => estLectureEnCours === k ? '<span style="color:var(--caramel)">⏳ lecture en cours…</span>'
+  const etat = k => L[k]?.batch_id && !L[k].le && !L[k].erreur ? `<span style="color:var(--caramel)">⏳ Claude lit le plan… (envoyé à ${new Date(L[k].lance_le).toLocaleTimeString('fr-CA', { hour: '2-digit', minute: '2-digit' })})</span>`
     : L[k]?.erreur ? `<span style="color:var(--danger)">⚠ ${escH(L[k].erreur)}</span>`
     : L[k] ? `<span style="color:var(--success)">✓ ${L[k].quantites} quantité(s) · ${L[k].questions} question(s)</span>` : '<span style="color:var(--texte-2)">—</span>';
   c.innerHTML = `
@@ -6412,7 +6412,7 @@ async function estRenderPlan() {
         ${fz || !estPlanDoc ? '' : `<button class="btn btn-dark btn-sm" onclick="estLirePlan()" ${estLectureEnCours ? 'disabled' : ''}>📖 ${Object.keys(L).length ? 'Relire le plan' : 'Lire le plan'}</button>`}
       </div>
       <table class="data-table" style="margin:0"><tbody>${EST_LOTS.map(([k, t]) => `<tr><td>${escH(t)}</td><td style="text-align:right">${etat(k)}
-        ${L[k]?.erreur && !fz ? ` <button class="btn btn-outline btn-sm" onclick="estLireLot('${k}',true)">Réessayer</button>` : ''}</td></tr>`).join('')}</tbody></table>
+        ${L[k]?.erreur && !fz && !estLectureEnCours ? ` <button class="btn btn-outline btn-sm" onclick="estLireLot('${k}',true)">Réessayer</button>` : ''}</td></tr>`).join('')}</tbody></table>
       ${Object.values(L).some(x => x.remarques) ? `<div style="font-size:12px;color:var(--texte-2);margin-top:10px">${Object.entries(L).filter(([, x]) => x.remarques).map(([k, x]) => `<div>• ${escH(x.remarques)}</div>`).join('')}</div>` : ''}
     </div>
     <div class="card">
@@ -6423,6 +6423,8 @@ async function estRenderPlan() {
         ${fz ? '' : `<button class="btn btn-caramel btn-sm" onclick="estQuestions()">❓ Répondre aux questions</button>`}
       </div>
     </div>`;
+  // Lecture lancée puis page fermée : on reprend le suivi automatiquement.
+  if (!fz && !estLectureEnCours && Object.values(L).some(x => x?.batch_id && !x.le && !x.erreur)) setTimeout(() => estSuivreLecture(null), 0);
 }
 
 async function estTeleverserPlan(f) {
@@ -6449,36 +6451,58 @@ async function estAppelLecture(corps) {
 }
 async function estLirePlan() {
   const deja = Object.keys(estCourante.lecture?.lots || {}).length;
-  const ok = await estDialogue('📖 Lire le plan', `<p>Claude va lire « ${escH(estPlanDoc?.nom || 'le plan')} » en ${EST_LOTS.length} étapes (environ une minute chacune). Gardez la page ouverte.</p>
+  const ok = await estDialogue('📖 Lire le plan', `<p>Claude va lire « ${escH(estPlanDoc?.nom || 'le plan')} » en ${EST_LOTS.length} étapes : d’abord les pièces, puis les 5 autres en même temps.</p>
+      <p style="margin-top:8px">La lecture se fait en différé : comptez <strong>quelques minutes</strong> (parfois plus). Vous pouvez fermer la page et revenir : le suivi reprend tout seul.</p>
       ${deja ? '<p style="margin-top:8px"><strong>Relecture :</strong> les pièces, quantités et questions venues de la lecture précédente seront remplacées. Vos saisies manuelles et vos réponses aux questions restent.</p>' : ''}
-      <p style="margin-top:8px;font-size:13px;color:var(--texte-2)">Chaque lecture utilise la clé Claude de CMPG (coût de quelques dollars par plan).</p>`,
+      <p style="margin-top:8px;font-size:13px;color:var(--texte-2)">Chaque lecture utilise la clé Claude de CMPG (quelques dollars par plan).</p>`,
     [{ v: '', lib: 'Annuler' }, { v: 'ok', lib: 'Lancer la lecture', classe: 'btn-dark' }]);
   if (!ok) return;
   const r0 = await estAppelLecture({ effacer: true });
   if (!r0.ok) { toast('Lecture impossible : ' + (r0.erreur || ''), 'error'); return; }
   estCourante.lecture = { lots: {} };
-  const echecs = {};
-  for (const [k] of EST_LOTS) { const bon = await estLireLot(k); if (!bon) { echecs[k] = estCourante.lecture.lots[k]; if (k === 'pieces') break; } }
-  const { data: e } = await db.from('estimations').select('lecture').eq('id', estCourante.id).single();
-  estCourante.lecture = e?.lecture || { lots: {} }; estCourante.lecture.lots = { ...(estCourante.lecture.lots || {}), ...echecs };
-  await estRechargerContenu();
-  const erreurs = EST_LOTS.filter(([k]) => estCourante.lecture?.lots?.[k]?.erreur || !estCourante.lecture?.lots?.[k]).length;
-  toast(erreurs ? `Lecture terminée avec ${erreurs} étape(s) à reprendre.` : 'Lecture du plan terminée.', erreurs ? 'error' : 'success');
-  if (!erreurs) estQuestions();
+  await estSuivreLecture(null);
 }
-async function estLireLot(k, seul) {
-  estLectureEnCours = k; estRenderPlan();
-  const r = await estAppelLecture({ lot: k });
-  estLectureEnCours = false;
-  estCourante.lecture = estCourante.lecture || { lots: {} };
-  estCourante.lecture.lots = estCourante.lecture.lots || {};
-  if (!r.ok) estCourante.lecture.lots[k] = { erreur: r.erreur || 'erreur' };
-  else { const { data: e } = await db.from('estimations').select('lecture').eq('id', estCourante.id).single();
-    const loc = estCourante.lecture.lots; estCourante.lecture = e?.lecture || estCourante.lecture;
-    for (const [x, v] of Object.entries(loc)) if (v?.erreur && x !== k && !estCourante.lecture.lots?.[x]) estCourante.lecture.lots[x] = v; }
-  if (seul) { await estRechargerContenu(); }
-  estRenderPlan();
-  return !!r.ok;
+// Réessayer un seul lot
+async function estLireLot(k) { await estSuivreLecture([k]); }
+
+// Envoie les lots pas encore envoyés, puis vérifie toutes les 20 s jusqu’à la fin.
+// seuls = null : tous les lots (pièces d’abord) sauf ceux en erreur ; sinon la liste donnée (on la renvoie).
+async function estSuivreLecture(seuls) {
+  if (estLectureEnCours) return;
+  estLectureEnCours = true;
+  const id = estCourante.id, erreurs = {};
+  const lots = () => estCourante.lecture?.lots || {};
+  const recharger = async () => {
+    const { data: e } = await db.from('estimations').select('lecture').eq('id', id).single();
+    if (estCourante?.id !== id) return;
+    estCourante.lecture = e?.lecture || { lots: {} }; estCourante.lecture.lots = estCourante.lecture.lots || {};
+    for (const [k, m] of Object.entries(erreurs)) estCourante.lecture.lots[k] = { ...(estCourante.lecture.lots[k] || {}), erreur: m };
+  };
+  const majEcran = () => { if (estCourante?.id === id && estOnglet === 'plan') estRenderPlan(); };
+  const attendre = async (liste) => {
+    let restants = liste;
+    while (restants.length && estCourante?.id === id) {
+      for (const k of restants) { const r = await estAppelLecture({ lot: k }); if (!r.ok) erreurs[k] = r.erreur || 'erreur'; }
+      await recharger(); majEcran();
+      restants = restants.filter(k => !erreurs[k] && !lots()[k]?.le);
+      if (restants.length) await new Promise(f => setTimeout(f, 20000));
+    }
+    return liste.every(k => !erreurs[k]);
+  };
+  try {
+    await recharger();
+    if (seuls) { for (const k of seuls) if (lots()[k]) lots()[k].erreur = null; await attendre(seuls); }
+    else {
+      const aFaire = k => !lots()[k]?.le && !lots()[k]?.erreur;
+      const okP = aFaire('pieces') ? await attendre(['pieces']) : !lots().pieces?.erreur;
+      if (okP) await attendre(EST_LOTS.map(x => x[0]).filter(k => k !== 'pieces' && aFaire(k)));
+    }
+  } finally { estLectureEnCours = false; }
+  if (estCourante?.id !== id) return;
+  await recharger(); await estRechargerContenu(); majEcran();
+  const nb = EST_LOTS.filter(([k]) => lots()[k]?.erreur || !lots()[k]?.le).length;
+  toast(nb ? `Lecture terminée avec ${nb} étape(s) à reprendre.` : 'Lecture du plan terminée.', nb ? 'error' : 'success');
+  if (!nb && estOnglet === 'plan') estQuestions();
 }
 async function estRechargerContenu() {
   const [{ data: pcs }, { data: qs }] = await Promise.all([

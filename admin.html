@@ -998,8 +998,9 @@ body * { font-variant-numeric: lining-nums; }
           <div id="est-editeur" style="display:none;margin-top:24px">
             <div class="card" id="est-entete" style="margin-bottom:16px"></div>
             <div class="est-tabs" style="margin-bottom:16px">
+              <div class="est-subtab" data-o="plan" onclick="estAfficher('plan')">Plan et questions</div>
               <div class="est-subtab" data-o="pieces" onclick="estAfficher('pieces')">Pièces</div>
-              <div class="est-subtab" data-o="quantites" onclick="estAfficher('quantites')">Quantités</div>
+              <div class="est-subtab" data-o="quantites" onclick="estAfficher('quantites')">Vérifier les quantités</div>
               <div class="est-subtab" data-o="resultat" onclick="estAfficher('resultat')">Résultat</div>
             </div>
             <div id="est-contenu"></div>
@@ -5325,7 +5326,7 @@ const EST_COURT   = { 'Construction neuve': 'Neuf', 'Agrandissement': 'Agr.', 'R
 
 let estProjets = [], estPostes = [], estParams = [], estTachesDirectes = [];
 let estProjetId = null, estCourante = null, estPieces = [], estQtes = [], estLignes = [];
-let estOnglet = 'pieces';
+let estOnglet = 'plan';
 
 const estMoney = v => (Number(v) || 0).toLocaleString('fr-CA', { minimumFractionDigits: 0, maximumFractionDigits: 0 }) + ' $';
 const estMoney2 = v => v == null ? '—' : Number(v).toLocaleString('fr-CA', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + ' $';
@@ -5492,7 +5493,7 @@ async function estOuvrir(id) {
   estSignalerEdition(e);
   document.getElementById('est-editeur').style.display = 'block';
   estRenderEntete();
-  estAfficher(estLignes.length ? 'resultat' : estOnglet);
+  estAfficher(estLignes.length ? 'resultat' : (estQtes.length ? estOnglet : 'plan'));
   document.getElementById('est-editeur').scrollIntoView({ behavior: 'smooth', block: 'start' });
 }
 
@@ -5562,7 +5563,7 @@ function estAfficher(onglet) {
   estOnglet = onglet;
   if (estCourante) estRenderEntete();
   document.querySelectorAll('#est-editeur .est-subtab').forEach(t => t.classList.toggle('active', t.dataset.o === onglet));
-  ({ pieces: estRenderPieces, quantites: estRenderQuantites, resultat: estRenderResultat })[onglet]();
+  ({ plan: estRenderPlan, pieces: estRenderPieces, quantites: estRenderQuantites, resultat: estRenderResultat })[onglet]();
 }
 
 // ---------- Pièces (grille de portée) ----------
@@ -6370,6 +6371,226 @@ function estOuvrirDepuisProjet(id) {
   const onglet = document.querySelector('#view-estimation .est-tab');
   if (onglet) estShowOnglet('estimations', onglet);
   showView('estimation');
+}
+
+
+// ============================================================
+// PLAN : téléversement, lecture par Claude (lots), questions en pop-up
+// ============================================================
+const EST_LOTS = [
+  ['pieces', 'Données de base, pièces et extérieur'], ['structure', 'Conditions générales, démolition, fondations, charpente'],
+  ['enveloppe', 'Isolation, toiture, revêtements, portes et fenêtres'], ['interieur', 'Gypse, finis, ébénisterie'],
+  ['mecanique', 'Plomberie, ventilation, électricité'], ['exterieur', 'Excavation, aménagement, branchements'],
+];
+let estPlanDoc = null, estLectureEnCours = false;
+
+async function estRenderPlan() {
+  const c = document.getElementById('est-contenu'), e = estCourante, fz = estFigee();
+  estPlanDoc = null;
+  if (e.plan_document_id) { const { data } = await db.from('documents_projet').select('id, nom, taille_bytes, created_at, storage_path').eq('id', e.plan_document_id).single(); estPlanDoc = data; }
+  const { count: nq } = await db.from('estimation_questions').select('id', { count: 'exact', head: true }).eq('estimation_id', e.id).eq('statut', 'à répondre');
+  const L = e.lecture?.lots || {};
+  const etat = k => estLectureEnCours === k ? '<span style="color:var(--caramel)">⏳ lecture en cours…</span>'
+    : L[k]?.erreur ? `<span style="color:var(--danger)">⚠ ${escH(L[k].erreur)}</span>`
+    : L[k] ? `<span style="color:var(--success)">✓ ${L[k].quantites} quantité(s) · ${L[k].questions} question(s)</span>` : '<span style="color:var(--texte-2)">—</span>';
+  c.innerHTML = `
+    <div class="card" style="margin-bottom:16px">
+      <div style="display:flex;justify-content:space-between;align-items:center;gap:16px;flex-wrap:wrap">
+        <div>
+          <div style="font-size:11px;letter-spacing:1.5px;text-transform:uppercase;color:var(--texte-2)">1 · Plan du projet (PDF)</div>
+          ${estPlanDoc ? `<div style="font-size:15px;margin-top:4px">📄 ${escH(estPlanDoc.nom)}</div>
+            <div style="font-size:12px;color:var(--texte-2)">${(Number(estPlanDoc.taille_bytes || 0) / 1048576).toFixed(1)} Mo · téléversé le ${new Date(estPlanDoc.created_at).toLocaleDateString('fr-CA')}</div>`
+            : '<div style="font-size:14px;margin-top:4px;color:var(--texte-2)">Aucun plan pour cette estimation.</div>'}
+        </div>
+        ${fz ? '' : `<label class="btn ${estPlanDoc ? 'btn-outline' : 'btn-dark'} btn-sm" style="cursor:pointer">${estPlanDoc ? 'Remplacer le plan' : '⬆ Téléverser le plan (PDF)'}
+          <input type="file" accept="application/pdf" style="display:none" onchange="estTeleverserPlan(this.files[0])"></label>`}
+      </div>
+    </div>
+    <div class="card" style="margin-bottom:16px">
+      <div style="display:flex;justify-content:space-between;align-items:center;gap:16px;flex-wrap:wrap;margin-bottom:12px">
+        <div style="font-size:11px;letter-spacing:1.5px;text-transform:uppercase;color:var(--texte-2)">2 · Lecture du plan</div>
+        ${fz || !estPlanDoc ? '' : `<button class="btn btn-dark btn-sm" onclick="estLirePlan()" ${estLectureEnCours ? 'disabled' : ''}>📖 ${Object.keys(L).length ? 'Relire le plan' : 'Lire le plan'}</button>`}
+      </div>
+      <table class="data-table" style="margin:0"><tbody>${EST_LOTS.map(([k, t]) => `<tr><td>${escH(t)}</td><td style="text-align:right">${etat(k)}
+        ${L[k]?.erreur && !fz ? ` <button class="btn btn-outline btn-sm" onclick="estLireLot('${k}',true)">Réessayer</button>` : ''}</td></tr>`).join('')}</tbody></table>
+      ${Object.values(L).some(x => x.remarques) ? `<div style="font-size:12px;color:var(--texte-2);margin-top:10px">${Object.entries(L).filter(([, x]) => x.remarques).map(([k, x]) => `<div>• ${escH(x.remarques)}</div>`).join('')}</div>` : ''}
+    </div>
+    <div class="card">
+      <div style="display:flex;justify-content:space-between;align-items:center;gap:16px;flex-wrap:wrap">
+        <div><div style="font-size:11px;letter-spacing:1.5px;text-transform:uppercase;color:var(--texte-2)">3 · Questions</div>
+          <div style="font-size:14px;margin-top:4px">${nq ? `<strong>${nq}</strong> question(s) à répondre` : 'Aucune question en attente.'}</div>
+          <div style="font-size:12px;color:var(--texte-2)">Ce que le plan ne dit pas, plus les questions du catalogue qui s’appliquent à ce type de projet.</div></div>
+        ${fz ? '' : `<button class="btn btn-caramel btn-sm" onclick="estQuestions()">❓ Répondre aux questions</button>`}
+      </div>
+    </div>`;
+}
+
+async function estTeleverserPlan(f) {
+  if (!f) return;
+  if (f.type !== 'application/pdf') { toast('Le plan doit être un PDF.', 'error'); return; }
+  if (f.size > 31 * 1048576) { toast('Plan trop lourd (plus de 31 Mo) : exportez-le en PDF vectoriel ou en moins de pages.', 'error'); return; }
+  toast('Téléversement du plan…', 'info');
+  const nom = f.name.replace(/[^\w.\- ]+/g, '_');
+  const chemin = `estimation/${estCourante.projet_id}/${Date.now()}-${nom}`;
+  const { error: e1 } = await db.storage.from('portail-cmpg').upload(chemin, f, { contentType: 'application/pdf', upsert: false });
+  if (e1) { toast('Téléversement impossible : ' + e1.message, 'error'); return; }
+  const { data: d, error: e2 } = await db.from('documents_projet').insert({ projet_id: estCourante.projet_id, type_volet: 'estimation', nom: f.name, storage_path: chemin, taille_bytes: f.size, mime_type: 'application/pdf', note: 'Plan d’estimation' }).select('id').single();
+  if (e2) { toast('Erreur : ' + e2.message, 'error'); return; }
+  await db.from('estimations').update({ plan_document_id: d.id }).eq('id', estCourante.id);
+  estCourante.plan_document_id = d.id;
+  toast('Plan téléversé.', 'success');
+  estRenderPlan();
+}
+
+async function estAppelLecture(corps) {
+  const { data, error } = await db.functions.invoke('lire-plan', { body: { estimation_id: estCourante.id, ...corps } });
+  let rep = data; if (error) { try { rep = await error.context.json(); } catch (e) { rep = { erreur: error.message?.includes('timeout') || error.message?.includes('Failed') ? 'délai dépassé — réessayez' : error.message }; } }
+  return rep || { erreur: 'aucune réponse' };
+}
+async function estLirePlan() {
+  const deja = Object.keys(estCourante.lecture?.lots || {}).length;
+  const ok = await estDialogue('📖 Lire le plan', `<p>Claude va lire « ${escH(estPlanDoc?.nom || 'le plan')} » en ${EST_LOTS.length} étapes (environ une minute chacune). Gardez la page ouverte.</p>
+      ${deja ? '<p style="margin-top:8px"><strong>Relecture :</strong> les pièces, quantités et questions venues de la lecture précédente seront remplacées. Vos saisies manuelles et vos réponses aux questions restent.</p>' : ''}
+      <p style="margin-top:8px;font-size:13px;color:var(--texte-2)">Chaque lecture utilise la clé Claude de CMPG (coût de quelques dollars par plan).</p>`,
+    [{ v: '', lib: 'Annuler' }, { v: 'ok', lib: 'Lancer la lecture', classe: 'btn-dark' }]);
+  if (!ok) return;
+  const r0 = await estAppelLecture({ effacer: true });
+  if (!r0.ok) { toast('Lecture impossible : ' + (r0.erreur || ''), 'error'); return; }
+  estCourante.lecture = { lots: {} };
+  const echecs = {};
+  for (const [k] of EST_LOTS) { const bon = await estLireLot(k); if (!bon) { echecs[k] = estCourante.lecture.lots[k]; if (k === 'pieces') break; } }
+  const { data: e } = await db.from('estimations').select('lecture').eq('id', estCourante.id).single();
+  estCourante.lecture = e?.lecture || { lots: {} }; estCourante.lecture.lots = { ...(estCourante.lecture.lots || {}), ...echecs };
+  await estRechargerContenu();
+  const erreurs = EST_LOTS.filter(([k]) => estCourante.lecture?.lots?.[k]?.erreur || !estCourante.lecture?.lots?.[k]).length;
+  toast(erreurs ? `Lecture terminée avec ${erreurs} étape(s) à reprendre.` : 'Lecture du plan terminée.', erreurs ? 'error' : 'success');
+  if (!erreurs) estQuestions();
+}
+async function estLireLot(k, seul) {
+  estLectureEnCours = k; estRenderPlan();
+  const r = await estAppelLecture({ lot: k });
+  estLectureEnCours = false;
+  estCourante.lecture = estCourante.lecture || { lots: {} };
+  estCourante.lecture.lots = estCourante.lecture.lots || {};
+  if (!r.ok) estCourante.lecture.lots[k] = { erreur: r.erreur || 'erreur' };
+  else { const { data: e } = await db.from('estimations').select('lecture').eq('id', estCourante.id).single();
+    const loc = estCourante.lecture.lots; estCourante.lecture = e?.lecture || estCourante.lecture;
+    for (const [x, v] of Object.entries(loc)) if (v?.erreur && x !== k && !estCourante.lecture.lots?.[x]) estCourante.lecture.lots[x] = v; }
+  if (seul) { await estRechargerContenu(); }
+  estRenderPlan();
+  return !!r.ok;
+}
+async function estRechargerContenu() {
+  const [{ data: pcs }, { data: qs }] = await Promise.all([
+    db.from('estimation_pieces').select('*').eq('estimation_id', estCourante.id).order('ordre'),
+    db.from('estimation_quantites').select('*').eq('estimation_id', estCourante.id),
+  ]);
+  estPieces = pcs || []; estQtes = qs || []; estRenderEntete();
+}
+
+// ---------- Questions en pop-up, une à la fois ----------
+function estCondOK(cond) {
+  const t = estCourante.type_projet || '', c = (cond || 'Toujours').toLowerCase();
+  if (c.includes('chaque pièce') || c.includes('après soumission')) return false;
+  if (c === 'toujours' || c.startsWith('si ')) return true;
+  const neuf = t === 'Construction neuve', agr = t === 'Agrandissement', reno = t.startsWith('Rénovation');
+  return (c.includes('neuf') && neuf) || (c.includes('agr') && agr) || (c.includes('réno') && reno);
+}
+async function estPreparerQuestions() {
+  const [{ data: params }, { data: dej }, { data: taches }] = await Promise.all([
+    db.from('catalogue_parametres').select('id, cle, parametre, unite, reponses, defaut, condition, question, ou_chercher, ordre').eq('actif', true).eq('source', 'Pop-up').order('ordre'),
+    db.from('estimation_questions').select('cle, statut').eq('estimation_id', estCourante.id),
+    db.from('catalogue_taches').select('cle_gabarit, libelle, cle_pq, unite').eq('actif', true).not('cle_gabarit', 'is', null),
+  ]);
+  const deja = new Set((dej || []).map(q => q.cle)), qte = new Set(estQtes.map(q => q.cle));
+  const nouv = [];
+  for (const p of params || []) {
+    if (/^(PIECE|EXT)-/.test(p.cle) || !estCondOK(p.condition)) continue;
+    let cle = p.cle;
+    if (cle === '—') { const t = (taches || []).find(t => !t.cle_pq && t.libelle.toLowerCase().startsWith(p.parametre.toLowerCase().slice(0, 18))); if (!t) continue; cle = t.cle_gabarit; }
+    if (cle === '03 10 00-10') { if (estCourante.type_projet === 'Agrandissement' && !qte.has(cle)) await db.from('estimation_quantites').insert({ estimation_id: estCourante.id, cle, quantite: 1, source: 'défaut', fiabilite: 'Calculé' }); continue; }
+    if (deja.has(cle) || qte.has(cle)) continue;
+    nouv.push({ estimation_id: estCourante.id, parametre_id: p.id, cle, question: p.question || p.parametre, raison: [p.reponses && `Réponses : ${p.reponses}`, p.defaut && `Défaut : ${p.defaut}`].filter(Boolean).join(' · ') || null,
+      section: /^\d\d \d\d \d\d/.test(cle) ? cle.slice(0, 8) : null, lot: 'catalogue', source: 'catalogue', statut: 'à répondre' });
+  }
+  if (nouv.length) await db.from('estimation_questions').insert(nouv);
+}
+let estQListe = [], estQi = 0, estQParams = {};
+async function estQuestions() {
+  if (estFigee()) return;
+  await estPreparerQuestions();
+  const [{ data: qs }, { data: params }] = await Promise.all([
+    db.from('estimation_questions').select('*').eq('estimation_id', estCourante.id).eq('statut', 'à répondre').order('section', { nullsFirst: true }),
+    db.from('catalogue_parametres').select('id, cle, parametre, unite, reponses, ou_chercher').eq('actif', true),
+  ]);
+  estQListe = qs || []; estQi = 0; estQParams = {};
+  (params || []).forEach(p => { estQParams[p.cle] = p; estQParams['#' + p.id] = p; });
+  if (!estQListe.length) { toast('Aucune question en attente.', 'success'); return; }
+  estQuestionSuivante();
+}
+function estTypeReponse(q) {
+  const p = estQParams['#' + q.parametre_id] || estQParams[q.cle] || {};
+  const r = String(p.reponses || '').toLowerCase();
+  if (/montant/.test(r)) return { t: 'montant', u: '$' };
+  if (/^oui\s*\/\s*non/.test(r)) return { t: 'choix', c: p.reponses.split('/').map(x => x.trim()) };
+  if (r.includes('/') && !/\d/.test(r)) return { t: 'choix', c: p.reponses.split('/').map(x => x.trim()), texte: true };
+  if (q.cle && /^(PORTEE)-/.test(q.cle)) return { t: 'texte' };
+  return { t: 'nombre', u: p.unite || (estLibelleCle(q.cle || '')?.unite) || '' };
+}
+async function estQuestionSuivante() {
+  document.getElementById('est-dialogue')?.remove();
+  if (estQi >= estQListe.length) { toast('Questions terminées. Cliquez sur « Calculer ».', 'success'); estRechargerContenu(); estAfficher(estOnglet); return; }
+  const q = estQListe[estQi], ty = estTypeReponse(q), p = estQParams['#' + q.parametre_id] || estQParams[q.cle] || {};
+  const nomSec = q.section ? (estPostes.find(x => x.code === q.section)?.nom || q.section) : 'Portée du projet';
+  const pc = estPieces.find(x => x.id === q.piece_id)?.nom;
+  const champ = ty.t === 'choix' ? `<div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:12px">${ty.c.map(c => `<button class="btn btn-outline" data-v="choix" data-r="${escH(c)}">${escH(c)}</button>`).join('')}</div>`
+    : ty.t === 'texte' ? `<textarea id="est-q-val" style="width:100%;min-height:70px;margin-top:12px;padding:8px;border:1px solid var(--bord);font-family:inherit"></textarea>`
+    : `<div style="display:flex;gap:8px;align-items:center;margin-top:12px"><input id="est-q-val" type="number" step="any" min="0" style="width:180px;padding:10px;border:1px solid var(--bord);font-size:16px;text-align:right" autofocus>
+        <span style="color:var(--texte-2)">${escH(ty.u)}</span>${ty.t === 'montant' ? '<button class="btn btn-outline btn-sm" data-v="choix" data-r="Non">Non / aucun</button>' : ''}</div>`;
+  const o = document.createElement('div');
+  o.id = 'est-dialogue'; o.className = 'modal-overlay open';
+  o.innerHTML = `<div class="modal" style="width:min(640px,94vw);max-width:none">
+    <div class="modal-header"><div><div style="font-size:11px;letter-spacing:1.5px;text-transform:uppercase;color:var(--texte-2)">Question ${estQi + 1} / ${estQListe.length} · ${escH(nomSec)}${pc ? ' · ' + escH(pc) : ''}</div>
+      <h3 style="margin-top:4px">${escH(q.question)}</h3></div><button class="modal-close" data-v="fermer">×</button></div>
+    <div class="modal-body">
+      ${q.raison ? `<div style="font-size:13px;color:var(--texte-2)">${escH(q.raison)}</div>` : ''}
+      ${p.ou_chercher ? `<div style="font-size:12px;color:var(--texte-2);margin-top:4px">Où chercher : ${escH(p.ou_chercher)}</div>` : ''}
+      ${champ}
+      <div style="height:4px;background:var(--fond);border-radius:4px;margin-top:20px"><div style="height:4px;width:${Math.round(estQi / estQListe.length * 100)}%;background:var(--caramel);border-radius:4px"></div></div>
+    </div>
+    <div class="modal-footer"><button class="btn btn-outline" data-v="sans">Ne s’applique pas</button><button class="btn btn-outline" data-v="passer">Passer</button>
+      ${ty.t === 'choix' ? '' : '<button class="btn btn-dark" data-v="ok">Enregistrer et suivante</button>'}</div></div>`;
+  o.addEventListener('click', async ev => {
+    const b = ev.target.closest('[data-v]'); if (!b) return;
+    const v = b.dataset.v;
+    if (v === 'fermer') { o.remove(); estAfficher(estOnglet); return; }
+    if (v === 'passer') { estQi++; estQuestionSuivante(); return; }
+    if (v === 'sans') { await estRepondre(q, null, 'sans objet'); estQi++; estQuestionSuivante(); return; }
+    const val = v === 'choix' ? b.dataset.r : document.getElementById('est-q-val')?.value;
+    if (val === '' || val == null) { toast('Inscrivez une réponse, ou « Passer ».', 'error'); return; }
+    await estRepondre(q, val, 'répondue', ty); estQi++; estQuestionSuivante();
+  });
+  o.addEventListener('keydown', ev => { if (ev.key === 'Enter' && ev.target.id === 'est-q-val' && ty.t !== 'texte') o.querySelector('[data-v="ok"]')?.click(); });
+  document.body.appendChild(o);
+  setTimeout(() => document.getElementById('est-q-val')?.focus(), 50);
+}
+async function estRepondre(q, val, statut, ty) {
+  const { data: { user } } = await db.auth.getUser();
+  await db.from('estimation_questions').update({ reponse: val, statut, repondu_par: user?.email || null, repondu_le: new Date().toISOString() }).eq('id', q.id);
+  if (statut !== 'répondue' || !q.cle || /^PORTEE-/.test(q.cle)) return;
+  const nb = Number(String(val).replace(',', '.'));
+  const oui = /^oui$/i.test(String(val).trim()), non = /^(non|aucun|non \/ aucun|inconnu)$/i.test(String(val).trim());
+  let quantite = null;
+  if (ty?.t === 'nombre' && Number.isFinite(nb)) quantite = nb;
+  else if (ty?.t === 'montant' && Number.isFinite(nb) && nb > 0) quantite = 1;
+  else if (oui) quantite = 1;
+  if (non || quantite == null || !(quantite > 0)) return;
+  await db.from('estimation_quantites').delete().eq('estimation_id', estCourante.id).eq('cle', q.cle).eq('source', 'pop-up');
+  await db.from('estimation_quantites').insert({ estimation_id: estCourante.id, cle: q.cle, quantite, piece_id: q.piece_id || null, source: 'pop-up', fiabilite: 'Fiable', note: 'Réponse : ' + val });
+  if (ty?.t === 'montant') {   // le montant devient le prix manuel de la ligne
+    const { data: t } = await db.from('catalogue_taches').select('cle_gabarit').eq('actif', true).or(`cle_pq.eq."${q.cle}",cle_gabarit.eq."${q.cle}"`).limit(1);
+    if (t?.[0]) await db.from('estimation_prix_manuels').upsert({ estimation_id: estCourante.id, cle_gabarit: t[0].cle_gabarit, prix: nb, note: 'Réponse au pop-up' }, { onConflict: 'estimation_id,cle_gabarit' });
+  }
 }
 
 </script>

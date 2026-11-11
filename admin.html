@@ -6597,6 +6597,7 @@ async function estQuestionSuivante() {
   const tq = estTypeQuestion(q), lu = tq === 'confirmer' ? estQtePlan(q) : null;
   const ty = tq === 'info' ? { t: 'texte' } : tq ? { t: tq === 'confirmer' ? 'corriger' : 'nombre', u: p.unite || estLibelleCle(q.cle || '')?.unite || '' } : estTypeReponse(q);
   const valLue = lu?.q ?? q.valeur_proposee;
+  if (valLue != null && q._lu == null) q._lu = valLue;   // pour « Précédente » : valeur lue par Claude à rétablir
   const nomSec = q.section ? (estPostes.find(x => x.code === q.section)?.nom || q.section) : 'Portée du projet';
   const pc = estPieces.find(x => x.id === q.piece_id)?.nom;
   const fmt = n => Number(n).toLocaleString('fr-CA', { maximumFractionDigits: 2 });
@@ -6617,7 +6618,7 @@ async function estQuestionSuivante() {
       ${champ}
       <div style="height:4px;background:var(--fond);border-radius:4px;margin-top:20px"><div style="height:4px;width:${Math.round(estQi / estQListe.length * 100)}%;background:var(--caramel);border-radius:4px"></div></div>
     </div>
-    <div class="modal-footer"><button class="btn btn-outline" data-v="sans">Ne s’applique pas</button><button class="btn btn-outline" data-v="passer">Passer</button>
+    <div class="modal-footer">${estQi > 0 ? '<button class="btn btn-outline" data-v="prec" style="margin-right:auto">← Précédente</button>' : ''}<button class="btn btn-outline" data-v="sans">Ne s’applique pas</button><button class="btn btn-outline" data-v="passer">Passer</button>
       ${ty.t === 'corriger' && valLue != null ? '<button class="btn btn-outline" data-v="confirmer">✓ Confirmer</button>' : ''}
       ${ty.t === 'choix' ? '' : `<button class="btn btn-dark" data-v="ok">${ty.t === 'corriger' ? 'Corriger et suivante' : 'Enregistrer et suivante'}</button>`}</div></div>`;
   o.addEventListener('click', async ev => {
@@ -6625,6 +6626,7 @@ async function estQuestionSuivante() {
     const v = b.dataset.v;
     if (v === 'fermer') { o.remove(); estAfficher(estOnglet); return; }
     if (v === 'passer') { estQi++; estQuestionSuivante(); return; }
+    if (v === 'prec') { estQi--; await estAnnulerReponse(estQListe[estQi]); estQuestionSuivante(); return; }
     if (v === 'sans') { await estRepondre(q, null, 'sans objet', ty); estQi++; estQuestionSuivante(); return; }
     if (v === 'confirmer') { await estRepondre(q, String(valLue), 'confirmée', ty); estQi++; estQuestionSuivante(); return; }
     const val = v === 'choix' ? b.dataset.r : document.getElementById('est-q-val')?.value;
@@ -6634,6 +6636,24 @@ async function estQuestionSuivante() {
   o.addEventListener('keydown', ev => { if (ev.key === 'Enter' && ev.target.id === 'est-q-val' && ty.t !== 'texte') o.querySelector('[data-v="ok"]')?.click(); });
   document.body.appendChild(o);
   setTimeout(() => document.getElementById('est-q-val')?.focus(), 50);
+}
+// « Précédente » : on défait la réponse donnée (quantité ajoutée, valeur de Claude retirée) et la question redevient à répondre.
+async function estAnnulerReponse(q) {
+  if (!q) return;
+  const { data: cur } = await db.from('estimation_questions').select('statut').eq('id', q.id).single();
+  if (!cur || cur.statut === 'à répondre') return;
+  if (q.cle && !/^PORTEE-/.test(q.cle)) {
+    let d = db.from('estimation_quantites').delete().eq('estimation_id', estCourante.id).eq('cle', q.cle).eq('source', 'pop-up');
+    if (q.piece_id) d = d.eq('piece_id', q.piece_id);
+    await d;
+    if (q.source === 'plan' && q._lu != null) {
+      let c = db.from('estimation_quantites').select('id').eq('estimation_id', estCourante.id).eq('cle', q.cle).eq('source', 'plan');
+      if (q.piece_id) c = c.eq('piece_id', q.piece_id);
+      const { data: reste } = await c;
+      if (!reste?.length) await db.from('estimation_quantites').insert({ estimation_id: estCourante.id, cle: q.cle, quantite: q._lu, piece_id: q.piece_id || null, source: 'plan', fiabilite: 'Hypothèse', note: 'Valeur de la lecture rétablie' });
+    }
+  }
+  await db.from('estimation_questions').update({ statut: 'à répondre', reponse: null, repondu_par: null, repondu_le: null }).eq('id', q.id);
 }
 async function estRepondre(q, val, statut, ty) {
   const { data: { user } } = await db.auth.getUser();

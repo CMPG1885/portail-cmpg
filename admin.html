@@ -6412,6 +6412,7 @@ async function estRenderPlan() {
         ${fz || !estPlanDoc ? '' : `<button class="btn btn-dark btn-sm" onclick="estLirePlan()" ${estLectureEnCours ? 'disabled' : ''}>📖 ${Object.keys(L).length ? 'Relire le plan' : 'Lire le plan'}</button>`}
       </div>
       <table class="data-table" style="margin:0"><tbody>${EST_LOTS.map(([k, t]) => `<tr><td>${escH(t)}</td><td style="text-align:right">${etat(k)}
+        ${!fz && !estLectureEnCours && k !== 'pieces' && !L[k] && L.pieces?.le ? ` <button class="btn btn-outline btn-sm" onclick="estSuivreLecture(null)">Lancer</button>` : ''}
         ${L[k]?.erreur && !fz && !estLectureEnCours ? ` <button class="btn btn-outline btn-sm" onclick="estLireLot('${k}',true)">Réessayer</button>` : ''}</td></tr>`).join('')}</tbody></table>
       ${Object.values(L).some(x => x.remarques) ? `<div style="font-size:12px;color:var(--texte-2);margin-top:10px">${Object.entries(L).filter(([, x]) => x.remarques).map(([k, x]) => `<div>• ${escH(x.remarques)}</div>`).join('')}</div>` : ''}
     </div>
@@ -6463,11 +6464,11 @@ async function estLirePlan() {
   await estSuivreLecture(null);
 }
 // Réessayer un seul lot
-async function estLireLot(k) { await estSuivreLecture([k]); }
+async function estLireLot(k) { await (k === 'pieces' ? estSuivreLecture(null, true) : estSuivreLecture([k])); }
 
 // Envoie les lots pas encore envoyés, puis vérifie toutes les 20 s jusqu’à la fin.
 // seuls = null : tous les lots (pièces d’abord) sauf ceux en erreur ; sinon la liste donnée (on la renvoie).
-async function estSuivreLecture(seuls) {
+async function estSuivreLecture(seuls, relancerPieces) {
   if (estLectureEnCours) return;
   estLectureEnCours = true;
   const id = estCourante.id, erreurs = {};
@@ -6494,6 +6495,7 @@ async function estSuivreLecture(seuls) {
     if (seuls) { for (const k of seuls) if (lots()[k]) lots()[k].erreur = null; await attendre(seuls); }
     else {
       const aFaire = k => !lots()[k]?.le && !lots()[k]?.erreur;
+      if (relancerPieces && lots().pieces) lots().pieces.erreur = null;
       const okP = aFaire('pieces') ? await attendre(['pieces']) : !lots().pieces?.erreur;
       if (okP) await attendre(EST_LOTS.map(x => x[0]).filter(k => k !== 'pieces' && aFaire(k)));
     }

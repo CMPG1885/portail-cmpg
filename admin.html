@@ -5501,7 +5501,7 @@ function estRenderEntete() {
   const e = estCourante, fz = estFigee(), dis = fz ? 'disabled' : '';
   const p = estProjets.find(x => x.id === e.projet_id);
   const T = e.totaux, nq = new Set(estQtes.map(q => q.cle)).size;
-  const sansPrix = estLignes.filter(l => l.source_prix && !['catalogue', 'sélection', 'manuel'].includes(l.source_prix)).length;
+  const sansPrix = estLignes.filter(l => l.source_prix && !['catalogue', 'sélection', 'manuel', 'choix client'].includes(l.source_prix) && !estInclus.set.has(l.cle)).length;
   const nSel = estLignes.filter(l => l.source_prix === 'sélection').length;
   const chiffre = (lib, val, sous) => `<div style="padding:10px 16px;background:var(--fond);border-radius:10px;min-width:130px">
       <div style="font-size:10px;letter-spacing:1.2px;text-transform:uppercase;color:var(--texte-2)">${lib}</div>
@@ -5785,16 +5785,42 @@ async function estCalculer() {
   estRenderEntete(); estAfficher('resultat');
 }
 
+// Prix du catalogue pour des lignes (même ordre de recherche que le moteur : type+gamme, type, gamme, général).
+async function estPrixCatalogue(cles) {
+  const res = {}; if (!cles.length) return res;
+  const { data } = await db.from('catalogue_taches').select('cle_gabarit, unite, catalogue_prix(type_projet, gamme, prix_mo, prix_mat, prix_fp, actif)').eq('actif', true).in('cle_gabarit', [...new Set(cles)]);
+  const ty = estCourante.type_projet || null, ga = estCourante.gamme_defaut || null;
+  for (const t of data || []) {
+    const px = (t.catalogue_prix || []).filter(p => p.actif !== false);
+    const r = px.find(p => p.type_projet === ty && p.gamme === ga) || px.find(p => p.type_projet === ty && !p.gamme)
+      || px.find(p => !p.type_projet && p.gamme === ga) || px.find(p => !p.type_projet && !p.gamme);
+    res[t.cle_gabarit] = { existe: !!r, prix: r ? (r.prix_fp ?? r.prix_mat ?? r.prix_mo) : null, unite: t.unite };
+  }
+  return res;
+}
+// Lignes « à inscrire » dont le gabarit met volontairement 0 $ : comprises dans une ligne globale.
+let estInclus = { cle: null, set: new Set() };
 function estRenderResultat() {
   const c = document.getElementById('est-contenu'), fz = estFigee();
+  const jeton = estCourante.id + '|' + (estCourante.calculee_le || '') + '|' + estLignes.length;
+  if (estLignes.length && estInclus.cle !== jeton) {
+    estInclus = { cle: jeton, set: new Set() };
+    const sp = estLignes.filter(l => ['à inscrire', 'forfait à inscrire'].includes(l.source_prix)).map(l => l.cle);
+    estPrixCatalogue(sp).then(m => { Object.entries(m).forEach(([k, v]) => { if (v.existe && Number(v.prix) === 0) estInclus.set.add(k); });
+      if (estOnglet === 'resultat') estRenderResultat(); });
+  }
   const blocSel = `<div id="est-selections" style="margin-top:18px"></div>`;
   if (!estLignes.length) { c.innerHTML = `<div class="empty-state" style="padding:30px"><p>${fz ? 'Aucune ligne.' : 'Saisissez les quantités puis cliquez sur « Calculer ».'}</p></div>${blocSel}`; estRenderSelections(); return; }
   const T = estCourante.totaux;
   const nomDdn = d => estPostes.find(p => p.code === d)?.nom || '';
-  const SANS = l => l.source_prix && !['catalogue', 'sélection', 'manuel'].includes(l.source_prix);
+  const INCLUS = l => estInclus.set.has(l.cle) && ['à inscrire', 'forfait à inscrire'].includes(l.source_prix);
+  const ATTENTE = l => l.source_prix === 'choix client';   // choix du client sans sélection approuvée ni prix de gamme
+  const SANS = l => l.source_prix && !['catalogue', 'sélection', 'manuel', 'choix client'].includes(l.source_prix) && !INCLUS(l);
   const bandeauFige = fz ? `<div class="card" style="margin-bottom:14px;border-left:3px solid var(--success);font-size:13px">🔒 <strong>Cette estimation est figée</strong> : rien ne peut être modifié. Cliquez sur « Défiger » en haut pour la modifier, puis « Calculer ».</div>` : '';
   const etiquette = l => l.source_prix === 'sélection' ? '<span style="color:var(--success);font-size:11px"> · sélection approuvée</span>'
     : l.source_prix === 'manuel' ? '<span style="color:var(--caramel);font-size:11px"> · prix manuel</span>'
+    : INCLUS(l) ? '<span style="color:var(--texte-2);font-size:11px"> · incluse dans une ligne globale</span>'
+    : ATTENTE(l) ? '<span style="color:var(--caramel);font-size:11px"> · en attente de sélection</span>'
     : SANS(l) ? `<span style="color:var(--danger);font-size:11px"> · ${escH(l.source_prix)}</span>` : '';
   const parDdn = {};
   estLignes.forEach(l => { (parDdn[l.ddn] = parDdn[l.ddn] || []).push(l); });
@@ -5822,6 +5848,10 @@ function estRenderResultat() {
   // Lignes sans prix (et prix manuels déjà inscrits) : le prix se saisit ici, pour cette estimation seulement.
   const vus = new Set();
   const aCompleter = estLignes.filter(l => !l.produit_id && (SANS(l) || l.source_prix === 'manuel') && !vus.has(l.cle) && vus.add(l.cle));
+  const enAttente = estLignes.filter(ATTENTE);
+  const tableAttente = enAttente.length ? `<div class="card" style="margin-bottom:14px;border-left:3px solid var(--caramel)">
+      <div style="font-size:13px;margin-bottom:8px"><strong>En attente des sélections (${enAttente.length})</strong> — choix du client sans sélection approuvée ni prix prévu par gamme. Ils comptent pour 0 $ jusqu’à la sélection du client ou l’ajout des prix par gamme au catalogue.</div>
+      <div style="font-size:12px;color:var(--texte-2);line-height:1.7">${enAttente.map(l => escH(l.description + (l.piece_id && pieceNom(l.piece_id) && !l.description.includes(pieceNom(l.piece_id)) ? ' — ' + pieceNom(l.piece_id) : '')) + ` (${estNum(l.quantite)} ${escH(l.unite || '')})`).join(' · ')}</div></div>` : '';
   const raison = { 'sélection sans prix': 'Sélection sans prix (voir Sélections approuvées)', 'à inscrire': 'Aucun prix au catalogue', 'forfait à inscrire': 'Forfait propre au projet', 'choix client': 'Choix client sans sélection approuvée', 'manuel': 'Prix manuel inscrit' };
   const tableCompleter = aCompleter.length ? `<div class="card" style="margin-bottom:14px;border-left:3px solid ${aCompleter.some(SANS) ? 'var(--danger)' : 'var(--caramel)'}">
       <div style="font-size:13px;margin-bottom:8px">${aCompleter.filter(SANS).length
@@ -5835,7 +5865,7 @@ function estRenderResultat() {
         <td><input ${fz ? 'disabled' : ''} type="number" step="0.01" min="0" value="${l.source_prix === 'manuel' ? l.prix_unitaire ?? '' : ''}" placeholder="—"
              onchange="estPrixManuel('${l.cle}',this.value)" style="width:100%;text-align:right" /></td>
         <td>${l.source_prix === 'manuel' && !fz ? `<button class="btn btn-outline btn-sm" onclick="estPrixManuel('${l.cle}','')" title="Retirer le prix manuel">×</button>` : ''}</td></tr>`; }).join('')}</tbody></table></div>` : '';
-  c.innerHTML = `${bandeauFige}${tableCompleter}
+  c.innerHTML = `${bandeauFige}${tableCompleter}${tableAttente}
     <div class="card" style="padding:0;overflow:hidden"><table class="data-table" style="margin:0">
       <thead><tr><th style="width:110px">DDN</th><th>Section (cliquer pour le détail)</th><th style="text-align:right;width:160px">Montant HT</th></tr></thead>
       <tbody>${rangees}${totaux}</tbody></table></div>${blocSel}`;
@@ -5888,20 +5918,26 @@ async function estRenderSelections() {
     <optgroup label="Choix client">${cc.map(t => `<option value="${escH(t.cle_gabarit)}" ${t.cle_gabarit === cle ? 'selected' : ''}>${escH(t.cle_gabarit.slice(0, 8))} — ${escH(t.libelle.slice(0, 70))}</option>`).join('')}</optgroup>
     <optgroup label="Autres lignes">${autres.map(t => `<option value="${escH(t.cle_gabarit)}" ${t.cle_gabarit === cle ? 'selected' : ''}>${escH(t.cle_gabarit.slice(0, 8))} — ${escH(t.libelle.slice(0, 70))}</option>`).join('')}</optgroup>`;
   const nonAssoc = estSel.filter(s => !s.cle).length;
+  const prevu = await estPrixCatalogue(estSel.map(s => s.cle).filter(c => c && c !== 'aucune'));
+  const ecart = s => { const pv = prevu[s.cle]?.prix, pr = s.bp?.prix ?? estPrixSel[s.o.id];
+    if (pv == null || !Number(pv) || pr == null) return '—';
+    const d = Number(pr) - Number(pv); return `<span style="color:${d > 0 ? 'var(--danger)' : 'var(--success)'}">${d > 0 ? '+' : ''}${estMoney2(d)}</span>`; };
   div.innerHTML = `<div class="card" style="padding:0;overflow:hidden">
     <div style="padding:12px 16px;background:var(--fond);border-bottom:1px solid var(--bord);display:flex;justify-content:space-between;flex-wrap:wrap;gap:8px">
       <strong>Sélections approuvées du projet (${estSel.length})</strong>
       <span style="font-size:12px;color:${nonAssoc ? 'var(--danger)' : 'var(--texte-2)'}">${nonAssoc ? `⚠ ${nonAssoc} à associer à une ligne` : 'Chaque sélection remplace le prix de la gamme sur sa ligne'}</span></div>
     <div style="padding:10px 16px;font-size:12px;color:var(--texte-2);border-bottom:1px solid var(--bord)">« Remplace la ligne » indique quelle ligne de l'estimation prend le prix de ce produit au lieu du prix de la gamme. Les produits vendus au pi² ou au pi linéaire prennent la quantité du plan.</div>
-    <table class="data-table" style="margin:0"><thead><tr><th>Réf.</th><th>Pièce</th><th>Produit</th><th style="text-align:right">Qté</th><th style="text-align:right;width:120px">Prix</th><th style="width:34%">Remplace la ligne</th><th>Dans l'estimation</th></tr></thead>
+    <table class="data-table" style="margin:0"><thead><tr><th>Réf.</th><th>Pièce</th><th>Produit</th><th style="text-align:right">Qté</th><th style="text-align:right;width:110px">Prévu (gamme)</th><th style="text-align:right;width:120px">Sélectionné</th><th style="text-align:right">Écart / unité</th><th style="width:28%">Remplace la ligne</th><th>Dans l'estimation</th></tr></thead>
     <tbody>${estSel.map((s, i) => `<tr${!s.cle ? ' style="background:#fbf3f1"' : ''}>
       <td style="font-family:monospace;font-size:12px">${escH(s.po.reference || '')}</td>
       <td style="font-size:12px">${escH(s.po.piece || (s.po.pieces || []).join(', '))}</td>
       <td>${escH(s.bp?.nom || '—')}<div style="font-size:11px;color:var(--texte-2)">${escH([s.po.categories?.nom, s.po.sous_categories?.nom].filter(Boolean).join(' · '))}</div></td>
       <td style="text-align:right">${estNum(s.o.quantite ?? 1)}</td>
+      <td style="text-align:right;white-space:nowrap;color:var(--texte-2)">${prevu[s.cle]?.prix != null && Number(prevu[s.cle].prix) ? estMoney2(prevu[s.cle].prix) + '/' + escH(prevu[s.cle].unite || '') : '<span style="font-size:11px">à venir</span>'}</td>
       <td style="text-align:right;white-space:nowrap">${s.bp?.prix != null ? estMoney2(s.bp.prix) + (s.bp.unite_prix && s.bp.unite_prix !== 'unité' ? '/' + escH(s.bp.unite_prix) : '')
         : `<input ${fz ? 'disabled' : ''} type="number" step="0.01" min="0" placeholder="Prix $" value="${estPrixSel[s.o.id] ?? ''}" onchange="estPrixManuel('SEL:${s.o.id}',this.value)"
              style="width:100%;text-align:right;padding:6px 8px;border:1px solid var(--danger);font-size:12px" title="Aucun prix dans la Banque de produits : prix manuel pour cette estimation" />`}</td>
+      <td style="text-align:right;white-space:nowrap;font-size:12px">${ecart(s)}</td>
       <td><select ${fz ? 'disabled' : ''} onchange="estAssocierSelection(${i},this.value)" style="width:100%;padding:6px 8px;border:1px solid var(--bord);font-size:12px">
           ${s.cle ? '' : '<option value="" selected>— Choisir une ligne —</option>'}${opts(s.cle)}</select>
         ${s.exception ? '<div style="font-size:10px;color:var(--texte-2);margin-top:2px">exception pour ce poste</div>' : ''}</td>
@@ -6381,7 +6417,9 @@ const EST_LOTS = [
   ['pieces', 'Données de base, pièces et extérieur'], ['structure', 'Conditions générales, démolition, fondations, charpente'],
   ['enveloppe', 'Isolation, toiture, revêtements, portes et fenêtres'], ['interieur', 'Gypse, finis, ébénisterie'],
   ['mecanique', 'Plomberie, ventilation, électricité'], ['exterieur', 'Excavation, aménagement, branchements'],
+  ['finale', 'Passe finale : vos réponses de départ et ce qui manque'],
 ];
+const EST_LOTS_PLAN = ['structure', 'enveloppe', 'interieur', 'mecanique', 'exterieur'];
 let estPlanDoc = null, estLectureEnCours = false;  // lecture en différé : voir estSuivreLecture
 
 async function estRenderPlan() {
@@ -6407,18 +6445,28 @@ async function estRenderPlan() {
       </div>
     </div>
     <div class="card" style="margin-bottom:16px">
+      <div style="display:flex;justify-content:space-between;align-items:center;gap:16px;flex-wrap:wrap">
+        <div><div style="font-size:11px;letter-spacing:1.5px;text-transform:uppercase;color:var(--texte-2)">2 · Questions de départ</div>
+          <div style="font-size:13px;margin-top:4px">${estDepartResume(e.questions_depart)}</div></div>
+        <button class="btn ${e.questions_depart ? 'btn-outline' : 'btn-dark'} btn-sm" onclick="estDepartFormulaire()">${e.questions_depart ? (fz ? 'Voir' : 'Modifier') : '✎ Remplir'}</button>
+      </div>
+    </div>
+    <div class="card" style="margin-bottom:16px">
       <div style="display:flex;justify-content:space-between;align-items:center;gap:16px;flex-wrap:wrap;margin-bottom:12px">
-        <div style="font-size:11px;letter-spacing:1.5px;text-transform:uppercase;color:var(--texte-2)">2 · Lecture du plan</div>
-        ${fz || !estPlanDoc ? '' : `<button class="btn btn-dark btn-sm" onclick="estLirePlan()" ${estLectureEnCours ? 'disabled' : ''}>📖 ${Object.keys(L).length ? 'Relire le plan' : 'Lire le plan'}</button>`}
+        <div style="font-size:11px;letter-spacing:1.5px;text-transform:uppercase;color:var(--texte-2)">3 · Lecture du plan</div>
+        ${fz || !estPlanDoc ? '' : `<button class="btn btn-dark btn-sm" onclick="estLirePlan()" ${estLectureEnCours || !e.questions_depart ? 'disabled' : ''} title="${e.questions_depart ? '' : 'Remplissez d’abord les questions de départ'}">📖 ${Object.keys(L).length ? 'Relire le plan' : 'Lire le plan'}</button>`}
       </div>
       <table class="data-table" style="margin:0"><tbody>${EST_LOTS.map(([k, t]) => `<tr><td>${escH(t)}</td><td style="text-align:right">${etat(k)}
-        ${!fz && !estLectureEnCours && k !== 'pieces' && !L[k] && L.pieces?.le ? ` <button class="btn btn-outline btn-sm" onclick="estSuivreLecture(null)">Lancer</button>` : ''}
+        ${!fz && !estLectureEnCours && k !== 'pieces' && !L[k] && L.pieces?.le && (k !== 'finale' || EST_LOTS_PLAN.every(x => L[x]?.le)) ? ` <button class="btn btn-outline btn-sm" onclick="estSuivreLecture(null)">Lancer</button>` : ''}
         ${L[k]?.erreur && !fz && !estLectureEnCours ? ` <button class="btn btn-outline btn-sm" onclick="estLireLot('${k}',true)">Réessayer</button>` : ''}</td></tr>`).join('')}</tbody></table>
       ${Object.values(L).some(x => x.remarques) ? `<div style="font-size:12px;color:var(--texte-2);margin-top:10px">${Object.entries(L).filter(([, x]) => x.remarques).map(([k, x]) => `<div>• ${escH(x.remarques)}</div>`).join('')}</div>` : ''}
+      ${e.lecture?.pas_trouve?.length ? `<div style="margin-top:14px;padding:12px 14px;background:var(--fond);border-radius:8px">
+        <div style="font-size:11px;letter-spacing:1.5px;text-transform:uppercase;color:var(--texte-2);margin-bottom:6px">Pas trouvé au plan — à vérifier dans « Vérifier les quantités »</div>
+        ${e.lecture.pas_trouve.map(x => `<div style="font-size:13px;padding:3px 0"><span style="font-family:monospace;font-size:11px;color:var(--texte-2)">${escH(x.cle)}</span> ${escH(x.parametre || '')} <span style="color:var(--texte-2)">— ${escH(x.raison || '')}</span></div>`).join('')}</div>` : ''}
     </div>
     <div class="card">
       <div style="display:flex;justify-content:space-between;align-items:center;gap:16px;flex-wrap:wrap">
-        <div><div style="font-size:11px;letter-spacing:1.5px;text-transform:uppercase;color:var(--texte-2)">3 · Questions</div>
+        <div><div style="font-size:11px;letter-spacing:1.5px;text-transform:uppercase;color:var(--texte-2)">4 · Questions</div>
           <div style="font-size:14px;margin-top:4px">${nq ? `<strong>${nq}</strong> question(s) à répondre` : 'Aucune question en attente.'}</div>
           <div style="font-size:12px;color:var(--texte-2)">Ce que le plan ne dit pas, plus les questions du catalogue qui s’appliquent à ce type de projet.</div></div>
         ${fz ? '' : `<button class="btn btn-caramel btn-sm" onclick="estQuestions()">❓ Répondre aux questions</button>`}
@@ -6445,6 +6493,114 @@ async function estTeleverserPlan(f) {
   estRenderPlan();
 }
 
+// ---------- Questions de départ (avant la lecture du plan) ----------
+const EST_DEP_PLANCHERS = ['Céramique', 'Bois', 'Vinyle', 'Béton', 'Tapis', 'Aucun changement'];
+const EST_DEP_EXT = ['Galerie', 'Balcon', 'Terrasse', 'Escalier extérieur', 'Garde-corps', 'Allée', 'Aménagement paysager'];
+const EST_DEP_CLIENT = ['Ébénisterie', 'Appareils sanitaires', 'Luminaires', 'Électroménagers', 'Peinture', 'Planchers'];
+function estDepartResume(d) {
+  if (!d) return '<span style="color:var(--texte-2)">À remplir avant de lancer la lecture.</span>';
+  const n = (lib, x) => x?.touche == null ? '' : `${lib} : ${x.touche ? 'touché' + (x.superficie ? ` (${x.superficie} pi²)` : '') : 'non touché'}`;
+  return [n('Sous-sol', d.sous_sol), n('RDC', d.rdc), n('Étage', d.etage), d.duree ? `${d.duree} sem.` : '',
+    d.fourni_client?.length ? 'Client fournit : ' + d.fourni_client.join(', ') : ''].filter(Boolean).map(escH).join(' · ') || '<span style="color:var(--texte-2)">Rempli.</span>';
+}
+function estDepartFormulaire() {
+  const d = estCourante.questions_depart || {}, fz = estFigee();
+  const radio = (nom, choix, val) => `<div class="dep-choix">${choix.map(c => `<label><input type="radio" name="${nom}" value="${escH(c)}" ${val === c ? 'checked' : ''} ${fz ? 'disabled' : ''}> ${escH(c)}</label>`).join('')}</div>`;
+  const cases = (nom, choix, val) => `<div class="dep-choix">${choix.map(c => `<label><input type="checkbox" name="${nom}" value="${escH(c)}" ${(val || []).includes(c) ? 'checked' : ''} ${fz ? 'disabled' : ''}> ${escH(c)}</label>`).join('')}</div>`;
+  const on = v => v === true ? 'Oui' : v === false ? 'Non' : null;
+  const niveau = (k, lib) => `<div class="dep-l"><div class="dep-q">${lib} existant : on y touche ?</div>${radio(k, ['Oui', 'Non'], on(d[k]?.touche))}
+      <div class="dep-sup" data-pour="${k}" style="${d[k]?.touche ? '' : 'display:none'}">Superficie touchée par les travaux <input type="number" min="0" step="any" name="${k}_sup" value="${d[k]?.superficie ?? ''}" ${fz ? 'disabled' : ''}> pi²</div></div>`;
+  const nb = (nom, lib, val, u) => `<div class="dep-l"><div class="dep-q">${lib}</div><div><input type="number" min="0" step="any" name="${nom}" value="${val ?? ''}" ${fz ? 'disabled' : ''} style="width:120px"> ${u}</div></div>`;
+  const pl = d.planchers || {};
+  const o = document.createElement('div');
+  o.id = 'est-dialogue'; o.className = 'modal-overlay open';
+  o.innerHTML = `<style>
+    #est-dialogue .dep-sec{font-size:11px;letter-spacing:1.5px;text-transform:uppercase;color:var(--texte-2);margin:22px 0 6px;border-bottom:1px solid var(--bord);padding-bottom:4px}
+    #est-dialogue .dep-l{display:flex;justify-content:space-between;gap:16px;align-items:center;flex-wrap:wrap;padding:7px 0}
+    #est-dialogue .dep-q{font-size:14px;flex:1 1 260px}
+    #est-dialogue .dep-choix{display:flex;gap:6px 14px;flex-wrap:wrap;font-size:13px}
+    #est-dialogue .dep-choix label{display:flex;gap:5px;align-items:center;cursor:pointer;white-space:nowrap}
+    #est-dialogue .dep-sup{flex-basis:100%;font-size:13px;color:var(--texte-2);padding-left:2px}
+    #est-dialogue input[type=number]{padding:6px 8px;border:1px solid var(--bord);width:110px;text-align:right}
+  </style>
+  <div class="modal" style="width:min(760px,96vw);max-width:none;max-height:92vh;display:flex;flex-direction:column">
+    <div class="modal-header"><div><div style="font-size:11px;letter-spacing:1.5px;text-transform:uppercase;color:var(--texte-2)">Avant la lecture du plan</div>
+      <h3 style="margin-top:4px">Questions de départ</h3></div><button class="modal-close" data-v="fermer">×</button></div>
+    <div class="modal-body" style="overflow:auto">
+      <div style="font-size:13px;color:var(--texte-2)">Claude lit le plan en tenant compte de ces réponses. Rien de ce qui est coché « fourni par le client » ne sera compté.</div>
+      <div class="dep-sec">Travaux dans l'existant</div>
+      ${niveau('sous_sol', 'Sous-sol')}${niveau('rdc', 'Rez-de-chaussée')}${niveau('etage', 'Étage')}
+      <div class="dep-sec">Finis de plancher</div>
+      ${[['sous_sol', 'Sous-sol'], ['rdc', 'Rez-de-chaussée'], ['etage', 'Étage'], ['agrandissement', 'Agrandissement']].map(([k, lib]) =>
+        `<div class="dep-l"><div class="dep-q" style="flex:0 0 150px">${lib}</div>${cases('pl_' + k, EST_DEP_PLANCHERS, pl[k])}</div>`).join('')}
+      <div class="dep-sec">Extérieur</div>
+      <div class="dep-l"><div class="dep-q">Revêtement extérieur</div>${radio('revetement', ['Aucun', 'Agrandissement seulement', 'Tout le tour'], d.revetement)}</div>
+      <div class="dep-l"><div class="dep-q">Toiture</div>${radio('toiture', ['Aucune', 'Agrandissement seulement', 'Raccord à l’existant', 'Réfection complète'], d.toiture)}</div>
+      <div class="dep-l"><div class="dep-q">Ajouté ou refait</div>${cases('exterieur', EST_DEP_EXT, d.exterieur)}</div>
+      <div class="dep-sec">Portée</div>
+      <div class="dep-l"><div class="dep-q">Fourni ou fait par le client</div>${cases('fourni_client', EST_DEP_CLIENT, d.fourni_client)}</div>
+      <div class="dep-l"><div class="dep-q">Maison habitée pendant les travaux ?</div>${radio('habitee', ['Oui', 'Non'], on(d.habitee))}</div>
+      ${nb('duree', 'Durée prévue du chantier', d.duree, 'semaines')}
+      ${nb('transports', 'Transports de conteneur (vidanges)', d.transports, 'transports')}
+      <div class="dep-sec">Chantier</div>
+      <div class="dep-l"><div class="dep-q">Système radon exigé ?</div>${radio('radon', ['Oui', 'Non'], on(d.radon))}</div>
+      <div class="dep-l"><div class="dep-q">Maison d’avant 1990 ou amiante connue ?</div>${radio('amiante', ['Oui', 'Non', 'Inconnu'], d.amiante)}</div>
+      <div class="dep-l"><div class="dep-q">Accès au terrain pour la machinerie</div>${radio('acces', ['Facile', 'Difficile'], d.acces)}</div>
+      ${nb('assurance', 'Assurance chantier (montant)', d.assurance, '$')}
+      <div class="dep-sec">Notes pour Claude (facultatif)</div>
+      <textarea name="notes" ${fz ? 'disabled' : ''} style="width:100%;min-height:60px;padding:8px;border:1px solid var(--bord);font-family:inherit;font-size:13px" placeholder="Ex. : la salle de bain du RDC n’est pas touchée.">${escH(d.notes || '')}</textarea>
+    </div>
+    <div class="modal-footer"><button class="btn btn-outline" data-v="fermer">Annuler</button>${fz ? '' : '<button class="btn btn-dark" data-v="ok">Enregistrer</button>'}</div></div>`;
+  o.addEventListener('change', ev => { const t = ev.target; if (t.type === 'radio' && ['sous_sol', 'rdc', 'etage'].includes(t.name)) o.querySelector(`[data-pour="${t.name}"]`).style.display = t.value === 'Oui' ? '' : 'none'; });
+  o.addEventListener('click', async ev => {
+    const b = ev.target.closest('[data-v]'); if (!b) return;
+    if (b.dataset.v === 'fermer') { o.remove(); return; }
+    const val = n => o.querySelector(`[name="${n}"]:checked`)?.value ?? null;
+    const tous = n => [...o.querySelectorAll(`[name="${n}"]:checked`)].map(x => x.value);
+    const num = n => { const v = o.querySelector(`[name="${n}"]`)?.value; return v === '' || v == null ? null : Number(v); };
+    const bo = v => v === 'Oui' ? true : v === 'Non' ? false : null;
+    const niv = k => ({ touche: bo(val(k)), superficie: bo(val(k)) ? num(k + '_sup') : null });
+    const d2 = { sous_sol: niv('sous_sol'), rdc: niv('rdc'), etage: niv('etage'),
+      planchers: { sous_sol: tous('pl_sous_sol'), rdc: tous('pl_rdc'), etage: tous('pl_etage'), agrandissement: tous('pl_agrandissement') },
+      revetement: val('revetement'), toiture: val('toiture'), exterieur: tous('exterieur'), fourni_client: tous('fourni_client'),
+      habitee: bo(val('habitee')), duree: num('duree'), transports: num('transports'), radon: bo(val('radon')), amiante: val('amiante'),
+      acces: val('acces'), assurance: num('assurance'), notes: o.querySelector('[name="notes"]').value.trim() || null, rempli_le: new Date().toISOString() };
+    b.disabled = true;
+    const { error } = await db.from('estimations').update({ questions_depart: d2 }).eq('id', estCourante.id);
+    if (error) { b.disabled = false; toast('Erreur : ' + error.message, 'error'); return; }
+    estCourante.questions_depart = d2;
+    await estDepartAppliquer(d2);
+    o.remove(); toast('Questions de départ enregistrées.', 'success');
+    await estRechargerContenu(); if (estOnglet === 'plan') estRenderPlan();
+  });
+  document.body.appendChild(o);
+}
+// Les réponses de départ qui correspondent à des questions du catalogue sont inscrites comme répondues (on ne les reposera pas).
+async function estDepartAppliquer(d) {
+  const { data: params } = await db.from('catalogue_parametres').select('id, cle, parametre').eq('actif', true).eq('source', 'Pop-up');
+  const { data: taches } = await db.from('catalogue_taches').select('cle_gabarit, libelle, cle_pq').eq('actif', true).not('cle_gabarit', 'is', null);
+  const oui = v => v === true ? 'Oui' : v === false ? 'Non' : null;
+  const items = [
+    ['00 00 00-10', d.duree, { t: 'nombre' }],
+    ['01 11 00-04', d.transports, { t: 'nombre' }],
+    ['31 21 13-01', oui(d.radon), { t: 'choix' }], ['PORTEE-04', oui(d.radon), { t: 'texte' }],
+    ['02 82 00-01', d.amiante, { t: 'texte' }], ['01 56 00-01', oui(d.habitee), { t: 'texte' }],
+    ['PORTEE-03', d.acces, { t: 'texte' }], ['PORTEE-01', d.fourni_client?.length ? d.fourni_client.join(', ') : 'Aucun', { t: 'texte' }],
+    ['@Assurance chantier', d.assurance, { t: 'montant' }],
+  ];
+  for (const [ref, v, ty] of items) {
+    if (v == null || v === '') continue;
+    let p = ref.startsWith('@') ? (params || []).find(x => x.parametre === ref.slice(1)) : (params || []).find(x => x.cle === ref);
+    if (!p) continue;
+    let cle = p.cle;
+    if (cle === '—') { const t = (taches || []).find(t => !t.cle_pq && t.libelle.toLowerCase().startsWith(p.parametre.toLowerCase().slice(0, 18))); if (!t) continue; cle = t.cle_gabarit; }
+    await db.from('estimation_questions').delete().eq('estimation_id', estCourante.id).eq('cle', cle).neq('source', 'plan');
+    const { data: q } = await db.from('estimation_questions').insert({ estimation_id: estCourante.id, parametre_id: p.id, cle, question: p.parametre,
+      section: /^\d\d \d\d \d\d/.test(cle) ? cle.slice(0, 8) : null, lot: 'départ', source: 'catalogue', statut: 'à répondre' }).select('*').single();
+    if (q) await estRepondre(q, String(v), 'répondue', ty);
+  }
+}
+
 async function estAppelLecture(corps) {
   const { data, error } = await db.functions.invoke('lire-plan', { body: { estimation_id: estCourante.id, ...corps } });
   let rep = data; if (error) { try { rep = await error.context.json(); } catch (e) { rep = { erreur: error.message?.includes('timeout') || error.message?.includes('Failed') ? 'délai dépassé — réessayez' : error.message }; } }
@@ -6452,7 +6608,7 @@ async function estAppelLecture(corps) {
 }
 async function estLirePlan() {
   const deja = Object.keys(estCourante.lecture?.lots || {}).length;
-  const ok = await estDialogue('📖 Lire le plan', `<p>Claude va lire « ${escH(estPlanDoc?.nom || 'le plan')} » en ${EST_LOTS.length} étapes : d’abord les pièces, puis les 5 autres en même temps.</p>
+  const ok = await estDialogue('📖 Lire le plan', `<p>Claude va lire « ${escH(estPlanDoc?.nom || 'le plan')} » en ${EST_LOTS.length} étapes : d’abord les pièces, puis les 5 sections en même temps, puis une passe finale qui transforme vos réponses de départ en quantités.</p>
       <p style="margin-top:8px">La lecture se fait en différé : comptez <strong>quelques minutes</strong> (parfois plus). Vous pouvez fermer la page et revenir : le suivi reprend tout seul.</p>
       ${deja ? '<p style="margin-top:8px"><strong>Relecture :</strong> les pièces, quantités et questions venues de la lecture précédente seront remplacées. Vos saisies manuelles et vos réponses aux questions restent.</p>' : ''}
       <p style="margin-top:8px;font-size:13px;color:var(--texte-2)">Chaque lecture utilise la clé Claude de CMPG (quelques dollars par plan).</p>`,
@@ -6497,7 +6653,8 @@ async function estSuivreLecture(seuls, relancerPieces) {
       const aFaire = k => !lots()[k]?.le && !lots()[k]?.erreur;
       if (relancerPieces && lots().pieces) lots().pieces.erreur = null;
       const okP = aFaire('pieces') ? await attendre(['pieces']) : !lots().pieces?.erreur;
-      if (okP) await attendre(EST_LOTS.map(x => x[0]).filter(k => k !== 'pieces' && aFaire(k)));
+      const okL = okP && await attendre(EST_LOTS_PLAN.filter(aFaire));
+      if (okL && EST_LOTS_PLAN.every(k => lots()[k]?.le) && aFaire('finale')) await attendre(['finale']);
     }
   } finally { estLectureEnCours = false; }
   if (estCourante?.id !== id) return;
@@ -6578,6 +6735,11 @@ async function estQuestions() {
   ]);
   estQListe = qs || []; estQi = 0; estQParams = {};
   (params || []).forEach(p => { estQParams[p.cle] = p; estQParams['#' + p.id] = p; });
+  // Ordre : confirmations, chiffres manquants, Oui / Non, puis réponses en mots.
+  const rang = q => { const tq = estTypeQuestion(q);
+    if (tq) return { confirmer: 0, manquante: 1, ouinon: 2, info: 3 }[tq] ?? 3;
+    const t = estTypeReponse(q).t; return t === 'nombre' || t === 'montant' ? 1 : t === 'choix' ? 2 : 3; };
+  estQListe = estQListe.map((q, i) => ({ q, i, r: rang(q) })).sort((a, b) => a.r - b.r || a.i - b.i).map(x => x.q);
   if (!estQListe.length) { toast('Aucune question en attente.', 'success'); return; }
   estQuestionSuivante();
 }
@@ -6595,7 +6757,11 @@ async function estQuestionSuivante() {
   if (estQi >= estQListe.length) { toast('Questions terminées. Cliquez sur « Calculer ».', 'success'); estRechargerContenu(); estAfficher(estOnglet); return; }
   const q = estQListe[estQi], p = estQParams['#' + q.parametre_id] || estQParams[q.cle] || {};
   const tq = estTypeQuestion(q), lu = tq === 'confirmer' ? estQtePlan(q) : null;
-  const ty = tq === 'info' ? { t: 'texte' } : tq ? { t: tq === 'confirmer' ? 'corriger' : 'nombre', u: p.unite || estLibelleCle(q.cle || '')?.unite || '' } : estTypeReponse(q);
+  const uCle = p.unite || estLibelleCle(q.cle || '')?.unite || '';
+  const ty = tq === 'info' ? { t: 'texte' } : tq === 'ouinon' ? { t: 'choix', c: ['Oui', 'Non'], ouinon: true, u: uCle }
+    : tq ? { t: tq === 'confirmer' ? 'corriger' : 'nombre', u: uCle } : estTypeReponse(q);
+  const deja = q.statut && q.statut !== 'à répondre';   // revenu avec « Précédente » : on montre la réponse donnée
+  const repDeja = deja && q.statut !== 'confirmée' && q.statut !== 'sans objet' ? (q.reponse ?? '') : '';
   const valLue = lu?.q ?? q.valeur_proposee;
   if (valLue != null && q._lu == null) q._lu = valLue;   // pour « Précédente » : valeur lue par Claude à rétablir
   const nomSec = q.section ? (estPostes.find(x => x.code === q.section)?.nom || q.section) : 'Portée du projet';
@@ -6603,13 +6769,19 @@ async function estQuestionSuivante() {
   const fmt = n => Number(n).toLocaleString('fr-CA', { maximumFractionDigits: 2 });
   const blocLu = tq === 'confirmer' && valLue != null ? `<div style="margin-top:12px;padding:10px 12px;background:var(--fond);border-radius:6px;font-size:14px">Claude a lu : <strong>${fmt(valLue)} ${escH(ty.u)}</strong>${lu?.l?.[0]?.ref_plan ? ` · ${escH(lu.l[0].ref_plan)}` : ''}${lu?.l?.[0]?.note ? `<div style="font-size:12px;color:var(--texte-2);margin-top:2px">${escH(lu.l[0].note)}</div>` : ''}</div>
       <div style="font-size:12px;color:var(--texte-2);margin-top:10px">Si c’est bon : « Confirmer ». Sinon, inscrivez la bonne valeur : elle remplace celle de Claude.</div>` : '';
-  const champ = ty.t === 'choix' ? `<div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:12px">${ty.c.map(c => `<button class="btn btn-outline" data-v="choix" data-r="${escH(c)}">${escH(c)}</button>`).join('')}</div>`
-    : ty.t === 'texte' ? `<textarea id="est-q-val" style="width:100%;min-height:70px;margin-top:12px;padding:8px;border:1px solid var(--bord);font-family:inherit"></textarea>`
-    : `${blocLu}<div style="display:flex;gap:8px;align-items:center;margin-top:12px"><input id="est-q-val" type="number" step="any" min="0" ${ty.t === 'corriger' ? 'placeholder="Corriger…"' : ''} style="width:180px;padding:10px;border:1px solid var(--bord);font-size:16px;text-align:right" autofocus>
-        <span style="color:var(--texte-2)">${escH(ty.u)}</span>${ty.t === 'montant' ? '<button class="btn btn-outline btn-sm" data-v="choix" data-r="Non">Non / aucun</button>' : ''}</div>`;
+  const etiqDeja = deja ? `<div style="font-size:12px;color:var(--success);margin-top:10px">✓ Déjà répondu : ${escH(q.statut === 'confirmée' ? 'confirmé' : q.statut === 'sans objet' ? 'ne s’applique pas' : String(q.reponse ?? ''))} — « Suivante » pour garder, ou changez la réponse.</div>` : '';
+  const champ = ty.t === 'choix' ? `<div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:12px">${ty.c.map(c => `<button class="btn ${deja && q.reponse === c ? 'btn-dark' : 'btn-outline'}" data-v="choix" data-r="${escH(c)}">${escH(c)}</button>`).join('')}</div>${etiqDeja}`
+    : ty.t === 'texte' ? `<textarea id="est-q-val" style="width:100%;min-height:70px;margin-top:12px;padding:8px;border:1px solid var(--bord);font-family:inherit">${escH(repDeja)}</textarea>${etiqDeja}`
+    : `${blocLu}<div style="display:flex;gap:8px;align-items:center;margin-top:12px"><input id="est-q-val" type="number" step="any" min="0" value="${escH(repDeja)}" ${ty.t === 'corriger' ? 'placeholder="Corriger…"' : ''} style="width:180px;padding:10px;border:1px solid var(--bord);font-size:16px;text-align:right" autofocus>
+        <span style="color:var(--texte-2)">${escH(ty.u)}</span>${ty.t === 'montant' ? '<button class="btn btn-outline btn-sm" data-v="choix" data-r="Non">Non / aucun</button>' : ''}</div>${etiqDeja}`;
   const o = document.createElement('div');
   o.id = 'est-dialogue'; o.className = 'modal-overlay open';
-  o.innerHTML = `<div class="modal" style="width:min(640px,94vw);max-width:none">
+  o.innerHTML = `<style>
+    #est-dialogue .modal-footer{display:flex;gap:8px;align-items:center;justify-content:flex-end;flex-wrap:wrap}
+    #est-dialogue .modal-footer .btn{white-space:nowrap;padding:9px 14px;font-size:11px;letter-spacing:1px}
+    #est-dialogue .est-lien{background:none;border:0;color:var(--texte-2);cursor:pointer;font-size:12px;letter-spacing:.5px;padding:6px 0;margin-right:auto;white-space:nowrap}
+    #est-dialogue .est-lien:hover{color:var(--charcoal)}
+  </style><div class="modal" style="width:min(720px,94vw);max-width:none">
     <div class="modal-header"><div><div style="font-size:11px;letter-spacing:1.5px;text-transform:uppercase;color:var(--texte-2)">Question ${estQi + 1} / ${estQListe.length} · ${escH(nomSec)}${pc ? ' · ' + escH(pc) : ''}</div>
       <h3 style="margin-top:4px">${escH(q.question)}</h3></div><button class="modal-close" data-v="fermer">×</button></div>
     <div class="modal-body">
@@ -6618,7 +6790,7 @@ async function estQuestionSuivante() {
       ${champ}
       <div style="height:4px;background:var(--fond);border-radius:4px;margin-top:20px"><div style="height:4px;width:${Math.round(estQi / estQListe.length * 100)}%;background:var(--caramel);border-radius:4px"></div></div>
     </div>
-    <div class="modal-footer">${estQi > 0 ? '<button class="btn btn-outline" data-v="prec" style="margin-right:auto">← Précédente</button>' : ''}<button class="btn btn-outline" data-v="sans">Ne s’applique pas</button><button class="btn btn-outline" data-v="passer">Passer</button>
+    <div class="modal-footer">${estQi > 0 ? '<button class="est-lien" data-v="prec">← Précédente</button>' : '<span style="margin-right:auto"></span>'}<button class="btn btn-outline" data-v="sans">Ne s’applique pas</button>${deja ? '<button class="btn btn-outline" data-v="passer">Suivante →</button>' : '<button class="btn btn-outline" data-v="passer">Passer</button>'}
       ${ty.t === 'corriger' && valLue != null ? '<button class="btn btn-outline" data-v="confirmer">✓ Confirmer</button>' : ''}
       ${ty.t === 'choix' ? '' : `<button class="btn btn-dark" data-v="ok">${ty.t === 'corriger' ? 'Corriger et suivante' : 'Enregistrer et suivante'}</button>`}</div></div>`;
   o.addEventListener('click', async ev => {
@@ -6626,7 +6798,8 @@ async function estQuestionSuivante() {
     const v = b.dataset.v;
     if (v === 'fermer') { o.remove(); estAfficher(estOnglet); return; }
     if (v === 'passer') { estQi++; estQuestionSuivante(); return; }
-    if (v === 'prec') { estQi--; await estAnnulerReponse(estQListe[estQi]); estQuestionSuivante(); return; }
+    if (v === 'prec') { estQi--; estQuestionSuivante(); return; }
+    if (deja) await estAnnulerReponse(q);   // nouvelle réponse : on défait d'abord l'ancienne
     if (v === 'sans') { await estRepondre(q, null, 'sans objet', ty); estQi++; estQuestionSuivante(); return; }
     if (v === 'confirmer') { await estRepondre(q, String(valLue), 'confirmée', ty); estQi++; estQuestionSuivante(); return; }
     const val = v === 'choix' ? b.dataset.r : document.getElementById('est-q-val')?.value;
@@ -6654,10 +6827,13 @@ async function estAnnulerReponse(q) {
     }
   }
   await db.from('estimation_questions').update({ statut: 'à répondre', reponse: null, repondu_par: null, repondu_le: null }).eq('id', q.id);
+  q.statut = 'à répondre'; q.reponse = null;
 }
 async function estRepondre(q, val, statut, ty) {
   const { data: { user } } = await db.auth.getUser();
   await db.from('estimation_questions').update({ reponse: val, statut, repondu_par: user?.email || null, repondu_le: new Date().toISOString() }).eq('id', q.id);
+  q.statut = statut; q.reponse = val;
+  if (ty?.ouinon && !['UN', 'LS'].includes(String(ty.u || '').toUpperCase())) return;   // Oui / Non sur une surface : gardé en note
   // Sans objet sur une valeur lue par Claude : la quantité lue est retirée.
   const viderPlan = async () => { let d = db.from('estimation_quantites').delete().eq('estimation_id', estCourante.id).eq('cle', q.cle).eq('source', 'plan'); if (q.piece_id) d = d.eq('piece_id', q.piece_id); await d; };
   if (statut === 'sans objet' && ty?.t === 'corriger' && q.cle) { await viderPlan(); return; }

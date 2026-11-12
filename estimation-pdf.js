@@ -15,26 +15,27 @@
   const paras = t => esc(t || '').split(/\n+/).filter(Boolean).map(p => `<p>${p}</p>`).join('');
 
   const CSS = `
-@page { size: 11in 8.5in; margin: .42in .5in .55in;
+@page { size: letter landscape; margin: .42in .5in .55in;
   @bottom-left { content: var(--pied); font: 500 6.5pt Roboto, sans-serif; letter-spacing: 1.5px; text-transform: uppercase; color: #ACA298; }
   @bottom-right { content: counter(page) " / " counter(pages); font: 500 6.5pt Roboto, sans-serif; letter-spacing: 1.5px; color: #ACA298; } }
-@page couverture { margin: 0; @bottom-left { content: none } @bottom-right { content: none } }
+@page couverture { size: letter landscape; margin: 0; @bottom-left { content: none } @bottom-right { content: none } }
 * { box-sizing: border-box; margin: 0; padding: 0; }
 html { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
 body { font-family: Roboto, sans-serif; color: #3A3B3A; font-variant-numeric: lining-nums; background: #fff; }
 .serif { font-family: 'Playfair Display', serif; font-weight: 400; }
-.couverture { page: couverture; width: 11in; height: 8.5in; display: grid; grid-template-columns: 4.6in 1fr; break-after: page; }
+.couverture { page: couverture; width: 11in; height: 8.48in; overflow: hidden; display: grid; grid-template-columns: 4.6in 1fr; break-after: page; }
 .cov-g { background: #3A3B3A; color: #fff; padding: .75in .6in; display: flex; flex-direction: column; justify-content: space-between; }
 .cov-g img { width: 2.3in; }
 .lbl { font-size: 7.5pt; letter-spacing: 3px; text-transform: uppercase; color: #ACA298; white-space: nowrap; }
 .cov-g h1 { font-size: 30pt; line-height: 1.12; margin: 10px 0 18px; }
 .rule { height: 1px; background: rgba(255,255,255,.35); margin: 0 -.6in 22px 0; }
-.cov-g dl { display: grid; grid-template-columns: 1.15in 1fr; row-gap: 7px; font-size: 9pt; font-weight: 300; }
-.cov-g dt { color: #ACA298; text-transform: uppercase; letter-spacing: 1.5px; font-size: 7pt; padding-top: 2px; font-weight: 500; }
+.cov-g dl { display: grid; grid-template-columns: 1.6in 1fr; row-gap: 8px; font-size: 9pt; font-weight: 300; align-items: baseline; }
+.cov-g dd { font-weight: 300; color: rgba(255,255,255,.88); }
+.cov-g dt { color: #ACA298; text-transform: uppercase; letter-spacing: 1.5px; font-size: 7pt; font-weight: 500; white-space: nowrap; }
 .cov-d { background: #F1EEE8; padding: .75in .75in .6in; display: flex; flex-direction: column; }
 .cov-d h2 { font-size: 30pt; margin-bottom: .22in; }
-.som div { display: flex; justify-content: space-between; align-items: baseline; border-bottom: 1px solid #3A3B3A; padding: 7px 0; font-size: 8.2pt; letter-spacing: 1.6px; text-transform: uppercase; font-weight: 700; }
-.som span:last-child { font-weight: 400; letter-spacing: .5px; text-transform: none; font-size: 9pt; }
+.som { display: grid; grid-template-columns: 1fr 1fr; grid-auto-flow: column; column-gap: .25in; }
+.som div { border-bottom: 1px solid #3A3B3A; height: 22px; line-height: 21px; font-size: 6.6pt; letter-spacing: .8px; text-transform: uppercase; font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .cov-d .tot { margin-top: auto; display: flex; gap: .5in; padding-top: .25in; }
 .kpi b { display: block; font-family: 'Playfair Display', serif; font-weight: 400; font-size: 22pt; }
 .kpi span { font-size: 7pt; letter-spacing: 2px; text-transform: uppercase; color: #6F6863; }
@@ -52,8 +53,13 @@ th.r, td.r { text-align: right; white-space: nowrap; }
 td { padding: 8px 6px; border-bottom: 1px solid #EEEDEE; vertical-align: top; }
 .sec { font-family: 'Playfair Display', serif; font-size: 10.5pt; }
 .code { font-size: 6.5pt; letter-spacing: 1px; color: #ACA298; margin-top: 2px; }
-.inc { color: #6F6863; font-size: 7.2pt; line-height: 1.55; }
-.pcs { color: #523525; font-size: 7pt; margin-top: 3px; }
+.inc { color: #6F6863; font-size: 7.4pt; line-height: 1.5; }
+ul.puces { list-style: none; margin: 0; padding: 0; }
+ul.puces li { padding-left: 10px; text-indent: -10px; break-inside: avoid; }
+ul.puces li::before { content: '–'; display: inline-block; width: 10px; text-indent: 0; }
+.pcs > div { margin-top: 7px; break-inside: avoid; }
+.pc-nom { font-size: 6.4pt; letter-spacing: 1.4px; text-transform: uppercase; color: #3A3B3A; font-weight: 500; margin-bottom: 1px; }
+thead tr.entete td { padding: 0; border-bottom: none; }
 .com { margin-top: 5px; padding: 6px 8px; background: #F1EEE8; border-left: 2px solid #ACA298; font-size: 7.4pt; line-height: 1.5; }
 .com p + p { margin-top: 4px; }
 .tots td { border-bottom: 1px solid #EEEDEE; font-size: 8.5pt; padding: 7px 6px; }
@@ -74,7 +80,11 @@ td { padding: 8px 6px; border-bottom: 1px solid #EEEDEE; vertical-align: top; }
     const meta = `${esc(doc)}<br>${esc(projet.nom || '')} · ${esc(aujourdhui)}`;
     const T = totaux || {};
     const statut = estimation.statut === 'figée' ? 'Version finale' : 'Version de travail';
-    const som = sections.map(s => `<div><span>${esc(s.nom)}</span><span>${argent(s.total)}</span></div>`).join('');
+    const lignesSom = Math.ceil(sections.length / 2);
+    const som = sections.map(s => `<div>${esc(s.nom)}</div>`).join('');
+    const ul = arr => (arr || []).length ? `<ul class="puces">${arr.map(t => `<li>${esc(t)}</li>`).join('')}</ul>` : '';
+    const contenu = s => s.pieces ? `<div class="inc">${ul(s.general)}${s.pieces.length ? `<div class="pcs">${s.pieces.map(p => `<div><div class="pc-nom">${esc(p.piece)}</div>${ul(p.items)}${ul(p.selections)}</div>`).join('')}</div>` : ''}</div>`
+      : `<div class="inc">${ul(s.inclusions)}</div>`;
     const couverture = `<div class="couverture"><div class="cov-g"><img src="${LOGO_BLANC}" alt="CMPG"><div>
       <div class="lbl">${projet.numero ? 'Projet ' + esc(projet.numero) : 'Projet'}</div>
       <h1 class="serif">Estimation<br>budgétaire</h1><div class="rule"></div>
@@ -82,17 +92,18 @@ td { padding: 8px 6px; border-bottom: 1px solid #EEEDEE; vertical-align: top; }
       <dt>Estimation</dt><dd>${esc(estimation.nom || '')} · ${esc(statut)}</dd>${estimation.type_projet ? `<dt>Type</dt><dd>${esc(estimation.type_projet)}</dd>` : ''}
       ${projet.responsable ? `<dt>Chargé(e) de projet</dt><dd>${esc(projet.responsable)}</dd>` : ''}<dt>Date</dt><dd>${esc(aujourdhui)}</dd></dl></div>
       <div class="lbl">CMPG Design Construction · 450 455-6006</div></div>
-      <div class="cov-d"><h2 class="serif">Sommaire</h2><div class="som">${som}</div>
+      <div class="cov-d"><h2 class="serif">Sommaire</h2><div class="som" style="grid-template-rows: repeat(${lignesSom}, auto)">${som}</div>
       <div class="tot"><div class="kpi"><b>${argent(T.total_ht)}</b><span>Total avant taxes</span></div><div class="kpi"><b>${argent(T.ttc)}</b><span>Total taxes incluses</span></div></div></div></div>`;
     const rangees = sections.map(s => `<tr><td style="width:2.1in"><div class="sec">${esc(s.nom)}</div><div class="code">${esc(s.ddn)}</div></td>
-      <td><div class="inc">${s.inclusions.map(esc).join(' · ')}</div>
-        ${s.par_piece?.length > 1 ? `<div class="pcs">Par pièce : ${s.par_piece.map(p => `${esc(p.piece)} ${argent(p.total)}`).join(' · ')}</div>` : ''}
-        ${s.commentaire ? `<div class="com">${paras(s.commentaire)}</div>` : ''}</td>
+      <td>${contenu(s)}
+        ${s.commentaire ? `<div class="inc pcs"><div><div class="pc-nom">Précisions</div>${ul(String(s.commentaire).split(/\n+/).map(x => x.trim().replace(/^[-–•]\s*/, '')).filter(Boolean))}</div></div>` : ''}</td>
       <td class="r" style="width:.95in">${s.base ? argent(s.base) : '—'}</td><td class="r" style="width:.95in">${s.choix ? argent(s.choix) : '—'}</td>
       <td class="r" style="width:1in"><b>${argent(s.total)}</b></td></tr>`).join('');
-    const detail = `<section class="pg"><div class="hd"><img src="${LOGO_FONCE}" alt="CMPG"><div class="meta">${meta}</div></div>
-      <div class="ttl"><h2 class="serif">Détail par section</h2></div>
-      <table><thead><tr><th>Section</th><th>Ce qui est inclus</th><th class="r">Coûts de base</th><th class="r">Choix client</th><th class="r">Total</th></tr></thead><tbody>${rangees}</tbody></table></section>`;
+    // L'entête (logo + projet) et les titres de colonnes se répètent sur chaque page.
+    const detail = `<section class="pg"><table><thead>
+      <tr class="entete"><td colspan="5"><div class="hd"><img src="${LOGO_FONCE}" alt="CMPG"><div class="meta">${meta}</div></div><div class="ttl"><h2 class="serif">Détail par section</h2></div></td></tr>
+      <tr><th>Section</th><th>Ce qui est inclus</th><th class="r">Coûts de base</th><th class="r">Choix client</th><th class="r">Total</th></tr></thead>
+      <tbody>${rangees}</tbody></table></section>`;
     const L = (lib, v, cls) => `<tr class="${cls || ''}"><td>${lib}</td><td class="r">${argent(v)}</td></tr>`;
     const recap = `<section class="pg"><div class="hd"><img src="${LOGO_FONCE}" alt="CMPG"><div class="meta">${meta}</div></div>
       <div class="ttl"><h2 class="serif">Récapitulatif</h2></div>
@@ -118,7 +129,12 @@ td { padding: 8px 6px; border-bottom: 1px solid #EEEDEE; vertical-align: top; }
     f.style.cssText = 'position:fixed;right:0;bottom:0;width:0;height:0;border:0;visibility:hidden';
     document.body.appendChild(f);
     const d = f.contentDocument; d.open(); d.write(html); d.close();
-    try { await d.fonts.ready; } catch (e) {}
+    // Attendre que Roboto et Playfair soient chargées (sinon le navigateur imprime une police de remplacement, plus grasse).
+    try {
+      await new Promise(r => { const l = d.querySelector('link[rel=stylesheet]'); if (!l || l.sheet) return r(); l.onload = r; l.onerror = r; setTimeout(r, 4000); });
+      await Promise.race([Promise.all(['300 9pt Roboto', '400 9pt Roboto', '500 9pt Roboto', '700 9pt Roboto', '400 22pt "Playfair Display"'].map(f => d.fonts.load(f))), new Promise(r => setTimeout(r, 4000))]);
+      await d.fonts.ready;
+    } catch (e) {}
     const ancien = document.title; document.title = titre;
     f.contentWindow.focus(); f.contentWindow.print();
     setTimeout(() => { document.title = ancien; }, 1500);

@@ -1785,6 +1785,7 @@ body * { font-variant-numeric: lining-nums; }
 <script src="selection-pdf.js"></script>
 <script src="selection-pdf-direct.js"></script>
 <script src="estimation-pdf.js"></script>
+<script src="estimation-pdf-direct.js"></script>
 <script>
 // ============================================================
 // CONFIG — à modifier avec vos clés Supabase
@@ -6508,12 +6509,18 @@ async function estPDFResume() {
   }
   if (!window.CMPGEstimation) { toast('Module PDF absent : téléversez estimation-pdf.js avec admin.html.', 'error'); return; }
   const { data: p } = await db.from('projets').select('nom, numero_projet, adresse, responsable_nom, clients(nom)').eq('id', currentProjetId).single();
-  toast('Dans la fenêtre d’impression, choisissez « Enregistrer au format PDF ».', 'info');
-  await CMPGEstimation.imprimer({
+  const params = {
     projet: { nom: p?.nom, numero: p?.numero_projet, adresse: p?.adresse, responsable: p?.responsable_nom, client: p?.clients?.nom },
     estimation: { nom: estNom(e), statut: e.statut, type_projet: e.type_projet },
     sections: estResumeSections(estPjLignes, estPjPieces, e.commentaires_sections), totaux: e.totaux, commentaire: e.commentaire_client,
-  });
+  };
+  // PDF téléchargé directement (estimation-pdf-direct.js) ; en cas d'échec, fenêtre d'impression comme avant.
+  if (window.CMPGEstimationPDF && window.CMPGSelectionPDF) {
+    try { toast('Préparation du PDF…', 'info'); await CMPGEstimationPDF.telecharger(params); toast('PDF téléchargé.', 'success'); return; }
+    catch (err) { console.error('PDF direct', err); }
+  }
+  toast('Dans la fenêtre d’impression, choisissez « Enregistrer au format PDF ».', 'info');
+  await CMPGEstimation.imprimer(params);
 }
 let estAOuvrir = null;
 function estOuvrirDepuisProjet(id) {

@@ -253,6 +253,16 @@
     };
   }
 
+  // Génère le PDF et le télécharge sous le nom donné (partagé avec estimation-pdf-direct.js).
+  async function telechargerDoc(dd, nom) {
+    await chargerScript(PDFMAKE);
+    pdfMake.setFonts(FONTS);
+    const bl = await pdfMake.createPdf(dd).getBlob();
+    const url = URL.createObjectURL(bl), a = document.createElement('a');
+    a.href = url; a.download = nom.replace(/[\\/:*?"<>|]/g, '-'); document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 10000);
+  }
+
   // Télécharge le PDF. Retourne { vide } comme CMPGSelection.imprimer.
   async function telecharger(params) {
     const { cats, historique } = CMPGSelection.preparer(params.postes, params.mode);
@@ -262,10 +272,7 @@
     const dd = construireDoc(params, photos);
     pdfMake.setFonts(FONTS);
     const nom = `${params.projet.nom || 'Projet'} — ${params.mode === 'client' ? 'Sélection client' : 'Document de chantier'}.pdf`.replace(/[\\/:*?"<>|]/g, '-');
-    const bl = await pdfMake.createPdf(dd).getBlob();
-    const url = URL.createObjectURL(bl), a = document.createElement('a');
-    a.href = url; a.download = nom; document.body.appendChild(a); a.click(); a.remove();
-    setTimeout(() => URL.revokeObjectURL(url), 10000);
+    await telechargerDoc(dd, nom);
     return { vide: false };
   }
 
@@ -278,5 +285,7 @@
     return pdfMake.createPdf(construireDoc(params, photos)).getBlob();
   }
 
-  window.CMPGSelectionPDF = { telecharger, blob };
+  // Outils réutilisés par le résumé client de l'estimation (estimation-pdf-direct.js)
+  const outils = { FONTS, PDFMAKE, chargerScript, telechargerDoc, logo, entete, lbl, MAJ, C, IN, W, H, M, LARGEUR };
+  window.CMPGSelectionPDF = { telecharger, blob, outils };
 })();

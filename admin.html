@@ -6645,6 +6645,8 @@ function estDepartResume(d) {
     d.catalogue ? `${Object.values(d.catalogue).filter(x => x.v && !/^non$/i.test(x.v)).length} autre(s) élément(s) inclus` : ''].filter(Boolean).map(escH).join(' · ') || '<span style="color:var(--texte-2)">Rempli.</span>')
     + (d.catalogue ? '' : '<div style="color:var(--caramel);margin-top:4px">Nouvelle section « Autres éléments du projet » à remplir (cliquez sur Modifier).</div>');
 }
+// « Inclus — montant à venir » : prix du marché mis par défaut (à remplacer par la soumission). Sans défaut : la ligne sort « sans prix » à compléter.
+const EST_DEP_DEFAUTS = { '26 05 00-12': { prix: 4500, src: 'Prix du marché par défaut (panneau 200 A, remplacement complet — Soumission Rénovation 2026) — à confirmer' } };
 // Questions du catalogue déjà couvertes par les champs fixes du formulaire de départ (voir estDepartAppliquer)
 const EST_DEP_COUVERTES = ['00 00 00-10', '01 11 00-04', '31 21 13-01', 'PORTEE-04', '02 82 00-01', '01 56 00-01', 'PORTEE-03', 'PORTEE-01', '03 10 00-10'];
 // Autres questions du catalogue (pop-ups) qui s'appliquent au type de projet : posées une seule fois, ici, avant la lecture.
@@ -6663,7 +6665,7 @@ async function estDepartCatalogue() {
     const ty = /montant/.test(r) ? { t: 'montant', u: '$' } : /^oui\s*\/\s*non/.test(r) ? { t: 'choix', c: ['Oui', 'Non'] }
       : r.includes('/') && !/\d/.test(r) ? { t: 'choix', c: p.reponses.split('/').map(x => x.trim()), texte: true }
       : /^PORTEE-/.test(cle) ? { t: 'texte' } : { t: 'nombre', u: p.unite || '' };
-    res.push({ cle, pid: p.id, q: p.question || p.parametre, ty });
+    res.push({ cle, pid: p.id, q: p.question || p.parametre, ty, duree: /^=\s*durée/i.test(p.defaut || '') });
   }
   return res;
 }
@@ -6713,11 +6715,12 @@ async function estDepartFormulaire() {
       <div class="dep-l"><div class="dep-q">Accès au terrain pour la machinerie</div>${radio('acces', ['Facile', 'Difficile'], d.acces)}</div>
       ${nb('assurance', 'Assurance chantier (montant)', d.assurance, '$')}
       ${cat.length ? `<div class="dep-sec">Autres éléments du projet</div>
-      <div style="font-size:12px;color:var(--texte-2);margin-bottom:4px">Laissez vide ce qui ne s’applique pas : rien ne sera compté.</div>
+      <div style="font-size:12px;color:var(--texte-2);margin-bottom:4px">Laissez vide ce qui ne s’applique pas : rien ne sera compté (sauf les durées marquées « = durée », qui prennent la durée du chantier). Si c’est inclus mais que vous n’avez pas encore le montant, cochez « montant à venir ».</div>
       ${cat.map((c, i) => { const v = dc[c.cle]?.v ?? '';
         const champ = c.ty.t === 'choix' ? radio('cat_' + i, c.ty.c, v || null)
           : c.ty.t === 'texte' ? `<input type="text" name="cat_${i}" value="${escH(v)}" ${fz ? 'disabled' : ''} style="width:260px;padding:6px 8px;border:1px solid var(--bord)">`
-          : `<div><input type="number" min="0" step="any" name="cat_${i}" value="${escH(v)}" ${fz ? 'disabled' : ''} style="width:120px"> ${escH(c.ty.u || '')}</div>`;
+          : `<div style="display:flex;gap:12px;align-items:center;flex-wrap:wrap">${c.ty.t === 'montant' ? `<label style="font-size:13px;display:flex;gap:5px;align-items:center;cursor:pointer;white-space:nowrap"><input type="checkbox" name="cat_${i}_av" ${v === 'à venir' ? 'checked' : ''} ${fz ? 'disabled' : ''}> Inclus — montant à venir${EST_DEP_DEFAUTS[c.cle] ? ` (${EST_DEP_DEFAUTS[c.cle].prix.toLocaleString('fr-CA')} $ par défaut)` : ''}</label>` : ''}
+              <span><input type="number" min="0" step="any" name="cat_${i}" value="${v === 'à venir' ? '' : escH(v)}" ${c.duree ? 'placeholder="= durée"' : ''} ${fz ? 'disabled' : ''} style="width:120px"> ${escH(c.ty.u || '')}</span></div>`;
         return `<div class="dep-l"><div class="dep-q">${escH(c.q)}</div>${champ}</div>`; }).join('')}` : ''}
       <div class="dep-sec">Notes pour Claude (facultatif)</div>
       <textarea name="notes" ${fz ? 'disabled' : ''} style="width:100%;min-height:60px;padding:8px;border:1px solid var(--bord);font-family:inherit;font-size:13px" placeholder="Ex. : la salle de bain du RDC n’est pas touchée.">${escH(d.notes || '')}</textarea>
@@ -6738,7 +6741,8 @@ async function estDepartFormulaire() {
       habitee: bo(val('habitee')), duree: num('duree'), transports: num('transports'), radon: bo(val('radon')), amiante: val('amiante'),
       acces: val('acces'), assurance: num('assurance'), notes: o.querySelector('[name="notes"]').value.trim() || null, rempli_le: new Date().toISOString(),
       catalogue: Object.fromEntries(cat.map((c, i) => { const el = o.querySelector(`[name="cat_${i}"]:checked`) || o.querySelector(`[name="cat_${i}"]:not([type=radio])`);
-        return [c.cle, { v: (el?.value ?? '').trim() || null, pid: c.pid, q: c.q, ty: c.ty }]; })) };
+        const av = o.querySelector(`[name="cat_${i}_av"]`)?.checked;
+        return [c.cle, { v: (el?.value ?? '').trim() || (av ? 'à venir' : null), pid: c.pid, q: c.q, ty: c.ty, duree: c.duree }]; })) };
     b.disabled = true;
     const { error } = await db.from('estimations').update({ questions_depart: d2 }).eq('id', estCourante.id);
     if (error) { b.disabled = false; toast('Erreur : ' + error.message, 'error'); return; }
@@ -6774,12 +6778,23 @@ async function estDepartAppliquer(d) {
     if (q) await estRepondre(q, String(v), 'répondue', ty);
   }
   // « Autres éléments du projet » : chaque réponse est inscrite comme une question répondue (vide = rien de compté).
-  for (const [cle, x] of Object.entries(d.catalogue || {})) {
+  for (const [cle, x0] of Object.entries(d.catalogue || {})) {
+    // Durées (gérant, toilette, chargée de projet…) laissées vides = durée des travaux.
+    const x = !x0.v && x0.duree && d.duree ? { ...x0, v: String(d.duree) } : x0;
     await db.from('estimation_questions').delete().eq('estimation_id', estCourante.id).eq('cle', cle).neq('source', 'plan');
     await db.from('estimation_quantites').delete().eq('estimation_id', estCourante.id).eq('cle', cle).eq('source', 'pop-up');
     const { data: q } = await db.from('estimation_questions').insert({ estimation_id: estCourante.id, parametre_id: x.pid, cle, question: x.q,
       section: /^\d\d \d\d \d\d/.test(cle) ? cle.slice(0, 8) : null, lot: 'départ', source: 'catalogue', statut: x.v ? 'à répondre' : 'sans objet' }).select('*').single();
-    if (q && x.v) await estRepondre(q, String(x.v), 'répondue', x.ty);
+    if (q && x.v === 'à venir') {   // inclus, montant à venir : ligne comptée, prix par défaut ou « sans prix » à compléter
+      const { data: { user } } = await db.auth.getUser();
+      await db.from('estimation_questions').update({ reponse: 'Montant à venir', statut: 'répondue', repondu_par: user?.email || null, repondu_le: new Date().toISOString() }).eq('id', q.id);
+      await db.from('estimation_quantites').insert({ estimation_id: estCourante.id, cle, quantite: 1, source: 'pop-up', fiabilite: 'Hypothèse', note: 'Inclus — montant à venir' });
+      const { data: t } = await db.from('catalogue_taches').select('cle_gabarit').eq('actif', true).or(`cle_pq.eq."${cle}",cle_gabarit.eq."${cle}"`).limit(1);
+      if (t?.[0]) {
+        if (EST_DEP_DEFAUTS[cle]) await db.from('estimation_prix_manuels').upsert({ estimation_id: estCourante.id, cle_gabarit: t[0].cle_gabarit, prix: EST_DEP_DEFAUTS[cle].prix, note: EST_DEP_DEFAUTS[cle].src }, { onConflict: 'estimation_id,cle_gabarit' });
+        else await db.from('estimation_prix_manuels').delete().eq('estimation_id', estCourante.id).eq('cle_gabarit', t[0].cle_gabarit);
+      }
+    } else if (q && x.v) await estRepondre(q, String(x.v), 'répondue', x.ty);
   }
 }
 
@@ -6962,7 +6977,8 @@ async function estQuestionSuivante() {
   const pc = estPieces.find(x => x.id === q.piece_id)?.nom;
   const fmt = n => Number(n).toLocaleString('fr-CA', { maximumFractionDigits: 2 });
   const blocLu = tq === 'confirmer' && valLue != null ? `<div style="margin-top:12px;padding:10px 12px;background:var(--fond);border-radius:6px;font-size:14px">Claude a lu : <strong>${fmt(valLue)} ${escH(ty.u)}</strong>${lu?.l?.[0]?.ref_plan ? ` · ${escH(lu.l[0].ref_plan)}` : ''}${lu?.l?.[0]?.note ? `<div style="font-size:12px;color:var(--texte-2);margin-top:2px">${escH(lu.l[0].note)}</div>` : ''}</div>
-      <div style="font-size:12px;color:var(--texte-2);margin-top:10px">Si c’est bon : « Confirmer ». Sinon, inscrivez la bonne valeur : elle remplace celle de Claude.</div>` : '';
+      <div style="font-size:13px;margin-top:10px;line-height:1.6"><strong>Confirmer</strong> = garder ${fmt(valLue)} ${escH(ty.u)} sur la ligne « ${escH(p.parametre || estLibelleCle(q.cle || '')?.parametre || q.cle)}${pc ? ' — ' + escH(pc) : ''} ».<br>
+        <strong>Corriger</strong> = inscrire la bonne quantité (elle remplace celle de Claude) · <strong>Ne s’applique pas</strong> = retirer cette ligne.</div>` : '';
   const etiqDeja = deja ? `<div style="font-size:12px;color:var(--success);margin-top:10px">✓ Déjà répondu : ${escH(q.statut === 'confirmée' ? 'confirmé' : q.statut === 'sans objet' ? 'ne s’applique pas' : String(q.reponse ?? ''))} — « Suivante » pour garder, ou changez la réponse.</div>` : '';
   const champ = ty.t === 'choix' ? `<div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:12px">${ty.c.map(c => `<button class="btn ${deja && q.reponse === c ? 'btn-dark' : 'btn-outline'}" data-v="choix" data-r="${escH(c)}">${escH(c)}</button>`).join('')}</div>${etiqDeja}`
     : ty.t === 'texte' ? `<textarea id="est-q-val" style="width:100%;min-height:70px;margin-top:12px;padding:8px;border:1px solid var(--bord);font-family:inherit">${escH(repDeja)}</textarea>${etiqDeja}`

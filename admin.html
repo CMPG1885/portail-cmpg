@@ -5596,7 +5596,7 @@ function estRenderEntete() {
   const e = estCourante, fz = estFigee(), dis = fz ? 'disabled' : '';
   const p = estProjets.find(x => x.id === e.projet_id);
   const T = e.totaux, nq = new Set(estQtes.map(q => q.cle)).size;
-  const sansPrix = estLignes.filter(l => l.source_prix && !['catalogue', 'sélection', 'manuel', 'choix client'].includes(l.source_prix) && !estInclus.set.has(l.cle)).length;
+  const sansPrix = estLignes.filter(l => l.source_prix && !['catalogue', 'sélection', 'manuel', 'choix client', 'fourni par le client'].includes(l.source_prix) && !estInclus.set.has(l.cle)).length;
   const nSel = estLignes.filter(l => l.source_prix === 'sélection').length;
   const chiffre = (lib, val, sous) => `<div style="padding:10px 16px;background:var(--fond);border-radius:10px;min-width:130px">
       <div style="font-size:10px;letter-spacing:1.2px;text-transform:uppercase;color:var(--texte-2)">${lib}</div>
@@ -5910,10 +5910,11 @@ function estRenderResultat() {
   const nomDdn = d => estPostes.find(p => p.code === d)?.nom || '';
   const INCLUS = l => estInclus.set.has(l.cle) && ['à inscrire', 'forfait à inscrire'].includes(l.source_prix);
   const ATTENTE = l => l.source_prix === 'choix client';   // choix du client sans sélection approuvée ni prix de gamme
-  const SANS = l => l.source_prix && !['catalogue', 'sélection', 'manuel', 'choix client'].includes(l.source_prix) && !INCLUS(l);
+  const SANS = l => l.source_prix && !['catalogue', 'sélection', 'manuel', 'choix client', 'fourni par le client'].includes(l.source_prix) && !INCLUS(l);
   const bandeauFige = fz ? `<div class="card" style="margin-bottom:14px;border-left:3px solid var(--success);font-size:13px">🔒 <strong>Cette estimation est figée</strong> : rien ne peut être modifié. Cliquez sur « Défiger » en haut pour la modifier, puis « Calculer ».</div>` : '';
   const etiquette = l => l.source_prix === 'sélection' ? '<span style="color:var(--success);font-size:11px"> · sélection approuvée</span>'
     : l.source_prix === 'manuel' ? '<span style="color:var(--caramel);font-size:11px"> · prix manuel</span>'
+    : l.source_prix === 'fourni par le client' ? '<span style="color:var(--texte-2);font-size:11px"> · fourni par le client</span>'
     : INCLUS(l) ? '<span style="color:var(--texte-2);font-size:11px"> · incluse dans une ligne globale</span>'
     : ATTENTE(l) ? '<span style="color:var(--caramel);font-size:11px"> · en attente de sélection</span>'
     : SANS(l) ? `<span style="color:var(--danger);font-size:11px"> · ${escH(l.source_prix)}</span>` : '';

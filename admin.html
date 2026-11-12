@@ -6275,20 +6275,37 @@ const estLibClient = t => String(t || '')
   .replace(/\s*\((fourni-posé|fourniture[^)]*|matériaux[^)]*|installation[^)]*|pose incluse[^)]*|main-d'œuvre[^)]*|forfait à inscrire)\)/gi, '')
   .replace(/\s*—\s*reste au plan \(au prix de la gamme\)/i, '').replace(/\s+/g, ' ').trim();
 
+// Résumé client : par section, les inclusions générales, puis par pièce (sans montant) ;
+// une sélection approuvée s'affiche « Réf. — produit » sous sa pièce.
 function estResumeSections(lignes, pieces, commentaires) {
   const nom = d => estPostes.find(p => p.code === d)?.nom || d;
   const par = {};
   for (const l of lignes) {
     if (!Number(l.montant)) continue;
-    const s = par[l.ddn] = par[l.ddn] || { ddn: l.ddn, nom: nom(l.ddn), base: 0, choix: 0, total: 0, inc: new Set(), pcs: {} };
+    const s = par[l.ddn] = par[l.ddn] || { ddn: l.ddn, nom: nom(l.ddn), base: 0, choix: 0, total: 0, gen: new Set(), pcs: {}, tot: {} };
     const m = Number(l.montant);
     s.total += m; if (l.categorie === 'CHOIX CLIENT') s.choix += m; else s.base += m;
-    s.inc.add(estLibClient(l.description.split(' — ').filter(x => !pieces.some(p => p.nom === x)).join(' — ')));
-    const pc = pieces.find(p => p.id === l.piece_id)?.nom; if (pc) s.pcs[pc] = (s.pcs[pc] || 0) + m;
+    const segs = String(l.description || '').split(' — ').map(x => x.trim()).filter(Boolean);
+    let piece = pieces.find(p => p.id === l.piece_id)?.nom || null, texte, sel = false;
+    if (l.source_prix === 'sélection' || l.produit_id) {
+      sel = true; texte = segs.length >= 2 ? `${segs[0]} — ${segs[1]}` : segs[0];
+      if (!piece && segs.length >= 4) piece = segs[segs.length - 1];
+    } else texte = estLibClient(segs.filter(x => !pieces.some(p => p.nom === x)).join(' — '));
+    if (!texte) continue;
+    if (piece) { const P = s.pcs[piece] = s.pcs[piece] || { items: new Set(), selections: new Set() }; (sel ? P.selections : P.items).add(texte); s.tot[piece] = (s.tot[piece] || 0) + m; }
+    else s.gen.add(texte);
   }
-  return Object.values(par).sort((a, b) => a.ddn.localeCompare(b.ddn)).map(s => ({
-    ddn: s.ddn, nom: s.nom, base: s.base, choix: s.choix, total: s.total, inclusions: [...s.inc].filter(Boolean),
-    par_piece: Object.entries(s.pcs).map(([piece, total]) => ({ piece, total })), commentaire: (commentaires || {})[s.ddn] || '' }));
+  return Object.values(par).sort((a, b) => a.ddn.localeCompare(b.ddn)).map(s => {
+    const pcs = Object.entries(s.pcs).sort((a, b) => a[0].localeCompare(b[0], 'fr')).map(([piece, P]) => ({ piece, items: [...P.items], selections: [...P.selections] }));
+    return { ddn: s.ddn, nom: s.nom, base: s.base, choix: s.choix, total: s.total, general: [...s.gen], pieces: pcs,
+      inclusions: [...s.gen, ...pcs.flatMap(p => [...p.items, ...p.selections])], par_piece: Object.entries(s.tot).map(([piece, total]) => ({ piece, total })),
+      commentaire: (commentaires || {})[s.ddn] || '' };
+  });
+}
+// Même présentation que le PDF : puces « – », regroupées par pièce.
+function estListeInclusions(sc) {
+  const ul = arr => arr.length ? `<ul class="est-puces">${arr.map(t => `<li>${escH(t)}</li>`).join('')}</ul>` : '';
+  return `${ul(sc.general)}${sc.pieces.length ? `<div class="est-pieces">${sc.pieces.map(p => `<div><div class="est-piece">${escH(p.piece)}</div>${ul(p.items)}${ul(p.selections)}</div>`).join('')}</div>` : ''}`;
 }
 
 async function estChargerOngletProjet(choix) {
@@ -6307,7 +6324,7 @@ async function estChargerOngletProjet(choix) {
   const ref = estPjEstimations.find(e => e.id === choix) || estPjEstimations.find(e => e.statut === 'figée') || estPjEstimations.find(e => e.calculee_le) || estPjEstimations[0];
   estPjChoisie = ref;
   const [{ data: ls }, { data: pcs }] = await Promise.all([
-    db.from('estimation_lignes').select('ddn, description, categorie, montant, piece_id').eq('estimation_id', ref.id),
+    db.from('estimation_lignes').select('ddn, description, categorie, montant, piece_id, source_prix, produit_id').eq('estimation_id', ref.id),
     db.from('estimation_pieces').select('id, nom').eq('estimation_id', ref.id),
   ]);
   estPjLignes = ls || []; estPjPieces = pcs || [];
@@ -6317,7 +6334,12 @@ async function estChargerOngletProjet(choix) {
   const aire = (ddn, val) => `<textarea ${dis} placeholder="Commentaire pour le client (facultatif)" onchange="estCommentaireSection('${ddn}',this.value)"
       style="width:100%;min-height:${val ? 52 : 30}px;margin-top:6px;padding:6px 8px;border:1px solid var(--bord);font-size:12px;font-family:inherit;resize:vertical">${escH(val || '')}</textarea>`;
   const L = (lib, v, fort) => `<tr${fort ? ' style="background:var(--fond)"' : ''}><td colspan="4" style="${fort ? 'font-weight:500' : ''}">${lib}</td><td style="text-align:right;${fort ? 'font-weight:500' : ''}">${estMoney(v)}</td></tr>`;
-  div.innerHTML = `
+  div.innerHTML = `<style>
+    .est-puces{list-style:none;margin:0;padding:0;font-size:12px;color:var(--texte-2);line-height:1.6}
+    .est-puces li{padding-left:12px;text-indent:-12px}.est-puces li::before{content:'–';display:inline-block;width:12px;text-indent:0}
+    .est-pieces>div{margin-top:8px}
+    .est-piece{font-size:10px;letter-spacing:1.2px;text-transform:uppercase;color:var(--charcoal);font-weight:500;margin-bottom:2px}
+  </style>
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;flex-wrap:wrap;gap:10px">
       <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
         <select onchange="estChargerOngletProjet(this.value)" style="padding:9px 12px;border:1px solid var(--bord);min-width:280px">
@@ -6343,8 +6365,7 @@ async function estChargerOngletProjet(choix) {
         <th style="text-align:right;width:110px">Coûts de base</th><th style="text-align:right;width:110px">Choix client</th><th style="text-align:right;width:120px">Total</th></tr></thead>
       <tbody>${secs.map(sc => `<tr style="vertical-align:top">
         <td><strong>${escH(sc.nom)}</strong><div style="font-size:11px;color:var(--texte-2);font-family:monospace">${sc.ddn}</div></td>
-        <td><div style="font-size:12px;color:var(--texte-2);line-height:1.6">${sc.inclusions.map(escH).join(' · ')}</div>
-          ${sc.par_piece.length > 1 ? `<div style="font-size:11px;color:var(--caramel);margin-top:3px">Par pièce : ${sc.par_piece.map(p => `${escH(p.piece)} ${estMoney(p.total)}`).join(' · ')}</div>` : ''}
+        <td>${estListeInclusions(sc)}
           ${fz && !sc.commentaire ? '' : aire(sc.ddn, sc.commentaire)}</td>
         <td style="text-align:right">${sc.base ? estMoney(sc.base) : '—'}</td><td style="text-align:right">${sc.choix ? estMoney(sc.choix) : '—'}</td>
         <td style="text-align:right"><strong>${estMoney(sc.total)}</strong></td></tr>`).join('')}

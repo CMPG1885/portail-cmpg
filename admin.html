@@ -6548,7 +6548,9 @@ async function estRenderPlan() {
   const c = document.getElementById('est-contenu'), e = estCourante, fz = estFigee();
   estPlanDoc = null;
   if (e.plan_document_id) { const { data } = await db.from('documents_projet').select('id, nom, taille_bytes, created_at, storage_path').eq('id', e.plan_document_id).single(); estPlanDoc = data; }
-  const { count: nq } = await db.from('estimation_questions').select('id', { count: 'exact', head: true }).eq('estimation_id', e.id).eq('statut', 'à répondre');
+  const { data: qAtt } = await db.from('estimation_questions').select('id, cle, piece_id, source, type_question, parametre_id').eq('estimation_id', e.id).eq('statut', 'à répondre').or('lot.is.null,lot.neq.catalogue');
+  const nq = (qAtt || []).length;
+  const parSec = EST_Q_SECTIONS.map(x => ({ ...x, n: (qAtt || []).filter(q => (q.source === 'plan' ? ({ confirmer: 0, ouinon: 2 }[q.type_question] ?? 1) : 1) === x.r).length })).filter(x => x.n);
   const L = e.lecture?.lots || {};
   const etat = k => L[k]?.batch_id && !L[k].le && !L[k].erreur ? `<span style="color:var(--caramel)">⏳ Claude lit le plan… (envoyé à ${new Date(L[k].lance_le).toLocaleTimeString('fr-CA', { hour: '2-digit', minute: '2-digit' })})</span>`
     : L[k]?.erreur ? `<span style="color:var(--danger)">⚠ ${escH(L[k].erreur)}</span>`
@@ -6590,7 +6592,8 @@ async function estRenderPlan() {
       <div style="display:flex;justify-content:space-between;align-items:center;gap:16px;flex-wrap:wrap">
         <div><div style="font-size:11px;letter-spacing:1.5px;text-transform:uppercase;color:var(--texte-2)">4 · Questions</div>
           <div style="font-size:14px;margin-top:4px">${nq ? `<strong>${nq}</strong> question(s) à répondre` : 'Aucune question en attente.'}</div>
-          <div style="font-size:12px;color:var(--texte-2)">Ce que le plan ne dit pas, plus les questions du catalogue qui s’appliquent à ce type de projet.</div></div>
+          ${parSec.length ? `<div style="font-size:12px;margin-top:2px">${parSec.map(x => `<span style="${x.r === 0 ? 'color:var(--caramel)' : 'color:var(--texte-2)'}">${x.n} · ${escH(x.titre)}</span>`).join('<span style="color:var(--texte-2)"> &nbsp;|&nbsp; </span>')}</div>` : ''}
+          <div style="font-size:12px;color:var(--texte-2)">Seulement ce que Claude n’a pas pu lire avec certitude. Le reste se voit dans « Vérifier les quantités ».</div></div>
         ${fz ? '' : `<button class="btn btn-caramel btn-sm" onclick="estQuestions()">❓ Répondre aux questions</button>`}
       </div>
     </div>
@@ -6637,11 +6640,36 @@ const EST_DEP_CLIENT = ['Ébénisterie', 'Appareils sanitaires', 'Luminaires', '
 function estDepartResume(d) {
   if (!d) return '<span style="color:var(--texte-2)">À remplir avant de lancer la lecture.</span>';
   const n = (lib, x) => x?.touche == null ? '' : `${lib} : ${x.touche ? 'touché' + (x.superficie ? ` (${x.superficie} pi²)` : '') : 'non touché'}`;
-  return [n('Sous-sol', d.sous_sol), n('RDC', d.rdc), n('Étage', d.etage), d.duree ? `${d.duree} sem.` : '',
-    d.fourni_client?.length ? 'Client fournit : ' + d.fourni_client.join(', ') : ''].filter(Boolean).map(escH).join(' · ') || '<span style="color:var(--texte-2)">Rempli.</span>';
+  return ([n('Sous-sol', d.sous_sol), n('RDC', d.rdc), n('Étage', d.etage), d.duree ? `${d.duree} sem.` : '',
+    d.fourni_client?.length ? 'Client fournit : ' + d.fourni_client.join(', ') : '',
+    d.catalogue ? `${Object.values(d.catalogue).filter(x => x.v && !/^non$/i.test(x.v)).length} autre(s) élément(s) inclus` : ''].filter(Boolean).map(escH).join(' · ') || '<span style="color:var(--texte-2)">Rempli.</span>')
+    + (d.catalogue ? '' : '<div style="color:var(--caramel);margin-top:4px">Nouvelle section « Autres éléments du projet » à remplir (cliquez sur Modifier).</div>');
 }
-function estDepartFormulaire() {
+// Questions du catalogue déjà couvertes par les champs fixes du formulaire de départ (voir estDepartAppliquer)
+const EST_DEP_COUVERTES = ['00 00 00-10', '01 11 00-04', '31 21 13-01', 'PORTEE-04', '02 82 00-01', '01 56 00-01', 'PORTEE-03', 'PORTEE-01', '03 10 00-10'];
+// Autres questions du catalogue (pop-ups) qui s'appliquent au type de projet : posées une seule fois, ici, avant la lecture.
+async function estDepartCatalogue() {
+  const [{ data: params }, { data: taches }] = await Promise.all([
+    db.from('catalogue_parametres').select('id, cle, parametre, unite, reponses, defaut, condition, question, ordre').eq('actif', true).eq('source', 'Pop-up').order('ordre'),
+    db.from('catalogue_taches').select('cle_gabarit, libelle, cle_pq').eq('actif', true).not('cle_gabarit', 'is', null),
+  ]);
+  const res = [];
+  for (const p of params || []) {
+    if (/^(PIECE|EXT)-/.test(p.cle) || EST_DEP_COUVERTES.includes(p.cle) || p.parametre === 'Assurance chantier' || !estCondOK(p.condition)) continue;
+    let cle = p.cle;
+    if (cle === '—') { const t = (taches || []).find(t => !t.cle_pq && t.libelle.toLowerCase().startsWith(p.parametre.toLowerCase().slice(0, 18))); if (!t) continue; cle = t.cle_gabarit; }
+    if (res.some(x => x.cle === cle)) continue;
+    const r = String(p.reponses || '').toLowerCase();
+    const ty = /montant/.test(r) ? { t: 'montant', u: '$' } : /^oui\s*\/\s*non/.test(r) ? { t: 'choix', c: ['Oui', 'Non'] }
+      : r.includes('/') && !/\d/.test(r) ? { t: 'choix', c: p.reponses.split('/').map(x => x.trim()), texte: true }
+      : /^PORTEE-/.test(cle) ? { t: 'texte' } : { t: 'nombre', u: p.unite || '' };
+    res.push({ cle, pid: p.id, q: p.question || p.parametre, ty });
+  }
+  return res;
+}
+async function estDepartFormulaire() {
   const d = estCourante.questions_depart || {}, fz = estFigee();
+  const cat = await estDepartCatalogue(), dc = d.catalogue || {};
   const radio = (nom, choix, val) => `<div class="dep-choix">${choix.map(c => `<label><input type="radio" name="${nom}" value="${escH(c)}" ${val === c ? 'checked' : ''} ${fz ? 'disabled' : ''}> ${escH(c)}</label>`).join('')}</div>`;
   const cases = (nom, choix, val) => `<div class="dep-choix">${choix.map(c => `<label><input type="checkbox" name="${nom}" value="${escH(c)}" ${(val || []).includes(c) ? 'checked' : ''} ${fz ? 'disabled' : ''}> ${escH(c)}</label>`).join('')}</div>`;
   const on = v => v === true ? 'Oui' : v === false ? 'Non' : null;
@@ -6684,6 +6712,13 @@ function estDepartFormulaire() {
       <div class="dep-l"><div class="dep-q">Maison d’avant 1990 ou amiante connue ?</div>${radio('amiante', ['Oui', 'Non', 'Inconnu'], d.amiante)}</div>
       <div class="dep-l"><div class="dep-q">Accès au terrain pour la machinerie</div>${radio('acces', ['Facile', 'Difficile'], d.acces)}</div>
       ${nb('assurance', 'Assurance chantier (montant)', d.assurance, '$')}
+      ${cat.length ? `<div class="dep-sec">Autres éléments du projet</div>
+      <div style="font-size:12px;color:var(--texte-2);margin-bottom:4px">Laissez vide ce qui ne s’applique pas : rien ne sera compté.</div>
+      ${cat.map((c, i) => { const v = dc[c.cle]?.v ?? '';
+        const champ = c.ty.t === 'choix' ? radio('cat_' + i, c.ty.c, v || null)
+          : c.ty.t === 'texte' ? `<input type="text" name="cat_${i}" value="${escH(v)}" ${fz ? 'disabled' : ''} style="width:260px;padding:6px 8px;border:1px solid var(--bord)">`
+          : `<div><input type="number" min="0" step="any" name="cat_${i}" value="${escH(v)}" ${fz ? 'disabled' : ''} style="width:120px"> ${escH(c.ty.u || '')}</div>`;
+        return `<div class="dep-l"><div class="dep-q">${escH(c.q)}</div>${champ}</div>`; }).join('')}` : ''}
       <div class="dep-sec">Notes pour Claude (facultatif)</div>
       <textarea name="notes" ${fz ? 'disabled' : ''} style="width:100%;min-height:60px;padding:8px;border:1px solid var(--bord);font-family:inherit;font-size:13px" placeholder="Ex. : la salle de bain du RDC n’est pas touchée.">${escH(d.notes || '')}</textarea>
     </div>
@@ -6701,7 +6736,9 @@ function estDepartFormulaire() {
       planchers: { sous_sol: tous('pl_sous_sol'), rdc: tous('pl_rdc'), etage: tous('pl_etage'), agrandissement: tous('pl_agrandissement') },
       revetement: val('revetement'), toiture: val('toiture'), exterieur: tous('exterieur'), fourni_client: tous('fourni_client'),
       habitee: bo(val('habitee')), duree: num('duree'), transports: num('transports'), radon: bo(val('radon')), amiante: val('amiante'),
-      acces: val('acces'), assurance: num('assurance'), notes: o.querySelector('[name="notes"]').value.trim() || null, rempli_le: new Date().toISOString() };
+      acces: val('acces'), assurance: num('assurance'), notes: o.querySelector('[name="notes"]').value.trim() || null, rempli_le: new Date().toISOString(),
+      catalogue: Object.fromEntries(cat.map((c, i) => { const el = o.querySelector(`[name="cat_${i}"]:checked`) || o.querySelector(`[name="cat_${i}"]:not([type=radio])`);
+        return [c.cle, { v: (el?.value ?? '').trim() || null, pid: c.pid, q: c.q, ty: c.ty }]; })) };
     b.disabled = true;
     const { error } = await db.from('estimations').update({ questions_depart: d2 }).eq('id', estCourante.id);
     if (error) { b.disabled = false; toast('Erreur : ' + error.message, 'error'); return; }
@@ -6735,6 +6772,14 @@ async function estDepartAppliquer(d) {
     const { data: q } = await db.from('estimation_questions').insert({ estimation_id: estCourante.id, parametre_id: p.id, cle, question: p.parametre,
       section: /^\d\d \d\d \d\d/.test(cle) ? cle.slice(0, 8) : null, lot: 'départ', source: 'catalogue', statut: 'à répondre' }).select('*').single();
     if (q) await estRepondre(q, String(v), 'répondue', ty);
+  }
+  // « Autres éléments du projet » : chaque réponse est inscrite comme une question répondue (vide = rien de compté).
+  for (const [cle, x] of Object.entries(d.catalogue || {})) {
+    await db.from('estimation_questions').delete().eq('estimation_id', estCourante.id).eq('cle', cle).neq('source', 'plan');
+    await db.from('estimation_quantites').delete().eq('estimation_id', estCourante.id).eq('cle', cle).eq('source', 'pop-up');
+    const { data: q } = await db.from('estimation_questions').insert({ estimation_id: estCourante.id, parametre_id: x.pid, cle, question: x.q,
+      section: /^\d\d \d\d \d\d/.test(cle) ? cle.slice(0, 8) : null, lot: 'départ', source: 'catalogue', statut: x.v ? 'à répondre' : 'sans objet' }).select('*').single();
+    if (q && x.v) await estRepondre(q, String(x.v), 'répondue', x.ty);
   }
 }
 
@@ -6823,6 +6868,8 @@ async function estPreparerQuestions() {
     db.from('catalogue_taches').select('cle_gabarit, libelle, cle_pq, unite').eq('actif', true).not('cle_gabarit', 'is', null),
   ]);
   const deja = new Set((dej || []).map(q => q.cle)), qte = new Set(estQtes.map(q => q.cle));
+  // Anciennes questions du catalogue encore en attente : retirées du questionnaire (elles sont maintenant dans les questions de départ).
+  await db.from('estimation_questions').delete().eq('estimation_id', estCourante.id).eq('source', 'catalogue').eq('lot', 'catalogue').eq('statut', 'à répondre');
   await estConsoliderQuestions();
   const nouv = [];
   for (const p of params || []) {
@@ -6830,6 +6877,7 @@ async function estPreparerQuestions() {
     let cle = p.cle;
     if (cle === '—') { const t = (taches || []).find(t => !t.cle_pq && t.libelle.toLowerCase().startsWith(p.parametre.toLowerCase().slice(0, 18))); if (!t) continue; cle = t.cle_gabarit; }
     if (cle === '03 10 00-10') { if (estCourante.type_projet === 'Agrandissement' && !qte.has(cle)) await db.from('estimation_quantites').insert({ estimation_id: estCourante.id, cle, quantite: 1, source: 'défaut', fiabilite: 'Calculé' }); continue; }
+    continue;   // Depuis le 2026-11-12 : posées dans les questions de départ (« Autres éléments du projet »), plus dans le questionnaire.
     if (deja.has(cle) || qte.has(cle)) continue;
     nouv.push({ estimation_id: estCourante.id, parametre_id: p.id, cle, question: p.question || p.parametre, raison: [p.reponses && `Réponses : ${p.reponses}`, p.defaut && `Défaut : ${p.defaut}`].filter(Boolean).join(' · ') || null,
       section: /^\d\d \d\d \d\d/.test(cle) ? cle.slice(0, 8) : null, lot: 'catalogue', source: 'catalogue', statut: 'à répondre' });
@@ -6872,13 +6920,20 @@ async function estQuestions() {
   ]);
   estQListe = qs || []; estQi = 0; estQParams = {};
   (params || []).forEach(p => { estQParams[p.cle] = p; estQParams['#' + p.id] = p; });
-  // Ordre : confirmations, chiffres manquants, Oui / Non, puis réponses en mots.
-  const rang = q => { const tq = estTypeQuestion(q);
-    if (tq) return { confirmer: 0, manquante: 1, ouinon: 2, info: 3 }[tq] ?? 3;
-    const t = estTypeReponse(q).t; return t === 'nombre' || t === 'montant' ? 1 : t === 'choix' ? 2 : 3; };
-  estQListe = estQListe.map((q, i) => ({ q, i, r: rang(q) })).sort((a, b) => a.r - b.r || a.i - b.i).map(x => x.q);
+  // Trois sections nettes : ce que Claude n'est pas sûr, ce qui manque, les oui / non.
+  estQListe = estQListe.map((q, i) => ({ q, i, r: estSectionQuestion(q).r })).sort((a, b) => a.r - b.r || a.i - b.i).map(x => x.q);
   if (!estQListe.length) { toast('Aucune question en attente.', 'success'); return; }
   estQuestionSuivante();
+}
+const EST_Q_SECTIONS = [
+  { r: 0, titre: 'À réviser — Claude n’est pas sûr', aide: 'Claude a inscrit une quantité, mais il doute. Confirmez-la ou corrigez-la.' },
+  { r: 1, titre: 'Informations manquantes', aide: 'Introuvable au plan et important pour le coût.' },
+  { r: 2, titre: 'Oui / Non', aide: '' },
+];
+function estSectionQuestion(q) {
+  const tq = estTypeQuestion(q);
+  const r = tq === 'confirmer' ? 0 : tq === 'ouinon' ? 2 : tq ? 1 : (estTypeReponse(q).t === 'choix' ? 2 : 1);
+  return EST_Q_SECTIONS[r];
 }
 function estTypeReponse(q) {
   const p = estQParams['#' + q.parametre_id] || estQParams[q.cle] || {};
@@ -6902,6 +6957,8 @@ async function estQuestionSuivante() {
   const valLue = lu?.q ?? q.valeur_proposee;
   if (valLue != null && q._lu == null) q._lu = valLue;   // pour « Précédente » : valeur lue par Claude à rétablir
   const nomSec = q.section ? (estPostes.find(x => x.code === q.section)?.nom || q.section) : 'Portée du projet';
+  const sec = estSectionQuestion(q), dansSec = estQListe.filter(x => estSectionQuestion(x).r === sec.r);
+  const numSec = dansSec.indexOf(q) + 1, debutSec = numSec === 1;
   const pc = estPieces.find(x => x.id === q.piece_id)?.nom;
   const fmt = n => Number(n).toLocaleString('fr-CA', { maximumFractionDigits: 2 });
   const blocLu = tq === 'confirmer' && valLue != null ? `<div style="margin-top:12px;padding:10px 12px;background:var(--fond);border-radius:6px;font-size:14px">Claude a lu : <strong>${fmt(valLue)} ${escH(ty.u)}</strong>${lu?.l?.[0]?.ref_plan ? ` · ${escH(lu.l[0].ref_plan)}` : ''}${lu?.l?.[0]?.note ? `<div style="font-size:12px;color:var(--texte-2);margin-top:2px">${escH(lu.l[0].note)}</div>` : ''}</div>
@@ -6919,7 +6976,11 @@ async function estQuestionSuivante() {
     #est-dialogue .est-lien{background:none;border:0;color:var(--texte-2);cursor:pointer;font-size:12px;letter-spacing:.5px;padding:6px 0;margin-right:auto;white-space:nowrap}
     #est-dialogue .est-lien:hover{color:var(--charcoal)}
   </style><div class="modal" style="width:min(720px,94vw);max-width:none">
-    <div class="modal-header"><div><div style="font-size:11px;letter-spacing:1.5px;text-transform:uppercase;color:var(--texte-2)">Question ${estQi + 1} / ${estQListe.length} · ${escH(nomSec)}${pc ? ' · ' + escH(pc) : ''}</div>
+    <div style="background:${sec.r === 0 ? 'var(--caramel)' : 'var(--charcoal)'};color:#fff;padding:10px 24px;display:flex;justify-content:space-between;gap:12px;align-items:baseline;flex-wrap:wrap">
+      <span style="font-size:11px;letter-spacing:1.5px;text-transform:uppercase">${escH(sec.titre)} · ${numSec} / ${dansSec.length}</span>
+      <span style="font-size:11px;opacity:.8">Question ${estQi + 1} sur ${estQListe.length}</span></div>
+    ${debutSec && sec.aide ? `<div style="padding:8px 24px;background:var(--fond);font-size:12px;color:var(--texte-2)">${escH(sec.aide)}</div>` : ''}
+    <div class="modal-header"><div><div style="font-size:11px;letter-spacing:1.5px;text-transform:uppercase;color:var(--texte-2)">${escH(nomSec)}${pc ? ' · ' + escH(pc) : ''}</div>
       <h3 style="margin-top:4px">${escH(q.question)}</h3></div><button class="modal-close" data-v="fermer">×</button></div>
     <div class="modal-body">
       ${q.raison ? `<div style="font-size:13px;color:var(--texte-2)">${escH(q.raison)}</div>` : ''}

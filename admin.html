@@ -291,6 +291,14 @@ body { font-family: 'Roboto', sans-serif; background: var(--fond); color: var(--
 .fiche-ajout input, .fiche-ajout select { padding: 9px 12px; border: 1px solid var(--bord); border-radius: 10px; font-size: 13px; background: var(--blanc); outline: none; font-family: inherit; }
 .fiche-ajout input:focus, .fiche-ajout select:focus { border-color: var(--caramel); }
 .fiche-ajout .large { grid-column: 1 / -1; }
+.fiche-docs { list-style: none; }
+.fiche-docs li { display: flex; align-items: center; gap: 14px; padding: 11px 0; border-bottom: 1px solid var(--bord); }
+.fiche-docs li:last-child { border-bottom: none; }
+.fiche-doc-ico { flex: 0 0 38px; height: 38px; border-radius: 10px; background: var(--creme, #F1EEE8); display: flex; align-items: center; justify-content: center; font-size: 10px; letter-spacing: 1px; font-weight: 500; color: var(--caramel); }
+.fiche-doc-txt { flex: 1; min-width: 0; }
+.fiche-doc-titre { font-weight: 500; font-size: 14px; color: inherit; text-decoration: none; cursor: pointer; }
+.fiche-doc-titre:hover { color: var(--caramel); }
+.fiche-doc-meta { font-size: 12px; color: var(--texte-2); margin-top: 2px; }
 .fiche-btn { border-radius: 999px !important; }
 .fiche-notes { font-size: 13px; line-height: 1.7; color: var(--texte); white-space: pre-wrap; }
 .fiche-pied { display: flex; justify-content: space-between; align-items: center; padding: 0 28px 26px; gap: 12px; flex-wrap: wrap; }
@@ -2655,11 +2663,14 @@ async function ouvrirFicheMat(id) {
   const { data: histo, error } = await db.from('materiautheque_projets')
     .select('*, projets(nom, numero_projet)').eq('materiautheque_id', id)
     .order('date_travaux', { ascending: false, nullsFirst: false });
-  renderFicheMat(m, error ? null : (histo || []));
+  const { data: docs, error: eDocs } = await db.from('materiautheque_documents')
+    .select('*').eq('materiautheque_id', id)
+    .order('date_recu', { ascending: false, nullsFirst: false }).order('created_at', { ascending: false });
+  renderFicheMat(m, error ? null : (histo || []), eDocs ? null : (docs || []));
   openModal('modal-fiche-mat');
 }
 
-function renderFicheMat(m, histo) {
+function renderFicheMat(m, histo, docs) {
   const noire = m.evaluation === 'Liste noire';
   const nbEt  = noire ? 0 : (m.evaluation || '').length;
   const etoiles = noire
@@ -2755,6 +2766,11 @@ function renderFicheMat(m, histo) {
         </div>` : ''}
       </div>
 
+      <div class="fiche-carte pleine">
+        <h4>Documents du fournisseur</h4>
+        ${matDocsHtml(docs)}
+      </div>
+
       ${m.autres_details ? `<div class="fiche-carte pleine"><h4>Notes</h4><div class="fiche-notes">${escH(m.autres_details)}</div></div>` : ''}
     </div>
 
@@ -2781,6 +2797,76 @@ async function ajouterHistoMat() {
   });
   if (error) { toast('Erreur : ' + error.message, 'error'); return; }
   toast('Projet ajouté à l’historique.', 'success');
+  ouvrirFicheMat(ficheMatId);
+}
+
+// ---------- Documents du fournisseur (lunch & learn : résumés, fiches techniques…) ----------
+const MAT_DOC_TYPES = ['Résumé', 'Fiche technique', 'Présentation', 'Liste de prix', 'Échantillons / catalogue', 'Autre'];
+let matDocsCache = [];
+function matDocsHtml(docs) {
+  if (docs === null) return '<div style="font-size:13px;color:var(--danger)">Documents indisponibles (migration_materiautheque_documents.sql pas encore exécutée ?).</div>';
+  matDocsCache = docs;
+  const taille = b => !b ? '' : b < 1048576 ? Math.max(1, Math.round(b / 1024)) + ' Ko' : (b / 1048576).toLocaleString('fr-CA', { maximumFractionDigits: 1 }) + ' Mo';
+  const ext = n => (String(n).split('.').pop() || '').slice(0, 4).toUpperCase();
+  const liste = docs.length
+    ? `<ul class="fiche-docs">${docs.map(d => `<li>
+        <div class="fiche-doc-ico">${escH(ext(d.nom_fichier))}</div>
+        <div class="fiche-doc-txt">
+          <a class="fiche-doc-titre" onclick="ouvrirDocMat('${d.id}')">${escH(d.titre)}</a>
+          <div class="fiche-doc-meta">${[escH(d.type_document), d.date_recu ? new Date(d.date_recu + 'T12:00').toLocaleDateString('fr-CA', { day: 'numeric', month: 'long', year: 'numeric' }) : '', taille(d.taille_bytes)].filter(Boolean).join(' · ')}</div>
+        </div>
+        <button class="fiche-histo-suppr" title="Supprimer" onclick="supprimerDocMat('${d.id}')">✕</button>
+      </li>`).join('')}</ul>`
+    : '<div style="font-size:13px;color:var(--texte-2)">Aucun document pour l’instant. Ajoutez ici les résumés, fiches techniques et présentations remis par le fournisseur (lunch & learn, visites…).</div>';
+  return liste + `<div class="fiche-ajout">
+      <input type="file" id="fd-fichier" class="large" accept=".pdf,.doc,.docx,.ppt,.pptx,.xls,.xlsx,.jpg,.jpeg,.png,.webp"
+        onchange="const t = document.getElementById('fd-titre'); if (this.files[0] && !t.value) t.value = this.files[0].name.replace(/\.[^.]+$/, '')" />
+      <input type="text" id="fd-titre" placeholder="Titre (ex. Fiche technique — quartz Aurelia)" />
+      <select id="fd-type">${MAT_DOC_TYPES.map(t => `<option>${t}</option>`).join('')}</select>
+      <input type="date" id="fd-date" title="Date du lunch & learn ou de réception" />
+      <button class="btn btn-dark btn-sm fiche-btn large" id="fd-btn" onclick="ajouterDocMat()" style="justify-self:end">+ Ajouter le document</button>
+    </div>`;
+}
+
+async function ajouterDocMat() {
+  const f = document.getElementById('fd-fichier').files[0];
+  if (!f) { toast('Choisissez un fichier.', 'error'); return; }
+  if (f.size > 50 * 1048576) { toast('Fichier trop lourd (50 Mo maximum).', 'error'); return; }
+  const titre = document.getElementById('fd-titre').value.trim() || f.name.replace(/\.[^.]+$/, '');
+  const btn = document.getElementById('fd-btn'); btn.disabled = true; btn.textContent = 'Téléversement…';
+  try {
+    const nom = f.name.normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^\w.\- ]+/g, '_');
+    const chemin = `materiautheque/${ficheMatId}/${Date.now()}-${nom}`;
+    const { error: e1 } = await db.storage.from('portail-cmpg').upload(chemin, f, { contentType: f.type || 'application/octet-stream', upsert: false });
+    if (e1) { toast('Téléversement impossible : ' + e1.message, 'error'); return; }
+    const { data: { user } } = await db.auth.getUser();
+    const { error: e2 } = await db.from('materiautheque_documents').insert({
+      materiautheque_id: ficheMatId, titre, type_document: document.getElementById('fd-type').value,
+      date_recu: document.getElementById('fd-date').value || null,
+      storage_path: chemin, nom_fichier: f.name, taille_bytes: f.size, mime_type: f.type || null, created_by: user?.email || null,
+    });
+    if (e2) { await db.storage.from('portail-cmpg').remove([chemin]); toast('Erreur : ' + e2.message, 'error'); return; }
+    toast('Document ajouté.', 'success');
+    ouvrirFicheMat(ficheMatId);
+  } finally { btn.disabled = false; btn.textContent = '+ Ajouter le document'; }
+}
+
+async function ouvrirDocMat(docId) {
+  const d = matDocsCache.find(x => x.id === docId); if (!d) return;
+  const fen = window.open('', '_blank');   // ouverte tout de suite : pas bloquée comme fenêtre surgissante
+  const lisible = /\.pdf$/i.test(d.nom_fichier) || /^image\//i.test(d.mime_type || '');   // PDF et images : affichés ; le reste : téléchargé
+  const { data, error } = await db.storage.from('portail-cmpg').createSignedUrl(d.storage_path, 600, lisible ? undefined : { download: d.nom_fichier });
+  if (error) { fen?.close(); toast('Ouverture impossible : ' + error.message, 'error'); return; }
+  if (fen) fen.location.href = data.signedUrl; else window.location.href = data.signedUrl;
+}
+
+async function supprimerDocMat(docId) {
+  const d = matDocsCache.find(x => x.id === docId); if (!d) return;
+  if (!confirm(`Supprimer définitivement « ${d.titre} » ?`)) return;
+  const { error } = await db.from('materiautheque_documents').delete().eq('id', docId);
+  if (error) { toast('Erreur : ' + error.message, 'error'); return; }
+  await db.storage.from('portail-cmpg').remove([d.storage_path]);
+  toast('Document supprimé.', 'success');
   ouvrirFicheMat(ficheMatId);
 }
 

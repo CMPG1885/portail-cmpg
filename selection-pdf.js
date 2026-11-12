@@ -86,15 +86,15 @@
   }
 
   const CSS = `
-@page { size: 11in 8.5in; margin: .42in .5in .55in;
+@page { size: letter landscape; margin: .42in .5in .55in;
   @bottom-left { content: var(--pied); font: 500 6.5pt Roboto, sans-serif; letter-spacing: 1.5px; text-transform: uppercase; color: #ACA298; }
   @bottom-right { content: counter(page) " / " counter(pages); font: 500 6.5pt Roboto, sans-serif; letter-spacing: 1.5px; color: #ACA298; } }
-@page couverture { margin: 0; @bottom-left { content: none } @bottom-right { content: none } }
+@page couverture { size: letter landscape; margin: 0; @bottom-left { content: none } @bottom-right { content: none } }
 * { box-sizing: border-box; margin: 0; padding: 0; }
 html { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
 body { font-family: Roboto, sans-serif; color: #3A3B3A; font-variant-numeric: lining-nums; background: #fff; }
 .serif { font-family: 'Playfair Display', serif; font-weight: 400; }
-.couverture { page: couverture; width: 11in; height: 8.5in; display: grid; grid-template-columns: 4.6in 1fr; break-after: page; }
+.couverture { page: couverture; width: 11in; height: 8.48in; overflow: hidden; display: grid; grid-template-columns: 4.6in 1fr; break-after: page; }
 .cov-g { background: #3A3B3A; color: #fff; padding: .75in .6in; display: flex; flex-direction: column; justify-content: space-between; }
 .cov-g img { width: 2.3in; }
 .lbl { font-size: 7.5pt; letter-spacing: 3px; text-transform: uppercase; color: #ACA298; white-space: nowrap; }
@@ -122,6 +122,7 @@ section.cat:first-of-type { break-before: auto; }
 .resume span { font-size: 6.5pt; letter-spacing: 1.8px; text-transform: uppercase; color: #6F6863; }
 table { width: 100%; border-collapse: collapse; font-size: 7.6pt; }
 thead { display: table-header-group; }
+thead tr.entete td { padding: 0; border-bottom: none; }
 tr { break-inside: avoid; }
 tr.sc { break-after: avoid; }
 thead th { font-size: 6.3pt; letter-spacing: 1.6px; text-transform: uppercase; font-weight: 500; color: #ACA298; text-align: left; padding: 6px; border-bottom: 1px solid #3A3B3A; }
@@ -191,9 +192,10 @@ a.lien { color: #523525; font-size: 7pt; }
       const res = mode === 'client'
         ? `<div><b>${c.nb}</b><span>Éléments</span></div><div><b>${c.nb - c.approuves}</b><span>En attente</span></div><div><b>${argent(c.total)}</b><span>Estimation avant taxes</span></div>`
         : `<div><b>${c.nb}</b><span>Approuvés à commander</span></div>`;
-      return `<section class="cat"><div class="hd"><img src="${LOGO_FONCE}" alt="CMPG"><div class="meta">${meta}</div></div>
-        <div class="ttl"><h2 class="serif">${esc(c.nom)}</h2><div class="resume">${res}</div></div>
-        <table><thead><tr>${tete}</tr></thead><tbody>${lignes}</tbody></table></section>`;
+      // L'entête (logo + projet + catégorie) est dans le thead : elle se répète sur chaque page avec les titres de colonnes.
+      return `<section class="cat"><table><thead><tr class="entete"><td colspan="9"><div class="hd"><img src="${LOGO_FONCE}" alt="CMPG"><div class="meta">${meta}</div></div>
+        <div class="ttl"><h2 class="serif">${esc(c.nom)}</h2><div class="resume">${res}</div></div></td></tr>
+        <tr>${tete}</tr></thead><tbody>${lignes}</tbody></table></section>`;
     }).join('');
 
     let recap = '';
@@ -227,8 +229,12 @@ a.lien { color: #523525; font-size: 7pt; }
     document.body.appendChild(f);
     const d = f.contentDocument;
     d.open(); d.write(html); d.close();
-    // Attendre les polices et les photos (8 s max par photo)
-    try { await d.fonts.ready; } catch (e) {}
+    // Attendre les polices (sinon le navigateur imprime une police de remplacement, plus grasse) et les photos (8 s max par photo)
+    try {
+      await new Promise(r => { const l = d.querySelector('link[rel=stylesheet]'); if (!l || l.sheet) return r(); l.onload = r; l.onerror = r; setTimeout(r, 4000); });
+      await Promise.race([Promise.all(['300 9pt Roboto', '400 9pt Roboto', '500 9pt Roboto', '700 9pt Roboto', '400 22pt "Playfair Display"'].map(f => d.fonts.load(f))), new Promise(r => setTimeout(r, 4000))]);
+      await d.fonts.ready;
+    } catch (e) {}
     await Promise.all([...d.images].map(img => img.complete ? null : new Promise(r => {
       const t = setTimeout(r, 8000); img.onload = img.onerror = () => { clearTimeout(t); r(); };
     })));

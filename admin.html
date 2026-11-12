@@ -5509,7 +5509,7 @@ async function estNouvelle() {
   const { data: der } = await db.from('estimations').select('version').eq('projet_id', estProjetId).order('version', { ascending: false }).limit(1);
   const version = (der?.[0]?.version || 0) + 1;
   const { data, error } = await db.from('estimations').insert({
-    projet_id: estProjetId, version, type_projet: p.type_projet, gamme_defaut: p.gamme_defaut || 'Intermédiaire', version_gabarit: 'rev39', contingence_pct: 0.15,
+    projet_id: estProjetId, version, type_projet: p.type_projet, gamme_defaut: p.gamme_defaut || 'Intermédiaire', version_gabarit: 'rev39', contingence_pct: 0,
     nom: `Estimation ${p.type_projet.toLowerCase()} v${version}`,
   }).select('id').single();
   if (error) { toast('Erreur : ' + error.message, 'error'); return; }
@@ -6025,34 +6025,32 @@ async function estRenderSelections() {
   const opts = cle => `<option value="aucune" ${cle === 'aucune' ? 'selected' : ''}>Aucune ligne (déjà inclus / hors construction)</option>
     <optgroup label="Choix client">${cc.map(t => `<option value="${escH(t.cle_gabarit)}" ${t.cle_gabarit === cle ? 'selected' : ''}>${escH(t.cle_gabarit.slice(0, 8))} — ${escH(t.libelle.slice(0, 70))}</option>`).join('')}</optgroup>
     <optgroup label="Autres lignes">${autres.map(t => `<option value="${escH(t.cle_gabarit)}" ${t.cle_gabarit === cle ? 'selected' : ''}>${escH(t.cle_gabarit.slice(0, 8))} — ${escH(t.libelle.slice(0, 70))}</option>`).join('')}</optgroup>`;
-  const nonAssoc = estSel.filter(s => !s.cle).length;
-  const prevu = await estPrixCatalogue(estSel.map(s => s.cle).filter(c => c && c !== 'aucune'));
-  const ecart = s => { const pv = prevu[s.cle]?.prix, pr = s.bp?.prix ?? estPrixSel[s.o.id];
-    if (pv == null || !Number(pv) || pr == null) return '—';
-    const d = Number(pr) - Number(pv); return `<span style="color:${d > 0 ? 'var(--danger)' : 'var(--success)'}">${d > 0 ? '+' : ''}${estMoney2(d)}</span>`; };
+  // Peinture, mobilier, tissus… (ligne « aucune ») : aucun effet sur le prix — pas affichés ici.
+  const vis = estSel.map((s, i) => ({ ...s, i })).filter(s => s.cle !== 'aucune');
+  if (!vis.length) { div.innerHTML = `<div class="card" style="font-size:13px;color:var(--texte-2)">Aucune sélection approuvée qui touche le prix pour l'instant.</div>`; return; }
+  const nonAssoc = vis.filter(s => !s.cle).length;
+  const montant = s => estLignes.filter(l => l.produit_id && l.produit_id === s.bp?.id).reduce((t, l) => t + Number(l.montant || 0), 0);
+  const dans = s => !s.cle
+      ? `<select ${fz ? 'disabled' : ''} onchange="estAssocierSelection(${s.i},this.value)" style="width:100%;padding:5px 8px;border:1px solid var(--danger);font-size:12px">
+          <option value="" selected>— Choisir la ligne de l'estimation —</option>${opts(s.cle)}</select>`
+    : estLignes.some(l => l.produit_id && l.produit_id === s.bp?.id)
+      ? (montant(s) ? `<span style="color:var(--success)">✓</span> ${estMoney(montant(s))}` : '<span style="color:var(--danger)">✓ sans prix</span>')
+      : '<span style="color:var(--caramel)">Recalculer</span>';
   div.innerHTML = `<div class="card" style="padding:0;overflow:hidden">
     <div style="padding:12px 16px;background:var(--fond);border-bottom:1px solid var(--bord);display:flex;justify-content:space-between;flex-wrap:wrap;gap:8px">
-      <strong>Sélections approuvées du projet (${estSel.length})</strong>
-      <span style="font-size:12px;color:${nonAssoc ? 'var(--danger)' : 'var(--texte-2)'}">${nonAssoc ? `⚠ ${nonAssoc} à associer à une ligne` : 'Chaque sélection remplace le prix de la gamme sur sa ligne'}</span></div>
-    <div style="padding:10px 16px;font-size:12px;color:var(--texte-2);border-bottom:1px solid var(--bord)">« Remplace la ligne » indique quelle ligne de l'estimation prend le prix de ce produit au lieu du prix de la gamme. Les produits vendus au pi² ou au pi linéaire prennent la quantité du plan.</div>
-    <table class="data-table" style="margin:0"><thead><tr><th>Réf.</th><th>Pièce</th><th>Produit</th><th style="text-align:right">Qté</th><th style="text-align:right;width:110px">Prévu (gamme)</th><th style="text-align:right;width:120px">Sélectionné</th><th style="text-align:right">Écart / unité</th><th style="width:28%">Remplace la ligne</th><th>Dans l'estimation</th></tr></thead>
-    <tbody>${estSel.map((s, i) => `<tr${!s.cle ? ' style="background:#fbf3f1"' : ''}>
+      <strong>Sélections approuvées du projet (${vis.length})</strong>
+      <span style="font-size:12px;color:${nonAssoc ? 'var(--danger)' : 'var(--texte-2)'}">${nonAssoc ? `⚠ ${nonAssoc} à placer dans l'estimation` : 'Le prix du produit remplace le prix de la gamme'}</span></div>
+    <table class="data-table" style="margin:0"><thead><tr><th>Réf.</th><th>Pièce</th><th>Produit</th><th style="text-align:right">Qté</th><th style="text-align:right;width:130px">Prix</th><th style="width:30%">Dans l'estimation</th></tr></thead>
+    <tbody>${vis.map(s => `<tr${!s.cle ? ' style="background:#fbf3f1"' : ''}>
       <td style="font-family:monospace;font-size:12px">${escH(s.po.reference || '')}</td>
       <td style="font-size:12px">${escH(s.po.piece || (s.po.pieces || []).join(', '))}</td>
       <td>${escH(s.bp?.nom || '—')}<div style="font-size:11px;color:var(--texte-2)">${escH([s.po.categories?.nom, s.po.sous_categories?.nom].filter(Boolean).join(' · '))}</div></td>
       <td style="text-align:right">${estNum(s.o.quantite ?? 1)}</td>
-      <td style="text-align:right;white-space:nowrap;color:var(--texte-2)">${prevu[s.cle]?.prix != null && Number(prevu[s.cle].prix) ? estMoney2(prevu[s.cle].prix) + '/' + escH(prevu[s.cle].unite || '') : '<span style="font-size:11px">à venir</span>'}</td>
       <td style="text-align:right;white-space:nowrap">${s.bp?.prix != null ? estMoney2(s.bp.prix) + (s.bp.unite_prix && s.bp.unite_prix !== 'unité' ? '/' + escH(s.bp.unite_prix) : '')
         : `<input ${fz ? 'disabled' : ''} type="number" step="0.01" min="0" placeholder="Prix $" value="${estPrixSel[s.o.id] ?? ''}" onchange="estPrixManuel('SEL:${s.o.id}',this.value)"
-             style="width:100%;text-align:right;padding:6px 8px;border:1px solid var(--danger);font-size:12px" title="Aucun prix dans la Banque de produits : prix manuel pour cette estimation" />`}</td>
-      <td style="text-align:right;white-space:nowrap;font-size:12px">${ecart(s)}</td>
-      <td><select ${fz ? 'disabled' : ''} onchange="estAssocierSelection(${i},this.value)" style="width:100%;padding:6px 8px;border:1px solid var(--bord);font-size:12px">
-          ${s.cle ? '' : '<option value="" selected>— Choisir une ligne —</option>'}${opts(s.cle)}</select>
-        ${s.exception ? '<div style="font-size:10px;color:var(--texte-2);margin-top:2px">exception pour ce poste</div>' : ''}</td>
-      <td style="font-size:12px;white-space:nowrap">${s.cle === 'aucune' ? '<span style="color:var(--texte-2)">non (inclus ailleurs)</span>'
-        : estLignes.some(l => l.produit_id && l.produit_id === s.bp?.id) ? '<span style="color:var(--success)">✓ incluse</span>'
-        : `<span style="color:var(--danger)">${s.cle ? 'pas encore — recalculer' : 'choisir une ligne'}</span>`}</td></tr>`).join('')}</tbody></table>
-    <div style="padding:10px 16px;font-size:11px;color:var(--texte-2)">Changer la ligne crée une exception pour ce poste seulement. Les autres projets gardent la correspondance par défaut de la sous-catégorie. Recalculez après un changement.</div></div>`;
+             style="width:100%;text-align:right;padding:5px 8px;border:1px solid ${estPrixSel[s.o.id] != null ? 'var(--bord)' : 'var(--danger)'};font-size:12px" title="Pas de prix dans la Banque de produits : prix de la soumission, pour cette estimation" />`}</td>
+      <td style="font-size:12px">${dans(s)}</td></tr>`).join('')}</tbody></table>
+    ${nonAssoc ? `<div style="padding:10px 16px;font-size:11px;color:var(--texte-2)">Choisissez la ligne que ce produit remplace, puis recalculez. Le choix vaut pour ce poste seulement.</div>` : ''}</div>`;
 }
 async function estAssocierSelection(i, cle) {
   const s = estSel[i]; if (!s || !cle) return;

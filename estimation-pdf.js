@@ -109,7 +109,7 @@ thead tr.entete td { padding: 0; border-bottom: none; }
       <div class="ttl"><h2 class="serif">Récapitulatif</h2></div>
       <table class="tots" style="width:5.2in"><tbody>
         ${L('Coûts de base', T.base)}${L('Choix du client', T.choix)}${L('Sous-total des travaux', T.travaux, 'fort')}
-        ${L(`Contingence (${+(Number(T.contingence_pct || 0) * 100).toFixed(1)} %)`, T.contingence)}${L('Frais de gestion et d’administration', T.frais)}
+        ${Number(T.contingence) ? L(`Contingence (${+(Number(T.contingence_pct || 0) * 100).toFixed(1)} %)`, T.contingence) : ''}${L('Frais de gestion et d’administration', T.frais)}
         ${L('Total avant taxes', T.total_ht, 'fort')}${L('TPS (5 %)', T.tps)}${L('TVQ (9,975 %)', T.tvq)}${L('Total taxes incluses', T.ttc, 'grand')}
       </tbody></table>
       ${commentaire ? `<div class="bloc"><h3>Notes de CMPG</h3>${paras(commentaire)}</div>` : ''}

@@ -71,7 +71,7 @@
 
     // ── Récapitulatif ──
     const rangs = [['Coûts de base', T.base], ['Choix du client', T.choix], ['Sous-total des travaux', T.travaux, 'fort'],
-      [`Contingence (${+(Number(T.contingence_pct || 0) * 100).toFixed(1)} %)`.replace('.', ','), T.contingence], ['Frais de gestion et d’administration', T.frais],
+      ...(Number(T.contingence) ? [[`Contingence (${+(Number(T.contingence_pct || 0) * 100).toFixed(1)} %)`.replace('.', ','), T.contingence]] : []), ['Frais de gestion et d’administration', T.frais],
       ['Total avant taxes', T.total_ht, 'fort'], ['TPS (5 %)', T.tps], ['TVQ (9,975 %)', T.tvq], ['Total taxes incluses', T.ttc, 'grand']];
     content.push({ pageBreak: 'before', ...entete(meta, 'Récapitulatif') });
     content.push({ table: { widths: ['*', 'auto'], body: rangs.map(([l, v, c]) => {

@@ -5932,7 +5932,7 @@ function estRenderResultat() {
           <th style="text-align:right">Prix unit.</th><th>Gamme</th><th style="text-align:right">Montant</th></tr></thead>
         <tbody>${ls.map(l => `<tr><td>${escH(l.description)}${l.piece_id && pieceNom(l.piece_id) && !l.description.includes(pieceNom(l.piece_id)) ? ' — ' + escH(pieceNom(l.piece_id)) : ''}${etiquette(l)}</td>
           <td style="font-size:11px">${escH(l.categorie || '')}</td><td style="text-align:right">${estNum(l.quantite)}</td><td style="font-size:12px">${escH(l.unite || '')}</td>
-          <td style="text-align:right">${estMoney2(l.prix_unitaire)}</td><td style="font-size:11px">${escH(l.gamme || '')}</td>
+          <td style="text-align:right">${estPrixEditable(l, fz)}</td><td style="font-size:11px">${escH(l.gamme || '')}</td>
           <td style="text-align:right">${estMoney2(l.montant)}</td></tr>`).join('')}</tbody></table></td></tr>`;
   }).join('');
   const ligneTot = (lib, v, fort) => `<tr${fort ? ' style="background:var(--fond)"' : ''}><td colspan="2" style="${fort ? 'font-weight:500' : ''}">${lib}</td><td style="text-align:right;${fort ? 'font-weight:500' : ''}">${estMoney(v)}</td></tr>`;
@@ -5968,6 +5968,18 @@ function estRenderResultat() {
   estRenderSelections();
 }
 
+// Prix unitaire modifiable dans le détail du Résultat : devient un prix manuel de cette estimation
+// (même prix pour toutes les lignes de la même tâche, toutes pièces). Vide ou × = retour au prix du catalogue.
+function estPrixEditable(l, fz) {
+  const bloque = fz || l.produit_id || ['sélection', 'fourni par le client'].includes(l.source_prix);
+  if (bloque) return estMoney2(l.prix_unitaire);
+  const man = l.source_prix === 'manuel';
+  return `<span style="display:inline-flex;align-items:center;gap:4px;justify-content:flex-end">
+    <input type="number" step="0.01" min="0" value="${l.prix_unitaire ?? ''}" placeholder="—" title="Prix manuel pour cette estimation (toutes les lignes de cette tâche). Vide = prix du catalogue."
+      onchange="estPrixManuel('${l.cle}',this.value)" onclick="event.stopPropagation()"
+      style="width:84px;text-align:right;font-size:12px;padding:2px 6px;border:1px solid ${man ? 'var(--caramel)' : 'var(--bord)'};border-radius:6px;background:transparent" />
+    ${man ? `<button class="btn btn-outline btn-sm" style="padding:0 6px" onclick="estPrixManuel('${l.cle}','')" title="Revenir au prix du catalogue">×</button>` : ''}</span>`;
+}
 async function estPrixManuel(cle, valeur) {
   if (estFigee()) return;
   const { error } = valeur === ''

@@ -5865,7 +5865,7 @@ async function estSupprimerQte(id) {
 
 // ---------- Calcul et résultat ----------
 async function estCalculer() {
-  const btns = document.querySelectorAll('#est-entete button'); btns.forEach(b => b.disabled = true);
+  const btns = document.querySelectorAll('#est-entete button, .est-btn-calculer'); btns.forEach(b => b.disabled = true);
   toast('Calcul en cours…', 'info');
   const { data, error } = await db.functions.invoke('calculer-estimation', { body: { estimation_id: estCourante.id } });
   btns.forEach(b => b.disabled = false);
@@ -6593,6 +6593,21 @@ async function estRenderPlan() {
           <div style="font-size:12px;color:var(--texte-2)">Ce que le plan ne dit pas, plus les questions du catalogue qui s’appliquent à ce type de projet.</div></div>
         ${fz ? '' : `<button class="btn btn-caramel btn-sm" onclick="estQuestions()">❓ Répondre aux questions</button>`}
       </div>
+    </div>
+    <div class="card" style="margin-top:16px">
+      <div style="display:flex;justify-content:space-between;align-items:center;gap:16px;flex-wrap:wrap">
+        <div><div style="font-size:11px;letter-spacing:1.5px;text-transform:uppercase;color:var(--texte-2)">5 · Calculer</div>
+          <div style="font-size:14px;margin-top:4px">${e.calculee_le && e.totaux
+            ? `Dernier calcul : <strong>${estMoney(e.totaux.total_ht)}</strong> avant taxes · ${new Date(e.calculee_le).toLocaleString('fr-CA', { dateStyle: 'medium', timeStyle: 'short' })}`
+            : 'Pas encore calculée.'}</div>
+          <div style="font-size:12px;color:${nq && !fz ? 'var(--caramel)' : 'var(--texte-2)'}">${fz ? 'Estimation figée : les montants ne changent plus.'
+            : nq ? `Il reste ${nq} question(s) : le calcul est possible, mais il sera incomplet.`
+            : 'Recalculez après chaque changement de quantité, de réponse ou de prix.'}</div></div>
+        <div style="display:flex;gap:8px">
+          ${e.calculee_le ? `<button class="btn btn-outline btn-sm" onclick="estAfficher('resultat')">Voir le résultat</button>` : ''}
+          ${fz ? '' : `<button class="btn btn-dark btn-sm est-btn-calculer" onclick="estCalculer()">⟳ Calculer</button>`}
+        </div>
+      </div>
     </div>`;
   // Lecture lancée puis page fermée : on reprend le suivi automatiquement.
   if (!fz && !estLectureEnCours && Object.values(L).some(x => x?.batch_id && !x.le && !x.erreur)) setTimeout(() => estSuivreLecture(null), 0);
@@ -6876,7 +6891,7 @@ function estTypeReponse(q) {
 }
 async function estQuestionSuivante() {
   document.getElementById('est-dialogue')?.remove();
-  if (estQi >= estQListe.length) { toast('Questions terminées. Cliquez sur « Calculer ».', 'success'); estRechargerContenu(); estAfficher(estOnglet); return; }
+  if (estQi >= estQListe.length) { toast('Questions terminées. Il ne reste qu’à calculer (étape 5).', 'success'); estRechargerContenu(); estAfficher(estOnglet); return; }
   const q = estQListe[estQi], p = estQParams['#' + q.parametre_id] || estQParams[q.cle] || {};
   const tq = estTypeQuestion(q), lu = tq === 'confirmer' ? estQtePlan(q) : null;
   const uCle = p.unite || estLibelleCle(q.cle || '')?.unite || '';

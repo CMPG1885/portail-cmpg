@@ -246,5 +246,6 @@ a.lien { color: #523525; font-size: 7pt; }
     return { vide: false };
   }
 
-  window.CMPGSelection = { construireHTML, imprimer };
+  // preparer et le logo servent aussi au PDF direct (selection-pdf-direct.js)
+  window.CMPGSelection = { construireHTML, imprimer, preparer, LOGO_SVG: svgBlanc };
 })();

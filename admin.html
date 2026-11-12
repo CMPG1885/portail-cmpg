@@ -1775,6 +1775,7 @@ body * { font-variant-numeric: lining-nums; }
 <div id="toast-container"></div>
 
 <script src="selection-pdf.js"></script>
+<script src="selection-pdf-direct.js"></script>
 <script src="estimation-pdf.js"></script>
 <script>
 // ============================================================
@@ -4788,15 +4789,22 @@ async function imprimerSelection(mode) {
         .eq('projet_id', currentProjetId),
     ]);
     if (e1 || e2) throw (e1 || e2);
-    const r = await CMPGSelection.imprimer({
+    const params = {
       mode, postes,
       projet: { nom: projet?.nom, numero: projet?.numero_projet, adresse: projet?.adresse,
                 responsable: projet?.responsable_nom, client: projet?.clients?.nom },
-    });
+    };
+    // PDF téléchargé directement (selection-pdf-direct.js) ; en cas d'échec, fenêtre d'impression comme avant.
+    let r, direct = false;
+    if (window.CMPGSelectionPDF) {
+      try { r = await CMPGSelectionPDF.telecharger(params); direct = true; }
+      catch (err) { console.error('PDF direct', err); }
+    }
+    if (!direct) r = await CMPGSelection.imprimer(params);
     if (r.vide) toast(mode === 'chantier'
       ? 'Aucun produit approuvé dans ce projet : le PDF chantier ne contient que les produits approuvés par le client.'
       : 'Aucune sélection à imprimer pour ce projet.', 'error');
-    else toast('Dans la fenêtre d\u2019impression, choisissez « Enregistrer au format PDF ».', 'info');
+    else toast(direct ? 'PDF téléchargé.' : 'Dans la fenêtre d\u2019impression, choisissez « Enregistrer au format PDF ».', direct ? 'success' : 'info');
   } catch (e) {
     console.error('[PDF]', e);
     toast('Le document n\u2019a pas pu être préparé : ' + (e?.message || e), 'error');

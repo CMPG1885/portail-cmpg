@@ -1009,14 +1009,7 @@ body * { font-variant-numeric: lining-nums; }
           <div id="est-liste"></div>
 
           <div id="est-editeur" style="display:none;margin-top:24px">
-            <div class="card" id="est-entete" style="margin-bottom:16px"></div>
-            <div class="est-tabs" style="margin-bottom:16px">
-              <div class="est-subtab" data-o="plan" onclick="estAfficher('plan')">Plan et questions</div>
-              <div class="est-subtab" data-o="pieces" onclick="estAfficher('pieces')">Pièces</div>
-              <div class="est-subtab" data-o="quantites" onclick="estAfficher('quantites')">Saisie par section</div>
-              <div class="est-subtab" data-o="aide" onclick="estAfficher('aide')">À ne pas oublier<span id="est-aide-badge"></span></div>
-              <div class="est-subtab" data-o="resultat" onclick="estAfficher('resultat')">Résultat</div>
-            </div>
+            <div id="est-entete"></div>
             <div id="est-contenu"></div>
           </div>
         </div>
@@ -5613,7 +5606,7 @@ async function estNouvelle() {
   const { data: der } = await db.from('estimations').select('version').eq('projet_id', estProjetId).order('version', { ascending: false }).limit(1);
   const version = (der?.[0]?.version || 0) + 1;
   const { data, error } = await db.from('estimations').insert({
-    projet_id: estProjetId, version, type_projet: p.type_projet, gamme_defaut: p.gamme_defaut || 'Intermédiaire', version_gabarit: 'rev39', contingence_pct: 0,
+    projet_id: estProjetId, version, type_projet: p.type_projet, gamme_defaut: p.gamme_defaut || 'Intermédiaire', version_gabarit: 'rev39', contingence_pct: 0, types_projet: [p.type_projet],
     nom: `Estimation ${p.type_projet.toLowerCase()} v${version}`,
   }).select('id').single();
   if (error) { toast('Erreur : ' + error.message, 'error'); return; }
@@ -5692,61 +5685,11 @@ async function estOuvrir(id) {
   estSignalerEdition(e);
   document.getElementById('est-editeur').style.display = 'block';
   estRenderEntete();
-  estAfficher(estLignes.length ? 'resultat' : (estQtes.length ? estOnglet : 'plan'));
+  const m0 = estMethode(e);
+  estAfficher(!m0 || !estTypes(e).length ? 'demarrer' : estLignes.length ? 'resultat'
+    : estQtes.length ? (['demarrer', 'documents', 'portee', 'lecture'].includes(estOnglet) ? 'quantites' : estOnglet)
+    : !e.questions_depart?.rempli_le ? (e.lecture_documents?.le ? 'portee' : 'documents') : (m0 === 'plan' ? 'lecture' : 'quantites'));
   document.getElementById('est-editeur').scrollIntoView({ behavior: 'smooth', block: 'start' });
-}
-
-function estRenderEntete() {
-  const e = estCourante, fz = estFigee(), dis = fz ? 'disabled' : '';
-  const p = estProjets.find(x => x.id === e.projet_id);
-  const T = e.totaux, nq = new Set(estQtes.map(q => q.cle)).size;
-  const sansPrix = estLignes.filter(l => l.source_prix && !['catalogue', 'sélection', 'manuel', 'choix client', 'fourni par le client'].includes(l.source_prix) && !estInclus.set.has(l.cle)).length;
-  const nSel = estLignes.filter(l => l.source_prix === 'sélection').length;
-  const chiffre = (lib, val, sous) => `<div style="padding:10px 16px;background:var(--fond);border-radius:10px;min-width:130px">
-      <div style="font-size:10px;letter-spacing:1.2px;text-transform:uppercase;color:var(--texte-2)">${lib}</div>
-      <div style="font-size:18px;margin-top:2px">${val}</div>${sous ? `<div style="font-size:11px;color:var(--texte-2)">${sous}</div>` : ''}</div>`;
-  const autre = estEnEditionAutre(e);
-  document.getElementById('est-entete').innerHTML = `
-    ${autre ? `<div style="margin:-4px 0 14px;padding:10px 14px;border-radius:10px;background:#fbf3e6;border-left:3px solid var(--caramel);font-size:13px">
-      ✏️ <strong>${escH(e.en_edition_par)}</strong> est en train de modifier cette estimation (depuis ${new Date(e.en_edition_le).toLocaleTimeString('fr-CA', { hour: '2-digit', minute: '2-digit' })}).
-      Vos changements pourraient écraser les siens : coordonnez-vous avant de modifier.</div>` : ''}
-    <div style="display:flex;justify-content:space-between;gap:16px;flex-wrap:wrap;align-items:flex-start">
-      <div style="flex:1;min-width:280px">
-        <input ${dis} value="${escH(estNom(e))}" onchange="estMajEntete('nom',this.value.trim()||null);this.value=estNom(estCourante)"
-               title="Cliquer pour renommer" style="font-family:'Playfair Display',serif;font-size:21px;border:1px solid transparent;background:transparent;padding:4px 6px;margin-left:-6px;width:100%;border-radius:6px"
-               onfocus="this.style.borderColor='var(--bord)'" onblur="this.style.borderColor='transparent'" />
-        <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-top:6px;font-size:12px;color:var(--texte-2)">
-          ${estBadgeStatut(e.statut)}
-          <span>${escH(p?.nom || '')} · v${e.version}</span>
-          <span>Créée le ${new Date(e.cree_le).toLocaleDateString('fr-CA')}${e.cree_par ? ' par ' + escH(e.cree_par) : ''}</span>
-          ${e.figee_le ? `<span>Figée le ${new Date(e.figee_le).toLocaleDateString('fr-CA')}${e.figee_par ? ' par ' + escH(e.figee_par) : ''}</span>` : ''}
-        </div>
-      </div>
-      <div style="display:flex;gap:8px;flex-wrap:wrap;justify-content:flex-end">
-        ${fz ? `<button class="btn btn-dark btn-sm" onclick="estMettreAJourPrix()" title="Comparer avec les prix actuels et créer une version à jour">⟳ Mettre à jour les prix</button>
-                <button class="btn btn-outline btn-sm" onclick="estDefiger()">🔓 Défiger</button>`
-             : `<button class="btn btn-dark btn-sm" onclick="estCalculer()">⟳ Calculer</button>
-                <button class="btn btn-caramel btn-sm" onclick="estFiger()">🔒 Figer</button>`}
-        <button class="btn btn-outline btn-sm" onclick="estNouvelleVersion()">＋ Nouvelle version</button>
-        <button class="btn btn-outline btn-sm" style="color:var(--danger);border-color:var(--danger)" onclick="estSupprimer('${e.id}')" title="Supprimer l'estimation">🗑</button>
-      </div>
-    </div>
-    <div style="display:flex;gap:10px;flex-wrap:wrap;margin-top:16px">
-      ${chiffre('Total avant taxes', T ? estMoney(T.total_ht) : '—', e.calculee_le ? 'calculé le ' + new Date(e.calculee_le).toLocaleString('fr-CA', { dateStyle: 'short', timeStyle: 'short' }) : 'pas encore calculé')}
-      ${chiffre('Total TTC', T ? estMoney(T.ttc) : '—')}
-      ${chiffre('Quantités', `${nq}`, `${estPieces.length} pièce(s)`)}
-      ${chiffre('Sélections approuvées', `${nSel}`, 'lignes au prix du produit')}
-      ${chiffre('Sans prix', `<span style="color:${sansPrix ? 'var(--danger)' : 'inherit'}">${sansPrix}</span>`, sansPrix ? 'voir Résultat' : '')}
-    </div>
-    <div class="form-grid" style="grid-template-columns:repeat(4,1fr);margin-top:18px">
-      <div class="form-group"><label>Type de projet</label><select ${dis} onchange="estMajEntete('type_projet',this.value)">${estOpts(EST_TYPES, e.type_projet)}</select></div>
-      <div class="form-group"><label>Gamme par défaut</label><select ${dis} onchange="estMajEntete('gamme_defaut',this.value)">${estOpts(EST_GAMMES, e.gamme_defaut)}</select></div>
-      <div class="form-group"><label>Contingence (%)</label><input ${dis} type="number" step="0.5" min="0" placeholder="15"
-           value="${e.contingence_pct != null ? +(e.contingence_pct * 100).toFixed(2) : ''}" onchange="estMajEntete('contingence_pct',this.value===''?null:this.value/100)" /></div>
-      <div class="form-group"><label>Phase</label><select ${dis} onchange="estMajEntete('phase',this.value)">${estOpts(['Préliminaire', 'Exécution'], e.phase)}</select></div>
-    </div>
-    <div class="form-group" style="margin:0"><label>Notes internes</label>
-      <textarea ${dis} style="min-height:44px" onchange="estMajEntete('notes_internes',this.value||null)">${escH(e.notes_internes || '')}</textarea></div>`;
 }
 
 async function estMajEntete(champ, valeur) {
@@ -5758,13 +5701,498 @@ async function estMajEntete(champ, valeur) {
   if (['type_projet', 'gamme_defaut', 'contingence_pct'].includes(champ) && estLignes.length) toast('Recalculez pour mettre le résultat à jour.', 'info');
 }
 
+// ---------- Parcours en étapes (maquette A) ----------
+// Démarrer · Documents · Portée · (+ Lecture du plan) · Quantités · À ne pas oublier · Résultat
+// Colonnes (migration 24) : estimations.methode ('main' | 'plan'), types_projet text[], lecture_documents jsonb.
+const EK = { ch: '#3A3B3A', gr: '#9A8C7E', fond: '#F5F4EE', bord: '#E3DFD8', t2: '#706862', st: '#EDE9E1', pale: '#FBFBF5', rouge: '#8B3A3A', vert: '#4B7A5C', cb: '#C8C2BB', saisie: '#00008B', beige: '#D9CEC1' };
+const EST_TYPE_DESC = {
+  'Construction neuve': 'Une maison au complet, sur un terrain vide ou après avoir démoli l’ancienne.',
+  'Agrandissement': 'On ajoute de la superficie collée à la maison : nouvelle fondation, nouveaux murs, nouveau toit. Ex. : rallonge, étage ajouté, garage attaché.',
+  'Rénovation complète': 'On vide les pièces jusqu’à la structure et tout est refait : gypse, isolation, électricité, plomberie, ventilation, finis. Ex. : maison achetée à rénover de fond en comble.',
+  'Rénovation partielle': 'On garde une bonne partie de l’existant (murs, réseau de ventilation, filage) et on refait des pièces ou des finis. Ex. : cuisine et salles de bain, plancher du rez-de-chaussée.',
+};
+const EST_TYPE_ORDRE = ['Construction neuve', 'Rénovation complète', 'Rénovation partielle', 'Agrandissement'];   // type principal = premier coché dans cet ordre
+const estMethode = e => e?.methode || (e?.plan_document_id ? 'plan' : null);
+const estTypes = e => e?.types_projet?.length ? e.types_projet : (e?.type_projet ? [e.type_projet] : []);
+const estDateFr = s => s ? new Date(s.length === 10 ? s + 'T12:00' : s).toLocaleDateString('fr-CA', { day: 'numeric', month: 'short', year: 'numeric' }) : '';
+const ES = {   // styles de la maquette
+  carte: `background:#fff;border:1px solid ${EK.bord};border-radius:10px`,
+  etiq: 'font-size:11px;letter-spacing:1.2px;text-transform:uppercase;font-weight:500',
+  h1: `margin:0;font-size:18px;font-weight:500;font-family:inherit;color:${EK.ch}`,
+  barre: `padding:12px 20px;background:${EK.st};display:flex;justify-content:space-between;flex-wrap:wrap;gap:8px;align-items:center`,
+  h2: `margin:0;font-size:12px;letter-spacing:1.2px;text-transform:uppercase;font-weight:500;font-family:inherit;color:${EK.ch}`,
+  champ: `padding:10px 12px;border:1px solid ${EK.gr};border-radius:6px;font-size:14px;background:#fff;color:${EK.ch};font-family:inherit`,
+  btnFonce: `min-height:44px;padding:0 24px;border-radius:22px;background:${EK.ch};color:#fff;border:0;display:inline-flex;align-items:center;font-size:13px;letter-spacing:1px;text-transform:uppercase;font-weight:500;cursor:pointer;font-family:inherit`,
+  btnClair: `min-height:44px;padding:0 20px;border-radius:22px;border:1px solid ${EK.cb};background:#fff;color:${EK.ch};display:inline-flex;align-items:center;font-size:13px;cursor:pointer;font-family:inherit`,
+};
+const estPill = (on, lib, clic, dis, petit) => `<button type="button" ${dis ? 'disabled' : ''} onclick="${clic}" style="min-height:${petit ? 36 : 44}px;padding:0 ${petit ? 12 : 16}px;border-radius:22px;font-size:13px;cursor:${dis ? 'default' : 'pointer'};font-family:inherit;border:1px solid ${on ? EK.ch : EK.cb};background:${on ? EK.ch : '#fff'};color:${on ? '#fff' : EK.ch};font-weight:${on ? 500 : 400}">${lib}</button>`;
+const estPage = html => `<div style="max-width:980px;margin:0 auto;padding:28px 0 40px;display:flex;flex-direction:column;gap:18px;color:${EK.ch};font-weight:300;line-height:1.5;font-size:14px">${html}</div>`;
+const estNav = (retour, suite, libSuite, dis) => `<div style="display:flex;justify-content:space-between;flex-wrap:wrap;gap:10px">
+    ${retour ? `<button type="button" style="${ES.btnClair}" onclick="estAfficher('${retour}')">Retour</button>` : '<span></span>'}
+    ${suite ? `<button type="button" style="${ES.btnFonce}${dis ? ';opacity:.45;cursor:not-allowed' : ''}" ${dis ? 'disabled' : ''} onclick="${suite}">${libSuite}</button>` : ''}</div>`;
+
+function estEtapes() {
+  const plan = estMethode(estCourante) === 'plan';
+  return [['demarrer', 'Démarrer'], ['documents', 'Documents'], ['portee', 'Portée'], ...(plan ? [['lecture', 'Lecture du plan']] : []),
+    ['quantites', 'Quantités'], ['aide', 'À ne pas oublier'], ['resultat', 'Résultat']];
+}
+function estEtapeFaite(k) {
+  const e = estCourante;
+  return k === 'demarrer' ? !!estMethode(e) && estTypes(e).length > 0
+    : k === 'documents' ? !!e.lecture_documents?.le
+    : k === 'portee' ? !!e.questions_depart?.rempli_le
+    : k === 'lecture' ? !!e.lecture?.lots?.finale?.le
+    : k === 'quantites' ? estQtes.length > 0
+    : k === 'aide' ? !!estAidePts && estAideVisibles().length > 0 && estAideRestants() === 0
+    : k === 'resultat' ? e.statut !== 'brouillon' : false;
+}
+function estSuivante(k) { const l = estEtapes().map(x => x[0]), i = l.indexOf(k); return l[i + 1] || 'resultat'; }
+
+function estRenderEntete() {
+  const e = estCourante, fz = estFigee(), dis = fz ? 'disabled' : '';
+  const m = estMethode(e), types = estTypes(e);
+  const autre = estEnEditionAutre(e);
+  const bLeger = `min-height:36px;padding:0 14px;border-radius:18px;border:1px solid rgba(255,255,255,.35);background:transparent;color:#fff;font-size:12px;cursor:pointer;font-family:inherit;white-space:nowrap`;
+  let n = 0;
+  const etapes = estEtapes().map(([k, lib]) => {
+    const fait = estEtapeFaite(k), cour = estOnglet === k || (k === 'quantites' && estOnglet === 'pieces');
+    const num = k === 'lecture' ? '+' : String(++n) + ' ·';
+    return `<li><button type="button" onclick="estAfficher('${k}')" ${cour ? 'aria-current="step"' : ''} style="background:none;border:0;padding:6px 0;cursor:pointer;font-family:inherit;font-size:13px;color:${cour ? EK.ch : fait ? EK.vert : EK.t2};font-weight:${cour ? 500 : 300}">${fait && !cour ? '✓' : num} ${lib}${k === 'aide' ? '<span id="est-aide-badge"></span>' : ''}</button></li>`;
+  }).join('');
+  document.getElementById('est-entete').innerHTML = `
+    <header style="background:${EK.ch};color:#fff;padding:18px 28px;border-radius:10px 10px 0 0;display:flex;flex-wrap:wrap;gap:10px 24px;align-items:center;justify-content:space-between">
+      <div style="display:flex;flex-direction:column;gap:2px;flex:1 1 300px;min-width:0">
+        <span style="font-size:11px;letter-spacing:2px;text-transform:uppercase;color:${EK.beige};font-weight:500">CMPG · Module d'estimation · v${e.version}${e.statut !== 'brouillon' ? ' · ' + escH(e.statut) : ''}</span>
+        <input ${dis} value="${escH(estNom(e))}" aria-label="Nom de l'estimation" title="Cliquer pour renommer" onchange="estMajEntete('nom',this.value.trim()||null);this.value=estNom(estCourante)"
+          style="font-size:20px;font-weight:500;color:#fff;background:transparent;border:1px solid transparent;border-radius:6px;padding:2px 6px;margin-left:-6px;font-family:inherit;width:100%"
+          onfocus="this.style.borderColor='rgba(255,255,255,.4)'" onblur="this.style.borderColor='transparent'">
+      </div>
+      <div style="display:flex;flex-wrap:wrap;gap:8px 12px;align-items:center;justify-content:flex-end">
+        <span style="font-size:13px;color:${EK.bord}">${escH(types.join(' + ') || 'Type à choisir')} · ${escH((e.gamme_defaut || '').toLowerCase())}${m ? ' · ' + (m === 'plan' ? 'avec le plan' : 'à la main') : ''}</span>
+        ${fz ? `<button type="button" style="${bLeger}" onclick="estMettreAJourPrix()">⟳ Mettre à jour les prix</button><button type="button" style="${bLeger}" onclick="estDefiger()">Défiger</button>` : ''}
+        <button type="button" style="${bLeger}" onclick="estNouvelleVersion()">＋ Nouvelle version</button>
+        <button type="button" style="${bLeger}" onclick="estSupprimer('${e.id}')" aria-label="Supprimer l'estimation" title="Supprimer l'estimation">🗑</button>
+      </div>
+    </header>
+    <div style="height:3px;background:${EK.gr}"></div>
+    <nav aria-label="Étapes" style="background:#fff;border:1px solid ${EK.bord};border-top:0;border-radius:0 0 10px 10px;padding:6px 28px;display:flex;flex-wrap:wrap;gap:4px 20px;align-items:center;justify-content:space-between">
+      <ol style="list-style:none;margin:0;padding:0;display:flex;flex-wrap:wrap;gap:0 20px">${etapes}</ol>
+      <button type="button" onclick="estAfficher('pieces')" style="background:none;border:0;padding:6px 0;cursor:pointer;font-family:inherit;font-size:12px;color:${estOnglet === 'pieces' ? EK.ch : EK.t2};text-decoration:underline">Pièces${estPieces.length ? ` (${estPieces.length})` : ''}</button>
+    </nav>
+    ${autre ? `<div style="margin-top:12px;padding:10px 14px;border-radius:10px;background:${EK.fond};border-left:3px solid ${EK.rouge};font-size:13px">
+      ✏️ <strong style="font-weight:500">${escH(e.en_edition_par)}</strong> est en train de modifier cette estimation (depuis ${new Date(e.en_edition_le).toLocaleTimeString('fr-CA', { hour: '2-digit', minute: '2-digit' })}).
+      Vos changements pourraient écraser les siens : coordonnez-vous avant de modifier.</div>` : ''}`;
+  estAideBadge();
+}
+
 function estAfficher(onglet) {
+  if (onglet === 'plan') onglet = 'lecture';
   estOnglet = onglet;
   if (estCourante) estRenderEntete();
-  document.querySelectorAll('#est-editeur .est-subtab').forEach(t => t.classList.toggle('active', t.dataset.o === onglet));
   if (onglet === 'quantites') estQManId = null;   // relire les prix manuels
-  ({ plan: estRenderPlan, pieces: estRenderPieces, quantites: estRenderQuantites, aide: estRenderAide, resultat: estRenderResultat })[onglet]();
-  estAideCharger().then(estAideBadge);
+  const cz = document.getElementById('est-contenu'); if (cz) cz.style.paddingTop = ['demarrer', 'documents', 'portee'].includes(onglet) ? '0' : '22px';
+  ({ demarrer: estRenderDemarrer, documents: estRenderDocuments, portee: estRenderPortee, lecture: estRenderPlan, pieces: estRenderPieces,
+     quantites: estRenderQuantites, aide: estRenderAide, resultat: estRenderResultat })[onglet]();
+  estAideCharger().then(() => { estAideBadge(); if (estOnglet === onglet) estRenderEntete(); });
+}
+
+// ---------- 1 · Démarrer ----------
+function estRenderDemarrer() {
+  const e = estCourante, fz = estFigee(), dis = fz ? 'disabled' : '';
+  const types = estTypes(e), m = estMethode(e), p = estProjets.find(x => x.id === e.projet_id);
+  const carteType = t => { const on = types.includes(t);
+    return `<button type="button" ${dis} onclick="estDemType('${t}')" aria-pressed="${on}" style="text-align:left;min-height:44px;padding:12px 14px;border-radius:10px;border:${on ? '2px solid ' + EK.ch : '1px solid ' + EK.cb};background:#fff;color:${EK.ch};display:flex;flex-direction:column;gap:4px;cursor:pointer;font-family:inherit">
+      <span style="font-size:14px;font-weight:500">${on ? '✓ ' : ''}${t}</span><span style="font-size:12px;color:${EK.t2};font-weight:300">${EST_TYPE_DESC[t]}</span></button>`; };
+  const carteMethode = (k, sur, titre, txt, pied) => { const on = m === k;
+    return `<button type="button" ${dis} onclick="estDemMethode('${k}')" aria-pressed="${on}" style="text-align:left;background:#fff;border:${on ? '2px solid ' + EK.ch : '1px solid ' + EK.bord};border-radius:12px;padding:20px 22px;display:flex;flex-direction:column;gap:8px;cursor:pointer;color:${EK.ch};font-family:inherit;font-weight:300">
+      <span style="${ES.etiq};color:${EK.t2}">${sur}</span><span style="font-size:18px;font-weight:500">${on ? '✓ ' : ''}${titre}</span><span>${txt}</span><span style="font-size:13px;color:${EK.t2}">${pied}</span></button>`; };
+  const pret = !!m && types.length > 0;
+  document.getElementById('est-contenu').innerHTML = estPage(`
+    <section style="${ES.carte};padding:22px 24px;display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:18px">
+      <div style="display:flex;flex-direction:column;gap:6px">
+        <span style="${ES.etiq}">Projet</span>
+        <div style="${ES.champ};border-color:${EK.bord};background:${EK.pale}">${escH(p?.nom || '')}</div>
+      </div>
+      <div style="display:flex;flex-direction:column;gap:6px">
+        <label for="est-dem-phase" style="${ES.etiq}">Phase</label>
+        <select id="est-dem-phase" ${dis} onchange="estDemMaj('phase',this.value)" style="${ES.champ}">${estOpts(['Préliminaire', 'Exécution'], e.phase)}</select>
+      </div>
+      <div style="display:flex;flex-direction:column;gap:8px;grid-column:1/-1">
+        <span style="${ES.etiq}">Type de projet <span style="text-transform:none;letter-spacing:0;font-weight:300;color:${EK.t2}">— un ou plusieurs</span></span>
+        <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:8px">${EST_TYPES.map(carteType).join('')}</div>
+        <div style="background:${EK.fond};border-radius:8px;padding:12px 14px;font-size:13px;display:flex;flex-direction:column;gap:4px">
+          <span style="font-weight:500">Agrandissement + rénovation dans le même projet</span>
+          <span>Cochez les deux. À l'étape Portée, chaque zone reçoit son type : la rallonge au prix « agrandissement », la maison existante au prix « rénovation partielle » ou « complète ». Chaque ligne prend le prix de sa zone ; le total les additionne.</span>
+          <span style="color:${EK.t2}">En cas de doute entre partielle et complète : si on garde le réseau de ventilation et la majorité du filage, c'est partielle.</span>
+        </div>
+      </div>
+      <div style="display:flex;flex-direction:column;gap:8px;grid-column:1/-1">
+        <span style="${ES.etiq}">Gamme des finis</span>
+        <div style="display:flex;flex-wrap:wrap;gap:6px">${EST_GAMMES.map(g => estPill(e.gamme_defaut === g, g, `estDemMaj('gamme_defaut','${g}')`, fz)).join('')}</div>
+        <span style="font-size:12px;color:${EK.t2}">Sert de prix par défaut tant que le client n'a pas approuvé ses sélections.</span>
+      </div>
+    </section>
+    <section style="display:flex;flex-direction:column;gap:10px">
+      <h1 style="${ES.h1}">Comment voulez-vous estimer ?</h1>
+      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:14px">
+        ${carteMethode('main', 'Préliminaire', 'À la main', 'Vous entrez les quantités section par section, avec l\'aide à côté de chaque ligne. Se fait à partir des rendus 3D ; les documents du dossier (comptes rendus, synthèse, mandat) sont à portée de main.', 'Environ 1 h pour une rénovation')}
+        ${carteMethode('plan', 'Exécution', 'Avec la lecture du plan', 'Vous téléversez le plan PDF ; Claude pré-remplit les quantités. Vous révisez seulement ce dont il n\'est pas sûr, puis vous complétez à la main.', 'Plan complet requis · lecture 10 à 20 min')}
+      </div>
+      <p style="margin:0;font-size:13px;color:${EK.t2}">Les étapes sont les mêmes ; « avec le plan » ajoute une étape de révision. Une estimation faite à la main peut recevoir une lecture du plan plus tard.</p>
+    </section>
+    <section style="display:flex;flex-direction:column;gap:6px">
+      <label for="est-dem-notes" style="${ES.etiq}">Notes internes</label>
+      <textarea id="est-dem-notes" ${dis} onchange="estMajEntete('notes_internes',this.value||null)" style="${ES.champ};border-color:${EK.bord};min-height:60px">${escH(e.notes_internes || '')}</textarea>
+    </section>
+    ${estNav(null, `estAfficher('documents')`, 'Continuer — Documents', !pret)}
+    ${pret ? '' : `<p style="margin:-8px 0 0;font-size:12px;color:${EK.rouge};text-align:right">Choisissez le type de projet et la façon d'estimer.</p>`}`);
+}
+async function estDemMaj(champ, valeur) { await estMajEntete(champ, valeur); estAfficher('demarrer'); }
+async function estDemType(t) {
+  if (estFigee()) return;
+  let l = estTypes(estCourante).slice();
+  l = l.includes(t) ? l.filter(x => x !== t) : t === 'Construction neuve' ? [t] : [...l.filter(x => x !== 'Construction neuve'), t];
+  const principal = EST_TYPE_ORDRE.find(x => l.includes(x)) || estCourante.type_projet;
+  const { error } = await db.from('estimations').update({ types_projet: l, type_projet: principal }).eq('id', estCourante.id);
+  if (error) { toast(/types_projet/.test(error.message) ? 'Exécutez d’abord la migration 24.' : 'Erreur : ' + error.message, 'error'); return; }
+  Object.assign(estCourante, { types_projet: l, type_projet: principal });
+  if (estLignes.length) toast('Recalculez pour mettre le résultat à jour.', 'info');
+  estAfficher('demarrer');
+}
+async function estDemMethode(k) {
+  if (estFigee()) return;
+  const { error } = await db.from('estimations').update({ methode: k }).eq('id', estCourante.id);
+  if (error) { toast(/methode/.test(error.message) ? 'Exécutez d’abord la migration 24.' : 'Erreur : ' + error.message, 'error'); return; }
+  estCourante.methode = k; estAfficher('demarrer');
+}
+
+// ---------- 2 · Documents (Claude lit le dossier) ----------
+let estDocsListe = [], estDocsCoches = null, estDocsTimer = null;
+async function estRenderDocuments() {
+  const c = document.getElementById('est-contenu'), e = estCourante, fz = estFigee();
+  c.innerHTML = estPage(`<div style="color:${EK.t2}">Chargement des documents…</div>`);
+  const { data, error } = await db.from('documents_projet').select('id, nom, note, date_document, created_at, storage_path, mime_type, taille_bytes, type_volet')
+    .eq('projet_id', e.projet_id).eq('type_volet', 'dossier');
+  if (estOnglet !== 'documents' || estCourante?.id !== e.id) return;
+  if (error) { c.innerHTML = estPage(`<div style="${ES.carte};padding:16px;color:${EK.rouge}">Erreur : ${escH(error.message)}</div>`); return; }
+  const dt = d => d.date_document || (d.created_at || '').slice(0, 10);
+  estDocsListe = (data || []).sort((a, b) => dt(a).localeCompare(dt(b)));
+  docsProjet = [...docsProjet.filter(d => !estDocsListe.some(x => x.id === d.id)), ...estDocsListe];
+  const L = e.lecture_documents || {}, lus = new Set((L.docs || []).map(d => d.id));
+  const enCours = !!(L.batch_id && !L.le && !L.erreur);
+  if (!estDocsCoches || estDocsCoches.id !== e.id) estDocsCoches = { id: e.id, set: new Set(estDocsListe.filter(d => !L.docs || lus.has(d.id) || d.created_at > (L.lance_le || '')).map(d => d.id)) };
+  const coches = estDocsCoches.set;
+  const nouveaux = L.le ? estDocsListe.filter(d => !lus.has(d.id)).length : 0;
+  const R = L.resultat;
+  const ligne = (d, i) => `<div style="display:flex;gap:12px;align-items:center;padding:10px 0;${i < estDocsListe.length - 1 ? 'border-bottom:1px solid ' + EK.st + ';' : ''}min-height:44px;flex-wrap:wrap">
+      <input type="checkbox" ${coches.has(d.id) ? 'checked' : ''} ${fz || enCours ? 'disabled' : ''} onchange="estDocsCocher('${d.id}',this.checked)" aria-label="Lire ${escH(d.nom)}" style="width:18px;height:18px;accent-color:${EK.ch}">
+      <a href="#" onclick="docOuvrir('${d.id}');return false" style="flex:1 1 240px;color:${EK.ch};text-decoration:none">${escH(d.nom.replace(/\.[^.]+$/, ''))}${L.le && !lus.has(d.id) ? ` <span style="font-size:11px;color:${EK.rouge}">· nouveau</span>` : ''}</a>
+      <span style="font-size:12px;color:${EK.t2}">${escH(d.note || 'Autre')} · </span>
+      ${d.date_document ? `<span style="font-size:12px;color:${EK.t2}">${d.date_document}</span>`
+        : `<input type="date" ${fz ? 'disabled' : ''} onchange="estDocDate('${d.id}',this.value)" title="Date du document : quand le projet change de direction, le plus récent compte" style="padding:4px 6px;border:1px solid ${EK.rouge};border-radius:6px;font-size:12px;font-family:inherit">`}
+    </div>`;
+  const tuile = (gros, lib, sous, rouge) => `<div style="background:${EK.fond};border-radius:8px;padding:12px 14px;display:flex;flex-direction:column;gap:2px">
+      <span style="font-size:22px;font-weight:500">${gros}</span><span>${lib}</span><span style="font-size:12px;color:${rouge ? EK.rouge : EK.t2}">${sous}</span></div>`;
+  let trouve = '';
+  if (R) {
+    await estAideCharger();
+    const cles = estPorteeCles(), nP = cles.filter(k => estPorteeProp(k)).length;
+    const pts = estAideVisibles(), nA = pts.filter(p => (R.aide || []).some(a => a.code === p.code)).length;
+    const contra = R.contradictions || [];
+    trouve = `<section style="${ES.carte};overflow:hidden">
+      <div style="${ES.barre}"><h2 style="${ES.h2}">Ce que Claude a trouvé</h2></div>
+      <div style="padding:14px 20px;display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:12px">
+        ${tuile(`${nP} sur ${cles.length}`, 'réponses de la portée proposées', cles.length - nP ? `${cles.length - nP} restent à remplir` : 'tout est proposé')}
+        ${tuile(`${nA} sur ${pts.length}`, 'points « À ne pas oublier » proposés', 'avec la phrase et le document source')}
+        ${tuile(contra.length, 'contradiction' + (contra.length > 1 ? 's' : '') + ' entre documents', contra.length ? 'à trancher à l’étape Portée' : 'aucune', contra.length > 0)}
+      </div>
+      ${contra.length ? `<div style="padding:0 20px 16px;font-size:13px;display:flex;flex-direction:column;gap:10px">
+        ${contra.map(x => `<div style="display:flex;flex-direction:column;gap:2px;border-left:3px solid ${EK.rouge};padding-left:12px">
+          <span style="font-weight:500">${escH(x.sujet)}</span>
+          <span>${escH(x.ancien_document)} (${escH(estDateFr(x.ancien_date))}) : « ${escH(x.ancien_citation)} ». ${escH(x.recent_document)} (${escH(estDateFr(x.recent_date))}) : « ${escH(x.recent_citation)} ».</span>
+          <span style="color:${EK.t2}">Claude propose le plus récent : ${escH(x.retenu)}</span></div>`).join('')}</div>` : ''}
+      ${R.resume ? `<div style="padding:14px 20px;border-top:1px solid ${EK.st};font-size:13px;display:flex;flex-direction:column;gap:6px">
+        <span style="${ES.etiq}">Résumé du projet</span><span>${escH(R.resume)}</span>
+        ${R.a_retenir?.length ? `<span style="${ES.etiq};margin-top:6px">À retenir pour les quantités</span><ul style="margin:0;padding-left:18px">${R.a_retenir.map(x => `<li>${escH(x)}</li>`).join('')}</ul>` : ''}</div>` : ''}
+    </section>`;
+  }
+  const etat = enCours ? `<span style="color:${EK.gr};font-size:13px">⏳ Claude lit les documents… (envoyé à ${new Date(L.lance_le).toLocaleTimeString('fr-CA', { hour: '2-digit', minute: '2-digit' })}) — habituellement quelques minutes. Vous pouvez continuer en attendant.</span>`
+    : L.erreur ? `<span style="color:${EK.rouge};font-size:13px">⚠ ${escH(L.erreur)}</span>`
+    : L.le ? `<span style="color:${EK.vert};font-size:13px">✓ Lu le ${new Date(L.le).toLocaleDateString('fr-CA')} à ${new Date(L.le).toLocaleTimeString('fr-CA', { hour: 'numeric', minute: '2-digit' }).replace(':', ' h ')} — ${(L.docs || []).length} document(s)${L.ignores?.length ? ` · non lus : ${escH(L.ignores.join(', '))}` : ''}</span>`
+    : `<span style="color:${EK.t2};font-size:13px">Pas encore lus.</span>`;
+  const libLire = !L.le ? 'Lire les documents' : nouveaux ? `Relire (${nouveaux > 1 ? nouveaux + ' nouveaux documents' : 'nouveau document ajouté'})` : 'Relire';
+  const peutLire = !fz && !enCours && coches.size > 0;
+  c.innerHTML = estPage(`
+    <div style="display:flex;flex-direction:column;gap:4px">
+      <h1 style="${ES.h1}">Ce que Claude sait déjà du projet</h1>
+      <p style="margin:0;color:${EK.t2}">Claude lit les documents du dossier (onglet Documents du projet) et préremplit tout ce qu'il peut : la portée, « À ne pas oublier » et, avec le plan, le contexte de la lecture. Rien n'est accepté sans vous.</p>
+    </div>
+    <section style="${ES.carte};overflow:hidden">
+      <div style="${ES.barre}"><h2 style="${ES.h2}">Documents trouvés au dossier (${estDocsListe.length})</h2><span style="font-size:12px;color:${EK.t2}">Cochés = lus par Claude · du plus ancien au plus récent</span></div>
+      <div style="padding:4px 20px">${estDocsListe.length ? estDocsListe.map(ligne).join('') : `<p style="color:${EK.t2};margin:12px 0">Aucun document au dossier pour l'instant.</p>`}</div>
+      ${fz ? '' : `<div style="padding:10px 20px;border-top:1px solid ${EK.st};display:flex;flex-wrap:wrap;gap:8px;align-items:center;background:${EK.pale}">
+        <span style="font-size:13px;color:${EK.t2}">Ajouter :</span>
+        <select id="est-doc-cat" aria-label="Catégorie" style="padding:8px 10px;border:1px solid ${EK.bord};border-radius:6px;font-family:inherit;font-size:13px">${DOC_VOLETS.dossier.cats.map(x => `<option>${x}</option>`).join('')}</select>
+        <input id="est-doc-date" type="date" aria-label="Date du document" title="Date du document (rencontre, envoi…)" style="padding:7px 10px;border:1px solid ${EK.bord};border-radius:6px;font-family:inherit;font-size:13px">
+        <label style="${ES.btnClair};min-height:36px;padding:0 16px">+ Choisir un fichier<input type="file" multiple accept=".pdf,.docx,.txt,.xlsx,.jpg,.jpeg,.png" style="display:none" onchange="estDocsAjouter(this.files);this.value=''"></label>
+      </div>`}
+      <div style="padding:12px 20px;border-top:1px solid ${EK.bord};display:flex;flex-wrap:wrap;gap:10px;align-items:center;justify-content:space-between">
+        ${etat}
+        ${fz || !estDocsListe.length ? '' : `<button type="button" ${peutLire ? '' : 'disabled'} onclick="estDocsLire()" style="${L.le && !nouveaux ? ES.btnClair : ES.btnFonce}${peutLire ? '' : ';opacity:.45;cursor:not-allowed'}">${libLire}</button>`}
+      </div>
+    </section>
+    ${trouve}
+    ${estNav('demarrer', `estAfficher('portee')`, 'Continuer — Portée')}
+    <p style="margin:0;font-size:12px;color:${EK.t2};text-align:right">Pas de documents au dossier ? L'étape se saute et la portée se remplit à la main.</p>`);
+  if (enCours && !estDocsTimer) estDocsSuivre();
+}
+function estDocsCocher(id, on) { if (!estDocsCoches) return; on ? estDocsCoches.set.add(id) : estDocsCoches.set.delete(id); estRenderDocuments(); }
+async function estDocDate(id, v) {
+  const { error } = await db.from('documents_projet').update({ date_document: v || null }).eq('id', id);
+  if (error) { toast('Erreur : ' + error.message, 'error'); return; }
+  estRenderDocuments();
+}
+async function estDocsAjouter(files) {
+  const cat = document.getElementById('est-doc-cat')?.value || 'Autre', date = document.getElementById('est-doc-date')?.value || null;
+  const pid = estCourante.projet_id; let n = 0;
+  for (const f of [...files]) {
+    const ext = f.name.toLowerCase().split('.').pop();
+    const type = f.type || { docx: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', xlsx: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', txt: 'text/plain' }[ext] || '';
+    if (!DOC_TYPES[type]) { toast(`« ${f.name} » : format non accepté (PDF, Word, Excel, texte ou image).`, 'error'); continue; }
+    if (f.size > 31 * 1048576) { toast(`« ${f.name} » : plus de 31 Mo.`, 'error'); continue; }
+    const chemin = `estimation/${pid}/dossier/${Date.now()}-${f.name.replace(/[^\w.\- ]+/g, '_')}`;
+    const { error: e1 } = await db.storage.from('portail-cmpg').upload(chemin, f, { contentType: type, upsert: false });
+    if (e1) { toast('Téléversement impossible : ' + e1.message, 'error'); continue; }
+    const { data: d, error: e2 } = await db.from('documents_projet').insert({ projet_id: pid, type_volet: 'dossier', nom: f.name, storage_path: chemin, taille_bytes: f.size, mime_type: type, note: cat, date_document: date }).select('id').single();
+    if (e2) { await db.storage.from('portail-cmpg').remove([chemin]); toast('Erreur : ' + e2.message, 'error'); continue; }
+    estDocsCoches?.set.add(d.id); n++;
+  }
+  if (n) toast(`${n} document(s) ajouté(s).${date ? '' : ' Indiquez la date de chaque document.'}`, 'success');
+  estRenderDocuments();
+}
+async function estAppelDocs(corps) {
+  const { data, error } = await db.functions.invoke('lire-documents', { body: { estimation_id: estCourante.id, ...corps } });
+  let r = data; if (error) { try { r = await error.context.json(); } catch (x) { r = { erreur: error.message }; } }
+  return r || { erreur: 'aucune réponse' };
+}
+async function estDocsLire() {
+  if (estFigee() || !estDocsCoches?.set.size) return;
+  if (estDocsListe.some(d => estDocsCoches.set.has(d.id) && !d.date_document)) {
+    const ok = await estDialogue('Documents sans date', '<p>Certains documents cochés n’ont pas de date. Claude prendra la date de téléversement, ce qui peut fausser « le plus récent l’emporte ».</p>',
+      [{ v: '', lib: 'Ajouter les dates' }, { v: 'ok', lib: 'Lire quand même', classe: 'btn-dark' }]);
+    if (!ok) return;
+  }
+  const r = await estAppelDocs({ lancer: true, documents: [...estDocsCoches.set] });
+  if (!r.ok) { toast('Lecture impossible : ' + (r.erreur || ''), 'error'); return; }
+  const { data } = await db.from('estimations').select('lecture_documents').eq('id', estCourante.id).single();
+  estCourante.lecture_documents = data?.lecture_documents || null;
+  toast('Claude lit les documents : quelques minutes.', 'success');
+  estRenderDocuments();
+}
+function estDocsSuivre() {
+  const id = estCourante?.id; if (!id) return;
+  const debut = Date.now();
+  const tour = async () => {
+    if (estCourante?.id !== id || Date.now() - debut > 40 * 60000) { estDocsTimer = null; return; }
+    const r = await estAppelDocs({});
+    if (estCourante?.id !== id) { estDocsTimer = null; return; }
+    if (r.en_cours) { estDocsTimer = setTimeout(tour, 20000); return; }
+    estDocsTimer = null;
+    const { data } = await db.from('estimations').select('lecture_documents').eq('id', id).single();
+    estCourante.lecture_documents = data?.lecture_documents || null;
+    if (r.ok && r.termine) toast('Documents lus : les propositions sont dans Portée et « À ne pas oublier ».', 'success');
+    else toast('Lecture des documents : ' + (r.erreur || 'erreur'), 'error');
+    estRenderEntete();
+    if (['documents', 'portee', 'aide'].includes(estOnglet)) estAfficher(estOnglet);
+  };
+  estDocsTimer = setTimeout(tour, 15000);
+}
+
+// ---------- 3 · Portée (réponses de départ, préremplies par Claude) ----------
+// Les réponses vont dans estimations.questions_depart (même structure que l'ancien formulaire « Questions de départ »,
+// plus le type de chaque zone et l'agrandissement) ; confirme = clés réglées par l'estimatrice.
+const EST_ZONES_P = [['sous_sol', 'Sous-sol'], ['rdc', 'Rez-de-chaussée'], ['etage', 'Étage']];
+function estPorteeCles() {
+  const t = estTypes(estCourante), reno = t.some(x => /^Rénovation/.test(x)) || !t.length, ajout = t.includes('Agrandissement') || t.includes('Construction neuve');
+  return [...(reno ? EST_ZONES_P.map(z => z[0]) : []), ...(ajout ? ['agrandissement'] : []),
+    'revetement', 'toiture', 'exterieur', 'duree', 'habitee', 'fourni_client', 'radon', 'amiante', 'acces'];
+}
+function estPorteeProp(k) { return (estCourante.lecture_documents?.resultat?.portee || []).find(x => x.cle === k) || null; }
+function estPorteeContra(k) { const c = estCourante.lecture_documents?.resultat?.contradictions || []; return c.find(x => x.cle === k) || null; }
+// Valeur proposée par Claude, au format de questions_depart
+function estPorteePV(k, p) {
+  if (!p) return undefined;
+  if (['sous_sol', 'rdc', 'etage'].includes(k)) return { touche: p.valeur === 'Touché' ? true : p.valeur === 'Pas touché' ? false : null, superficie: p.nombre ?? null, type: p.type_zone || null };
+  if (k === 'agrandissement') return { superficie: p.valeur === 'Non' ? 0 : p.nombre ?? null };
+  if (/^pl_|^exterieur$|^fourni_client$/.test(k)) return p.liste || [];
+  if (['habitee', 'radon'].includes(k)) return p.valeur === 'Oui' ? true : p.valeur === 'Non' ? false : undefined;
+  if (k === 'duree') return p.nombre ?? undefined;
+  return p.valeur || undefined;
+}
+// Réponse inscrite (undefined = pas de réponse)
+function estPorteeDV(d, k) {
+  if (['sous_sol', 'rdc', 'etage'].includes(k)) return d[k]?.touche == null ? undefined : d[k];
+  if (k === 'agrandissement') return d.agrandissement?.superficie == null ? undefined : d.agrandissement;
+  if (/^pl_/.test(k)) { const v = d.planchers?.[k.slice(3)]; return v?.length || d.confirme?.[k] ? v || [] : undefined; }
+  if (['exterieur', 'fourni_client'].includes(k)) return d[k]?.length || d.confirme?.[k] ? d[k] || [] : undefined;
+  return d[k] == null || d[k] === '' ? undefined : d[k];
+}
+// Réponses manquantes (une liste vide — aucun ajout, rien de fourni par le client — est une réponse valable)
+const estPorteeManque = d => estPorteeCles().filter(k => !['exterieur', 'fourni_client'].includes(k) && estPorteeVal(d, k) === undefined);
+const estPorteeVal = (d, k) => { const v = estPorteeDV(d, k); return v !== undefined ? v : estPorteePV(k, estPorteeProp(k)); };
+const estPorteeEnAttente = (d, k) => estPorteeDV(d, k) === undefined && !d.confirme?.[k] && estPorteePV(k, estPorteeProp(k)) !== undefined;
+async function estPorteeEcrire(d) {
+  const { error } = await db.from('estimations').update({ questions_depart: d }).eq('id', estCourante.id);
+  if (error) { toast('Erreur : ' + error.message, 'error'); return false; }
+  estCourante.questions_depart = d; return true;
+}
+function estPorteeD() { const d = JSON.parse(JSON.stringify(estCourante.questions_depart || {})); d.confirme = d.confirme || {}; d.planchers = d.planchers || {}; return d; }
+function estPorteeMettre(d, k, v) {
+  if (/^pl_/.test(k)) d.planchers[k.slice(3)] = v; else d[k] = v;
+  d.confirme[k] = true;
+}
+async function estPorteeSet(k, v) { if (estFigee()) return; const d = estPorteeD(); estPorteeMettre(d, k, v); if (await estPorteeEcrire(d)) estRenderPortee(); }
+async function estPorteeZone(k, champ, v) {
+  if (estFigee()) return; const d = estPorteeD();
+  const base = { ...(estPorteeVal(d, k) || {}) }; base[champ] = v;
+  if (champ === 'touche' && v === false) base.superficie = null;
+  estPorteeMettre(d, k, base); if (await estPorteeEcrire(d)) estRenderPortee();
+}
+async function estPorteeBascule(k, item) {
+  if (estFigee()) return; const d = estPorteeD();
+  const l = [...(estPorteeVal(d, k) || [])], i = l.indexOf(item);
+  if (i >= 0) l.splice(i, 1); else l.push(item);
+  estPorteeMettre(d, k, item === 'Aucun changement' ? (i >= 0 ? [] : ['Aucun changement']) : l.filter(x => x !== 'Aucun changement'));
+  if (await estPorteeEcrire(d)) estRenderPortee();
+}
+async function estPorteeConfirmer(cles) {
+  if (estFigee()) return; const d = estPorteeD();
+  for (const k of cles) { const v = estPorteePV(k, estPorteeProp(k)); if (v === undefined) continue; if (estPorteeDV(d, k) === undefined) estPorteeMettre(d, k, v); else d.confirme[k] = true; }
+  if (await estPorteeEcrire(d)) estRenderPortee();
+}
+function estPorteeToutesCles() { return estPorteeCles().flatMap(k => ['sous_sol', 'rdc', 'etage', 'agrandissement'].includes(k) ? [k, 'pl_' + k] : [k]); }
+
+function estRenderPortee() {
+  const c = document.getElementById('est-contenu'), e = estCourante, fz = estFigee(), dis = fz;
+  const d = estPorteeD(), types = estTypes(e), reno = types.filter(x => /^Rénovation/.test(x));
+  const lu = !!e.lecture_documents?.le;
+  const cles = estPorteeCles();
+  const attente = estPorteeToutesCles().filter(k => estPorteeEnAttente(d, k));
+  const manque = estPorteeManque(d);
+  const nProp = cles.filter(k => estPorteeProp(k)).length;
+  const chip = k => { const p = estPorteeProp(k); if (!p || !estPorteeEnAttente(d, k)) return '';
+    return `<span style="grid-column:1/-1;display:flex;flex-wrap:wrap;gap:6px 10px;align-items:center;font-size:12px;color:${EK.t2}">
+      <span style="background:${EK.st};color:${EK.ch};border-radius:10px;padding:2px 8px;font-weight:500">Proposé par Claude</span>
+      <span>${escH(p.document)}${p.date ? ', ' + escH(estDateFr(p.date)) : ''}${p.citation ? ` — « ${escH(p.citation)} »` : ''}</span>
+      ${fz ? '' : `<button type="button" onclick="estPorteeConfirmer(['${k}'])" style="min-height:32px;padding:0 12px;border-radius:16px;border:1px solid ${EK.ch};background:#fff;color:${EK.ch};font-size:12px;cursor:pointer;font-family:inherit">Confirmer</button>`}</span>`; };
+  const contra = k => { const x = estPorteeContra(k); if (!x || d.confirme?.[k]) return '';
+    return `<span style="display:block;font-size:12px;color:${EK.rouge};font-weight:300;text-transform:none;letter-spacing:0">Contradiction : ${escH(x.ancien_document)} (${escH(estDateFr(x.ancien_date))}) dit « ${escH(x.ancien_citation)} », ${escH(x.recent_document)} (${escH(estDateFr(x.recent_date))}) dit « ${escH(x.recent_citation)} ». Claude propose le plus récent.</span>`; };
+  const vide = k => estPorteeVal(d, k) === undefined ? `<span style="display:block;font-size:12px;color:${EK.rouge};font-weight:300;text-transform:none;letter-spacing:0">${lu ? 'Pas trouvé dans les documents — à remplir' : 'À remplir'}</span>` : '';
+  const nb = (val, clic, u, lab) => `<label style="font-size:13px;display:flex;gap:6px;align-items:center">${lab}<input type="number" min="0" step="any" ${dis ? 'disabled' : ''} value="${val ?? ''}" placeholder="—" onchange="${clic}"
+      style="width:100px;padding:8px 10px;border:1px solid ${EK.gr};border-radius:6px;font-size:14px;color:${EK.saisie};text-align:right;font-family:inherit"> ${u}</label>`;
+  const planchers = k => { const v = estPorteeVal(d, 'pl_' + k) || [];
+    return `<div style="grid-column:1/-1;display:flex;flex-wrap:wrap;gap:6px;align-items:center"><span style="font-size:12px;color:${EK.t2};margin-right:4px">Finis de plancher neufs</span>
+      ${EST_DEP_PLANCHERS.map(x => estPill(v.includes(x), x, `estPorteeBascule('pl_${k}','${x}')`, dis, true)).join('')}</div>${chip('pl_' + k)}`; };
+  const zone = ([k, lib]) => { const v = estPorteeVal(d, k) || {}, ty = v.type || (reno.length === 1 ? reno[0] : 'Rénovation partielle'); const att = estPorteeEnAttente(d, k);
+    return `<div style="display:grid;grid-template-columns:150px 1fr;gap:10px 16px;align-items:center;padding:14px 0;border-bottom:1px solid ${EK.st}">
+      <span style="font-weight:500;color:${v.touche === undefined && !att ? EK.rouge : EK.ch}">${lib}${contra(k)}${vide(k)}</span>
+      <div style="display:flex;flex-wrap:wrap;gap:10px 16px;align-items:center">
+        <div style="display:flex;gap:6px">${estPill(v.touche === true, 'Touché', `estPorteeZone('${k}','touche',true)`, dis, true)}${estPill(v.touche === false, 'Pas touché', `estPorteeZone('${k}','touche',false)`, dis, true)}</div>
+        ${v.touche ? `${reno.length > 1 || !reno.length ? `<label style="font-size:13px;display:flex;gap:6px;align-items:center">Type <select ${dis ? 'disabled' : ''} onchange="estPorteeZone('${k}','type',this.value)" style="padding:8px 10px;border:1px solid ${EK.gr};border-radius:6px;font-size:13px;font-family:inherit;color:${EK.ch}">${estOpts(['Rénovation partielle', 'Rénovation complète'], ty)}</select></label>`
+          : `<span style="font-size:13px;color:${EK.t2}">Type : ${escH(ty.toLowerCase())}</span>`}
+          ${nb(v.superficie, `estPorteeZone('${k}','superficie',this.value===''?null:Number(this.value))`, 'pi²', 'Superficie touchée')}` : ''}
+      </div>${chip(k)}${v.touche ? planchers(k) : ''}</div>`; };
+  const agr = () => { const v = estPorteeVal(d, 'agrandissement') || {}, neuf = types.includes('Construction neuve');
+    return `<div style="display:grid;grid-template-columns:150px 1fr;gap:10px 16px;align-items:center;padding:14px 0;border-bottom:1px solid ${EK.st}">
+      <span style="font-weight:500;color:${v.superficie == null && !estPorteeEnAttente(d, 'agrandissement') ? EK.rouge : EK.ch}">${neuf ? 'Construction neuve' : 'Agrandissement'}${contra('agrandissement')}${vide('agrandissement')}</span>
+      <div style="display:flex;flex-wrap:wrap;gap:10px 16px;align-items:center"><span style="font-size:13px;color:${EK.t2}">Type : ${neuf ? 'construction neuve' : 'agrandissement'}</span>
+        ${nb(v.superficie, `estPorteeZone('agrandissement','superficie',this.value===''?null:Number(this.value))`, 'pi²', neuf ? 'Superficie construite' : 'Superficie ajoutée')}</div>
+      ${chip('agrandissement')}${planchers('agrandissement')}</div>`; };
+  const choix = (k, lib, opts) => { const v = estPorteeVal(d, k);
+    return `<div style="display:flex;flex-direction:column;gap:6px;padding:12px 0;border-bottom:1px solid ${EK.st}">
+      <label style="font-size:13px;font-weight:500;display:flex;flex-direction:column;gap:6px">${lib}${contra(k)}${vide(k)}
+      <select ${dis ? 'disabled' : ''} onchange="estPorteeSet('${k}',this.value||null)" style="${ES.champ};max-width:420px;font-weight:300;border-color:${v === undefined ? EK.rouge : EK.gr}">${estOpts(opts, v, '—')}</select></label>${chip(k)}</div>`; };
+  const ouinon = (k, lib, opts = ['Oui', 'Non']) => { const v = estPorteeVal(d, k), aff = v === true ? 'Oui' : v === false ? 'Non' : v;
+    const val = o => ['habitee', 'radon'].includes(k) ? (o === 'Oui') : `'${o}'`;
+    return `<div style="display:flex;flex-wrap:wrap;gap:8px 16px;align-items:center;justify-content:space-between;padding:12px 0;border-bottom:1px solid ${EK.st}">
+      <span style="font-size:13px;font-weight:500;flex:1 1 260px">${lib}${contra(k)}${vide(k)}</span>
+      <div style="display:flex;gap:6px">${opts.map(o => estPill(aff === o, o, `estPorteeSet('${k}',${val(o)})`, dis, true)).join('')}</div>${chip(k)}</div>`; };
+  const liste = (k, lib, opts, note) => { const v = estPorteeVal(d, k) || [];
+    return `<div style="display:flex;flex-direction:column;gap:8px;padding:12px 0;border-bottom:1px solid ${EK.st}">
+      <span style="font-size:13px;font-weight:500">${lib}${contra(k)}</span>
+      <div style="display:flex;flex-wrap:wrap;gap:6px">${opts.map(x => estPill(v.includes(x), x, `estPorteeBascule('${k}','${x}')`, dis, true)).join('')}</div>
+      ${note ? `<span style="font-size:12px;color:${EK.t2}">${note}</span>` : ''}${chip(k)}</div>`; };
+  const sec = (titre, html) => `<section style="${ES.carte};overflow:hidden"><div style="${ES.barre}"><h2 style="${ES.h2}">${titre}</h2></div><div style="padding:4px 20px 8px">${html}</div></section>`;
+  const zonesHtml = estPorteeCles().filter(k => ['sous_sol', 'rdc', 'etage'].includes(k)).map(k => zone(EST_ZONES_P.find(z => z[0] === k))).join('') + (cles.includes('agrandissement') ? agr() : '');
+  const nRep = cles.length - manque.length;
+  c.innerHTML = estPage(`
+    <div style="display:flex;flex-direction:column;gap:4px">
+      <h1 style="${ES.h1}">Portée du projet</h1>
+      <p style="margin:0;color:${EK.t2}">${lu ? `Claude a prérempli ${nProp} réponse${nProp > 1 ? 's' : ''} sur ${cles.length} d'après les documents du dossier. Confirmez-les ou corrigez-les${manque.length ? ` ; ${manque.length === 1 ? 'celle' : 'les ' + manque.length} en rouge ${manque.length === 1 ? 'est' : 'sont'} à remplir` : ''}.` : `${nRep} réponse${nRep > 1 ? 's' : ''} sur ${cles.length}. Pour un préremplissage, faites lire les documents du dossier à l'étape précédente.`} Vos réponses guident la lecture du plan et les quantités.</p>
+    </div>
+    ${attente.length && !fz ? `<div style="${ES.carte};padding:12px 20px;display:flex;flex-wrap:wrap;gap:10px;align-items:center;justify-content:space-between">
+      <span style="font-size:13px">${attente.length} proposition${attente.length > 1 ? 's' : ''} de Claude à confirmer.</span>
+      <button type="button" style="${ES.btnClair};min-height:36px" onclick="estPorteeConfirmer(estPorteeToutesCles())">Tout confirmer</button></div>` : ''}
+    ${zonesHtml ? sec('Ce qu’on touche à l’intérieur', zonesHtml + (types.length > 1 ? `<p style="margin:10px 0 4px;font-size:12px;color:${EK.t2}">Chaque zone garde son type : ses lignes prennent les prix de ce type.</p>` : '')) : ''}
+    ${sec('À l’extérieur', choix('revetement', 'Revêtement extérieur', ['Aucun', 'Agrandissement seulement', 'Tout le tour']) + choix('toiture', 'Toiture', ['Aucune', 'Agrandissement seulement', 'Raccord à l’existant', 'Réfection complète'])
+      + liste('exterieur', 'Ajouts', EST_DEP_EXT))}
+    ${sec('Le chantier', `<div style="display:flex;flex-wrap:wrap;gap:8px 16px;align-items:center;justify-content:space-between;padding:12px 0;border-bottom:1px solid ${EK.st}">
+        <span style="font-size:13px;font-weight:500;flex:1 1 260px">Durée des travaux${contra('duree')}${vide('duree')}</span>${nb(estPorteeVal(d, 'duree'), `estPorteeSet('duree',this.value===''?null:Number(this.value))`, 'semaines', '')}${chip('duree')}</div>`
+      + ouinon('habitee', 'La maison est habitée pendant les travaux')
+      + liste('fourni_client', 'Fourni ou fait par le client', EST_DEP_CLIENT, 'Ces lignes resteront visibles à 0 $, avec la mention « fourni par le client ».')
+      + ouinon('radon', 'Système radon exigé') + ouinon('amiante', 'Maison d’avant 1990 ou amiante connue', ['Oui', 'Non', 'Inconnu']) + ouinon('acces', 'Accès au terrain pour la machinerie', ['Facile', 'Difficile']))}
+    <section style="display:flex;flex-direction:column;gap:6px">
+      <label for="est-portee-notes" style="${ES.etiq}">Notes pour Claude <span style="text-transform:none;letter-spacing:0;font-weight:300;color:${EK.t2}">— facultatif</span></label>
+      <textarea id="est-portee-notes" ${dis ? 'disabled' : ''} onchange="estPorteeSet('notes',this.value.trim()||null)" placeholder="Ex. : la salle de bain du rez-de-chaussée n’est pas touchée." style="${ES.champ};border-color:${EK.bord};min-height:56px">${escH(d.notes || '')}</textarea>
+    </section>
+    <p style="margin:0;font-size:13px;color:${EK.t2}">Les montants (assurance, mise aux normes, contingence…) ne se demandent plus ici : ils sont dans « À ne pas oublier », avec leur aide.</p>
+    ${estNav('documents', fz ? `estAfficher('${estSuivante('portee')}')` : 'estPorteeContinuer()', `Continuer — ${estMethode(e) === 'plan' ? 'Lecture du plan' : 'Quantités'}`)}`);
+}
+async function estPorteeContinuer() {
+  if (estFigee()) return;
+  let d = estPorteeD();
+  const attente = estPorteeToutesCles().filter(k => estPorteeEnAttente(d, k));
+  const manque = estPorteeManque(d);
+  if (attente.length || manque.length) {
+    const r = await estDialogue('Avant de continuer', `${attente.length ? `<p>${attente.length} proposition${attente.length > 1 ? 's' : ''} de Claude ${attente.length > 1 ? 'ne sont pas confirmées' : 'n’est pas confirmée'}.</p>` : ''}
+        ${manque.length ? `<p style="margin-top:8px">${manque.length} réponse${manque.length > 1 ? 's restent' : ' reste'} à remplir : ${manque.length > 1 ? 'elles seront' : 'elle sera'} considérée${manque.length > 1 ? 's' : ''} comme « non précisée ».</p>` : ''}`,
+      [{ v: '', lib: 'Revoir' }, { v: 'ok', lib: attente.length ? 'Accepter et continuer' : 'Continuer', classe: 'btn-dark' }]);
+    if (!r) return;
+    for (const k of attente) estPorteeMettre(d, k, estPorteePV(k, estPorteeProp(k)));
+  }
+  // Durées liées au chantier (gérant, toilette…) : vides = durée des travaux (voir estDepartAppliquer)
+  if (d.duree) {
+    const cat = await estDepartCatalogue();
+    d.catalogue = { ...Object.fromEntries(cat.filter(x => x.duree).map(x => [x.cle, { v: null, pid: x.pid, q: x.q, ty: x.ty, duree: true }])), ...(d.catalogue || {}) };
+  }
+  d.rempli_le = new Date().toISOString();
+  if (!(await estPorteeEcrire(d))) return;
+  await estDepartAppliquer(d);
+  await estRechargerContenu();
+  toast('Portée enregistrée.', 'success');
+  estAfficher(estSuivante('portee'));
+}
+
+// « À ne pas oublier » : réponse proposée par Claude à partir des documents
+function estAidePropHtml(p) {
+  const a = (estCourante.lecture_documents?.resultat?.aide || []).find(x => x.code === p.code);
+  if (!a || (estCourante.aide_memoire || {})[p.code]?.statut) return '';
+  const lib = { inclus: 'Inclus', pas: 'Pas dans ce projet', avenir: 'Montant à venir' }[a.statut] || a.statut;
+  return `<span style="display:flex;flex-wrap:wrap;gap:6px 10px;align-items:center;font-size:12px;color:${EK.t2};padding-left:20px;margin-top:4px">
+    <span style="background:${EK.st};color:${EK.ch};border-radius:10px;padding:2px 8px;font-weight:500">Proposé par Claude : ${escH(lib)}${a.valeur != null ? ' · ' + escH(estNum(a.valeur)) + (p.unite ? ' ' + escH(p.unite) : '') : ''}</span>
+    <span>${escH(a.document)}${a.date ? ', ' + escH(estDateFr(a.date)) : ''}${a.citation ? ` — « ${escH(a.citation)} »` : ''}</span>
+    ${estFigee() ? '' : `<button type="button" onclick="estAideAccepter('${p.code}')" style="min-height:32px;padding:0 12px;border-radius:16px;border:1px solid ${EK.ch};background:#fff;color:${EK.ch};font-size:12px;cursor:pointer;font-family:inherit">Confirmer</button>`}</span>`;
+}
+async function estAideAccepter(code) {
+  if (estFigee()) return;
+  const p = (estAidePts || []).find(x => x.code === code), a = (estCourante.lecture_documents?.resultat?.aide || []).find(x => x.code === code);
+  if (!p || !a) return;
+  const { data: { user } } = await db.auth.getUser();
+  const rep = { ...(estCourante.aide_memoire || {}) };
+  rep[code] = { statut: a.statut, valeur: a.statut === 'inclus' && p.reponse !== 'aucune' ? a.valeur ?? null : null, par: user?.email || null, le: new Date().toISOString(), source: a.document };
+  if (!(await estAideEnregistrer(rep))) return;
+  await estAideAppliquer(p, rep[code]);
+  estRenderAide();
 }
 
 // ---------- Pièces (grille de portée) ----------
@@ -6328,8 +6756,8 @@ async function estAideCharger(forcer) {
   return estAidePts;
 }
 function estAideVisibles() {
-  const ty = estCourante?.type_projet;
-  return (estAidePts || []).filter(p => p.actif && (!p.types?.length || !ty || p.types.includes(ty)));
+  const tys = estTypes(estCourante);
+  return (estAidePts || []).filter(p => p.actif && (!p.types?.length || !tys.length || p.types.some(t => tys.includes(t))));
 }
 function estAideRestants() {
   const rep = estCourante?.aide_memoire || {};
@@ -6381,6 +6809,7 @@ async function estRenderAide() {
             <div style="display:flex;align-items:center;gap:10px"><span aria-hidden="true" style="width:10px;height:10px;border-radius:5px;flex:none;background:${coul}"></span>
               <h3 style="margin:0;font-size:15px;font-weight:500;font-family:inherit;color:${ch}">${escH(p.titre)}</h3></div>
             ${p.resume ? `<span style="color:${t2};font-size:13px;padding-left:20px">${escH(p.resume)}</span>` : ''}
+            ${estAidePropHtml(p)}
             ${stt === 'avenir' && p.defaut != null ? `<span style="color:${gr};font-size:12px;padding-left:20px">Compté à ${estMoney(p.defaut)} en attendant le vrai montant</span>` : ''}
           </div>
           <div role="group" aria-label="Réponse" style="display:flex;flex-wrap:wrap;gap:6px">${pill(p.code, 'inclus', 'Inclus')}${pill(p.code, 'pas', 'Pas dans ce projet')}${pill(p.code, 'avenir', 'Montant à venir')}</div>
@@ -6564,6 +6993,8 @@ async function estCopierVersion(src, pieces, qtes) {
   const { data: e, error } = await db.from('estimations').insert({
     projet_id: src.projet_id, version, phase: src.phase, type_projet: src.type_projet, gamme_defaut: src.gamme_defaut,
     contingence_pct: src.contingence_pct, notes_internes: src.notes_internes, version_gabarit: 'rev39',
+    methode: src.methode ?? null, types_projet: src.types_projet ?? null, questions_depart: src.questions_depart ?? null,
+    lecture_documents: src.lecture_documents ?? null, aide_memoire: src.aide_memoire || {},
     commentaire_client: src.commentaire_client ?? null, commentaires_sections: src.commentaires_sections || {},
     nom: (src.nom || 'Estimation').replace(/\s*v\d+$/, '') + ` v${version}`,
   }).select('id').single();
@@ -7028,16 +7459,9 @@ async function estRenderPlan() {
       </div>
     </div>
     <div class="card" style="margin-bottom:16px">
-      <div style="display:flex;justify-content:space-between;align-items:center;gap:16px;flex-wrap:wrap">
-        <div><div style="font-size:11px;letter-spacing:1.5px;text-transform:uppercase;color:var(--texte-2)">2 · Questions de départ</div>
-          <div style="font-size:13px;margin-top:4px">${estDepartResume(e.questions_depart)}</div></div>
-        <button class="btn ${e.questions_depart ? 'btn-outline' : 'btn-dark'} btn-sm" onclick="estDepartFormulaire()">${e.questions_depart ? (fz ? 'Voir' : 'Modifier') : '✎ Remplir'}</button>
-      </div>
-    </div>
-    <div class="card" style="margin-bottom:16px">
       <div style="display:flex;justify-content:space-between;align-items:center;gap:16px;flex-wrap:wrap;margin-bottom:12px">
-        <div style="font-size:11px;letter-spacing:1.5px;text-transform:uppercase;color:var(--texte-2)">3 · Lecture du plan</div>
-        ${fz || !estPlanDoc ? '' : `<button class="btn btn-dark btn-sm" onclick="estLirePlan()" ${estLectureEnCours || !e.questions_depart ? 'disabled' : ''} title="${e.questions_depart ? '' : 'Remplissez d’abord les questions de départ'}">📖 ${Object.keys(L).length ? 'Relire le plan' : 'Lire le plan'}</button>`}
+        <div style="font-size:11px;letter-spacing:1.5px;text-transform:uppercase;color:var(--texte-2)">2 · Lecture du plan</div>
+        ${fz || !estPlanDoc ? '' : `<button class="btn btn-dark btn-sm" onclick="estLirePlan()" ${estLectureEnCours || !e.questions_depart?.rempli_le ? 'disabled' : ''} title="${e.questions_depart?.rempli_le ? '' : 'Remplissez d’abord l’étape Portée'}">📖 ${Object.keys(L).length ? 'Relire le plan' : 'Lire le plan'}</button>`}
       </div>
       <table class="data-table" style="margin:0"><tbody>${EST_LOTS.map(([k, t]) => `<tr><td>${escH(t)}</td><td style="text-align:right">${etat(k)}
         ${!fz && !estLectureEnCours && k !== 'pieces' && !L[k] && L.pieces?.le && (k !== 'finale' || EST_LOTS_PLAN.every(x => L[x]?.le)) ? ` <button class="btn btn-outline btn-sm" onclick="estSuivreLecture(null)">Lancer</button>` : ''}
@@ -7049,7 +7473,7 @@ async function estRenderPlan() {
     </div>
     <div class="card">
       <div style="display:flex;justify-content:space-between;align-items:center;gap:16px;flex-wrap:wrap">
-        <div><div style="font-size:11px;letter-spacing:1.5px;text-transform:uppercase;color:var(--texte-2)">4 · Questions</div>
+        <div><div style="font-size:11px;letter-spacing:1.5px;text-transform:uppercase;color:var(--texte-2)">3 · Questions</div>
           <div style="font-size:14px;margin-top:4px">${nq ? `<strong>${nq}</strong> question(s) à répondre` : 'Aucune question en attente.'}</div>
           ${parSec.length ? `<div style="font-size:12px;margin-top:2px">${parSec.map(x => `<span style="${x.r === 0 ? 'color:var(--caramel)' : 'color:var(--texte-2)'}">${x.n} · ${escH(x.titre)}</span>`).join('<span style="color:var(--texte-2)"> &nbsp;|&nbsp; </span>')}</div>` : ''}
           <div style="font-size:12px;color:var(--texte-2)">Seulement ce que Claude n’a pas pu lire avec certitude. Le reste se voit dans « Saisie par section ».</div></div>
@@ -7058,7 +7482,7 @@ async function estRenderPlan() {
     </div>
     <div class="card" style="margin-top:16px">
       <div style="display:flex;justify-content:space-between;align-items:center;gap:16px;flex-wrap:wrap">
-        <div><div style="font-size:11px;letter-spacing:1.5px;text-transform:uppercase;color:var(--texte-2)">5 · Calculer</div>
+        <div><div style="font-size:11px;letter-spacing:1.5px;text-transform:uppercase;color:var(--texte-2)">4 · Calculer</div>
           <div style="font-size:14px;margin-top:4px">${e.calculee_le && e.totaux
             ? `Dernier calcul : <strong>${estMoney(e.totaux.total_ht)}</strong> avant taxes · ${new Date(e.calculee_le).toLocaleString('fr-CA', { dateStyle: 'medium', timeStyle: 'short' })}`
             : 'Pas encore calculée.'}</div>
@@ -7208,7 +7632,7 @@ async function estDepartFormulaire() {
     estCourante.questions_depart = d2;
     await estDepartAppliquer(d2);
     o.remove(); toast('Questions de départ enregistrées.', 'success');
-    await estRechargerContenu(); if (estOnglet === 'plan') estRenderPlan();
+    await estRechargerContenu(); if (estOnglet === 'lecture') estRenderPlan();
   });
   document.body.appendChild(o);
 }
@@ -7291,7 +7715,7 @@ async function estSuivreLecture(seuls, relancerPieces) {
     estCourante.lecture = e?.lecture || { lots: {} }; estCourante.lecture.lots = estCourante.lecture.lots || {};
     for (const [k, m] of Object.entries(erreurs)) estCourante.lecture.lots[k] = { ...(estCourante.lecture.lots[k] || {}), erreur: m };
   };
-  const majEcran = () => { if (estCourante?.id === id && estOnglet === 'plan') estRenderPlan(); };
+  const majEcran = () => { if (estCourante?.id === id && estOnglet === 'lecture') estRenderPlan(); };
   const attendre = async (liste) => {
     let restants = liste;
     while (restants.length && estCourante?.id === id) {
@@ -7317,7 +7741,7 @@ async function estSuivreLecture(seuls, relancerPieces) {
   await recharger(); await estRechargerContenu(); majEcran();
   const nb = EST_LOTS.filter(([k]) => lots()[k]?.erreur || !lots()[k]?.le).length;
   toast(nb ? `Lecture terminée avec ${nb} étape(s) à reprendre.` : 'Lecture du plan terminée.', nb ? 'error' : 'success');
-  if (!nb && estOnglet === 'plan') estQuestions();
+  if (!nb && estOnglet === 'lecture') estQuestions();
 }
 async function estRechargerContenu() {
   const [{ data: pcs }, { data: qs }] = await Promise.all([

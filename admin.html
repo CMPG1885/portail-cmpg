@@ -5770,6 +5770,7 @@ function estRenderEntete() {
       <div style="display:flex;flex-wrap:wrap;gap:8px 12px;align-items:center;justify-content:flex-end">
         <span style="font-size:13px;color:${EK.bord}">${escH(types.join(' + ') || 'Type à choisir')} · ${escH((e.gamme_defaut || '').toLowerCase())}${m ? ' · ' + (m === 'plan' ? 'avec le plan' : 'à la main') : ''}</span>
         ${fz ? `<button type="button" style="${bLeger}" onclick="estMettreAJourPrix()">⟳ Mettre à jour les prix</button><button type="button" style="${bLeger}" onclick="estDefiger()">Défiger</button>` : ''}
+        ${fz ? '' : `<button type="button" class="est-btn-calculer" style="${bLeger};background:#fff;color:${EK.ch};border-color:#fff;font-weight:500" onclick="estCalculer()">⟳ Calculer</button>`}
         <button type="button" style="${bLeger}" onclick="estNouvelleVersion()">＋ Nouvelle version</button>
         <button type="button" style="${bLeger}" onclick="estSupprimer('${e.id}')" aria-label="Supprimer l'estimation" title="Supprimer l'estimation">🗑</button>
       </div>
@@ -6024,7 +6025,8 @@ function estPorteePV(k, p) {
   if (!p) return undefined;
   if (['sous_sol', 'rdc', 'etage'].includes(k)) return { touche: p.valeur === 'Touché' ? true : p.valeur === 'Pas touché' ? false : null, superficie: p.nombre ?? null, type: p.type_zone || null };
   if (k === 'agrandissement') return { superficie: p.valeur === 'Non' ? 0 : p.nombre ?? null };
-  if (/^pl_|^exterieur$|^fourni_client$/.test(k)) return p.liste || [];
+  if (k === 'exterieur') return estExtProp().liste;
+  if (/^pl_|^fourni_client$/.test(k)) return p.liste || [];
   if (['habitee', 'radon'].includes(k)) return p.valeur === 'Oui' ? true : p.valeur === 'Non' ? false : undefined;
   if (k === 'duree') return p.nombre ?? undefined;
   return p.valeur || undefined;
@@ -6043,6 +6045,7 @@ const estPorteeManque = d => estPorteeCles().filter(k => !['exterieur', 'fourni_
 function estPorteeResume(k, v) {
   if (v === undefined || v === null) return '';
   if (['sous_sol', 'rdc', 'etage'].includes(k)) return v.touche === false ? 'pas touché' : v.touche ? ['touché', v.type ? v.type.toLowerCase() : ''].filter(Boolean).join(' · ') : '';
+  if (k === 'exterieur' && Array.isArray(v)) { const et = estExtProp().etat; return v.length ? v.map(x => et[x] ? `${x} (${et[x].toLowerCase()})` : x).join(', ') : 'aucun'; }
   if (Array.isArray(v)) return v.length ? v.join(', ') : 'aucun';
   if (v === true) return 'oui'; if (v === false) return 'non';
   return typeof v === 'number' ? estNum(v) + (k === 'duree' ? ' semaines' : '') : String(v);
@@ -6055,8 +6058,24 @@ async function estPorteeEcrire(d) {
   estCourante.questions_depart = d; return true;
 }
 function estPorteeD() { const d = JSON.parse(JSON.stringify(estCourante.questions_depart || {})); d.confirme = d.confirme || {}; d.planchers = d.planchers || {}; return d; }
+// Extérieur : chaque élément est neuf ou en réfection (d.exterieur_etat). Claude écrit « Terrasse — réfection ».
+function estExtProp() {
+  const r = { liste: [], etat: {} };
+  for (const x of estPorteeProp('exterieur')?.liste || []) {
+    const [nom, et] = String(x).split(/\s+[—–-]\s+/); const n = EST_DEP_EXT.find(o => o.toLowerCase() === (nom || '').trim().toLowerCase()); if (!n) continue;
+    r.liste.push(n); if (/r[ée]fection|refai|rempla|r[ée]par/i.test(et || '')) r.etat[n] = 'Réfection'; else if (/neu|ajout|nouv/i.test(et || '')) r.etat[n] = 'Neuf';
+  }
+  return r;
+}
+async function estPorteeExtEtat(x, v) {
+  if (estFigee()) return; const d = estPorteeD();
+  const l = [...(estPorteeVal(d, 'exterieur') || [])]; if (!l.includes(x)) l.push(x);
+  estPorteeMettre(d, 'exterieur', l); d.exterieur_etat = { ...(d.exterieur_etat || {}), [x]: v };
+  if (await estPorteeEcrire(d)) estRenderPortee();
+}
 function estPorteeMettre(d, k, v) {
   if (/^pl_/.test(k)) d.planchers[k.slice(3)] = v; else d[k] = v;
+  if (k === 'exterieur') d.exterieur_etat = { ...estExtProp().etat, ...(d.exterieur_etat || {}) };
   d.confirme[k] = true;
 }
 async function estPorteeSet(k, v) { if (estFigee()) return; const d = estPorteeD(); estPorteeMettre(d, k, v); if (await estPorteeEcrire(d)) estRenderPortee(); }
@@ -6130,6 +6149,9 @@ function estRenderPortee() {
     return `<div style="display:flex;flex-direction:column;gap:8px;padding:12px 0;border-bottom:1px solid ${EK.st}">
       <span style="font-size:13px;font-weight:500">${lib}${contra(k)}</span>
       <div style="display:flex;flex-wrap:wrap;gap:6px">${opts.map(x => estPill(v.includes(x), x, `estPorteeBascule('${k}','${x}')`, dis, true)).join('')}</div>
+      ${k === 'exterieur' && v.length ? `<div style="display:flex;flex-direction:column;gap:6px;padding:4px 0 0 2px">${v.map(x => { const et = d.exterieur_etat?.[x] ?? estExtProp().etat[x];
+        return `<div style="display:flex;flex-wrap:wrap;gap:6px 12px;align-items:center"><span style="font-size:13px;min-width:150px;color:${et ? EK.ch : EK.rouge}">${escH(x)}${et ? '' : ' — à préciser'}</span>
+          ${['Neuf', 'Réfection'].map(o => estPill(et === o, o, `estPorteeExtEtat('${x}','${o}')`, dis, true)).join('')}</div>`; }).join('')}</div>` : ''}
       ${note ? `<span style="font-size:12px;color:${EK.t2}">${note}</span>` : ''}${chip(k)}</div>`; };
   const sec = (titre, html) => `<section style="${ES.carte};overflow:hidden"><div style="${ES.barre}"><h2 style="${ES.h2}">${titre}</h2></div><div style="padding:4px 20px 8px">${html}</div></section>`;
   const zonesHtml = estPorteeCles().filter(k => ['sous_sol', 'rdc', 'etage'].includes(k)).map(k => zone(EST_ZONES_P.find(z => z[0] === k))).join('') + (estPorteeAjout() ? agr() : '');
@@ -6144,7 +6166,7 @@ function estRenderPortee() {
       <button type="button" style="${ES.btnClair};min-height:36px" onclick="estPorteeConfirmer(estPorteeToutesCles())">Tout confirmer</button></div>` : ''}
     ${zonesHtml ? sec('Ce qu’on touche à l’intérieur', zonesHtml + (types.length > 1 ? `<p style="margin:10px 0 4px;font-size:12px;color:${EK.t2}">Chaque zone garde son type : ses lignes prennent les prix de ce type.</p>` : '')) : ''}
     ${sec('À l’extérieur', choix('revetement', 'Revêtement extérieur', ['Aucun', 'Agrandissement seulement', 'Tout le tour']) + choix('toiture', 'Toiture', ['Aucune', 'Agrandissement seulement', 'Raccord à l’existant', 'Réfection complète'])
-      + liste('exterieur', 'Ajouts', EST_DEP_EXT))}
+      + liste('exterieur', 'Ajouté ou refait', EST_DEP_EXT))}
     ${sec('Le chantier', `<div style="display:flex;flex-wrap:wrap;gap:8px 16px;align-items:center;justify-content:space-between;padding:12px 0;border-bottom:1px solid ${EK.st}">
         <span style="font-size:13px;font-weight:500;flex:1 1 260px">Durée des travaux${contra('duree')}${vide('duree')}</span>${nb(estPorteeVal(d, 'duree'), `estPorteeSet('duree',this.value===''?null:Number(this.value))`, 'semaines', '')}${chip('duree')}</div>`
       + ouinon('habitee', 'La maison est habitée pendant les travaux')

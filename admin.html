@@ -6014,7 +6014,7 @@ function estDocsSuivre() {
 const EST_ZONES_P = [['sous_sol', 'Sous-sol'], ['rdc', 'Rez-de-chaussée'], ['etage', 'Étage']];
 function estPorteeCles() {
   const t = estTypes(estCourante), reno = t.some(x => /^Rénovation/.test(x)) || !t.length, ajout = t.includes('Agrandissement') || t.includes('Construction neuve');
-  return [...(reno ? EST_ZONES_P.map(z => z[0]) : []), ...(ajout ? ['agrandissement'] : []),
+  return [...(reno ? EST_ZONES_P.map(z => z[0]) : []),
     'revetement', 'toiture', 'exterieur', 'duree', 'habitee', 'fourni_client', 'radon', 'amiante', 'acces'];
 }
 function estPorteeProp(k) { return (estCourante.lecture_documents?.resultat?.portee || []).find(x => x.cle === k) || null; }
@@ -6038,7 +6038,15 @@ function estPorteeDV(d, k) {
   return d[k] == null || d[k] === '' ? undefined : d[k];
 }
 // Réponses manquantes (une liste vide — aucun ajout, rien de fourni par le client — est une réponse valable)
-const estPorteeManque = d => estPorteeCles().filter(k => !['exterieur', 'fourni_client'].includes(k) && estPorteeVal(d, k) === undefined);
+const estPorteeManque = d => estPorteeCles().filter(k => !['exterieur', 'fourni_client', 'agrandissement'].includes(k) && estPorteeVal(d, k) === undefined);
+// Valeur proposée en clair (pastille « Proposé par Claude »)
+function estPorteeResume(k, v) {
+  if (v === undefined || v === null) return '';
+  if (['sous_sol', 'rdc', 'etage'].includes(k)) return v.touche === false ? 'pas touché' : v.touche ? ['touché', v.type ? v.type.toLowerCase() : ''].filter(Boolean).join(' · ') : '';
+  if (Array.isArray(v)) return v.length ? v.join(', ') : 'aucun';
+  if (v === true) return 'oui'; if (v === false) return 'non';
+  return typeof v === 'number' ? estNum(v) + (k === 'duree' ? ' semaines' : '') : String(v);
+}
 const estPorteeVal = (d, k) => { const v = estPorteeDV(d, k); return v !== undefined ? v : estPorteePV(k, estPorteeProp(k)); };
 const estPorteeEnAttente = (d, k) => estPorteeDV(d, k) === undefined && !d.confirme?.[k] && estPorteePV(k, estPorteeProp(k)) !== undefined;
 async function estPorteeEcrire(d) {
@@ -6070,7 +6078,8 @@ async function estPorteeConfirmer(cles) {
   for (const k of cles) { const v = estPorteePV(k, estPorteeProp(k)); if (v === undefined) continue; if (estPorteeDV(d, k) === undefined) estPorteeMettre(d, k, v); else d.confirme[k] = true; }
   if (await estPorteeEcrire(d)) estRenderPortee();
 }
-function estPorteeToutesCles() { return estPorteeCles().flatMap(k => ['sous_sol', 'rdc', 'etage', 'agrandissement'].includes(k) ? [k, 'pl_' + k] : [k]); }
+const estPorteeAjout = () => estTypes(estCourante).some(x => x === 'Agrandissement' || x === 'Construction neuve');
+function estPorteeToutesCles() { return [...estPorteeCles().flatMap(k => ['sous_sol', 'rdc', 'etage'].includes(k) ? [k, 'pl_' + k] : [k]), ...(estPorteeAjout() ? ['pl_agrandissement'] : [])]; }
 
 function estRenderPortee() {
   const c = document.getElementById('est-contenu'), e = estCourante, fz = estFigee(), dis = fz;
@@ -6082,7 +6091,7 @@ function estRenderPortee() {
   const nProp = cles.filter(k => estPorteeProp(k)).length;
   const chip = k => { const p = estPorteeProp(k); if (!p || !estPorteeEnAttente(d, k)) return '';
     return `<span style="grid-column:1/-1;display:flex;flex-wrap:wrap;gap:6px 10px;align-items:center;font-size:12px;color:${EK.t2}">
-      <span style="background:${EK.st};color:${EK.ch};border-radius:10px;padding:2px 8px;font-weight:500">Proposé par Claude</span>
+      <span style="background:${EK.st};color:${EK.ch};border-radius:10px;padding:2px 8px;font-weight:500">Proposé par Claude${estPorteeResume(k, estPorteePV(k, p)) ? ' : ' + escH(estPorteeResume(k, estPorteePV(k, p))) : ''}</span>
       <span>${escH(p.document)}${p.date ? ', ' + escH(estDateFr(p.date)) : ''}${p.citation ? ` — « ${escH(p.citation)} »` : ''}</span>
       ${fz ? '' : `<button type="button" onclick="estPorteeConfirmer(['${k}'])" style="min-height:32px;padding:0 12px;border-radius:16px;border:1px solid ${EK.ch};background:#fff;color:${EK.ch};font-size:12px;cursor:pointer;font-family:inherit">Confirmer</button>`}</span>`; };
   const contra = k => { const x = estPorteeContra(k); if (!x || d.confirme?.[k]) return '';
@@ -6098,16 +6107,16 @@ function estRenderPortee() {
       <span style="font-weight:500;color:${v.touche === undefined && !att ? EK.rouge : EK.ch}">${lib}${contra(k)}${vide(k)}</span>
       <div style="display:flex;flex-wrap:wrap;gap:10px 16px;align-items:center">
         <div style="display:flex;gap:6px">${estPill(v.touche === true, 'Touché', `estPorteeZone('${k}','touche',true)`, dis, true)}${estPill(v.touche === false, 'Pas touché', `estPorteeZone('${k}','touche',false)`, dis, true)}</div>
-        ${v.touche ? `${reno.length > 1 || !reno.length ? `<label style="font-size:13px;display:flex;gap:6px;align-items:center">Type <select ${dis ? 'disabled' : ''} onchange="estPorteeZone('${k}','type',this.value)" style="padding:8px 10px;border:1px solid ${EK.gr};border-radius:6px;font-size:13px;font-family:inherit;color:${EK.ch}">${estOpts(['Rénovation partielle', 'Rénovation complète'], ty)}</select></label>`
+        ${v.touche ? `${true ? `<label style="font-size:13px;display:flex;gap:6px;align-items:center">Type <select ${dis ? 'disabled' : ''} onchange="estPorteeZone('${k}','type',this.value)" style="padding:8px 10px;border:1px solid ${EK.gr};border-radius:6px;font-size:13px;font-family:inherit;color:${EK.ch}">${estOpts(['Rénovation partielle', 'Rénovation complète'], ty)}</select></label>`
           : `<span style="font-size:13px;color:${EK.t2}">Type : ${escH(ty.toLowerCase())}</span>`}
-          ${nb(v.superficie, `estPorteeZone('${k}','superficie',this.value===''?null:Number(this.value))`, 'pi²', 'Superficie touchée')}` : ''}
+` : ''}
       </div>${chip(k)}${v.touche ? planchers(k) : ''}</div>`; };
   const agr = () => { const v = estPorteeVal(d, 'agrandissement') || {}, neuf = types.includes('Construction neuve');
     return `<div style="display:grid;grid-template-columns:150px 1fr;gap:10px 16px;align-items:center;padding:14px 0;border-bottom:1px solid ${EK.st}">
-      <span style="font-weight:500;color:${v.superficie == null && !estPorteeEnAttente(d, 'agrandissement') ? EK.rouge : EK.ch}">${neuf ? 'Construction neuve' : 'Agrandissement'}${contra('agrandissement')}${vide('agrandissement')}</span>
+      <span style="font-weight:500;color:${EK.ch}">${neuf ? 'Construction neuve' : 'Agrandissement'}</span>
       <div style="display:flex;flex-wrap:wrap;gap:10px 16px;align-items:center"><span style="font-size:13px;color:${EK.t2}">Type : ${neuf ? 'construction neuve' : 'agrandissement'}</span>
-        ${nb(v.superficie, `estPorteeZone('agrandissement','superficie',this.value===''?null:Number(this.value))`, 'pi²', neuf ? 'Superficie construite' : 'Superficie ajoutée')}</div>
-      ${chip('agrandissement')}${planchers('agrandissement')}</div>`; };
+</div>
+      ${planchers('agrandissement')}</div>`; };
   const choix = (k, lib, opts) => { const v = estPorteeVal(d, k);
     return `<div style="display:flex;flex-direction:column;gap:6px;padding:12px 0;border-bottom:1px solid ${EK.st}">
       <label style="font-size:13px;font-weight:500;display:flex;flex-direction:column;gap:6px">${lib}${contra(k)}${vide(k)}
@@ -6123,7 +6132,7 @@ function estRenderPortee() {
       <div style="display:flex;flex-wrap:wrap;gap:6px">${opts.map(x => estPill(v.includes(x), x, `estPorteeBascule('${k}','${x}')`, dis, true)).join('')}</div>
       ${note ? `<span style="font-size:12px;color:${EK.t2}">${note}</span>` : ''}${chip(k)}</div>`; };
   const sec = (titre, html) => `<section style="${ES.carte};overflow:hidden"><div style="${ES.barre}"><h2 style="${ES.h2}">${titre}</h2></div><div style="padding:4px 20px 8px">${html}</div></section>`;
-  const zonesHtml = estPorteeCles().filter(k => ['sous_sol', 'rdc', 'etage'].includes(k)).map(k => zone(EST_ZONES_P.find(z => z[0] === k))).join('') + (cles.includes('agrandissement') ? agr() : '');
+  const zonesHtml = estPorteeCles().filter(k => ['sous_sol', 'rdc', 'etage'].includes(k)).map(k => zone(EST_ZONES_P.find(z => z[0] === k))).join('') + (estPorteeAjout() ? agr() : '');
   const nRep = cles.length - manque.length;
   c.innerHTML = estPage(`
     <div style="display:flex;flex-direction:column;gap:4px">

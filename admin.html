@@ -1009,7 +1009,7 @@ body * { font-variant-numeric: lining-nums; }
             <div class="est-tabs" style="margin-bottom:16px">
               <div class="est-subtab" data-o="plan" onclick="estAfficher('plan')">Plan et questions</div>
               <div class="est-subtab" data-o="pieces" onclick="estAfficher('pieces')">Pièces</div>
-              <div class="est-subtab" data-o="quantites" onclick="estAfficher('quantites')">Vérifier les quantités</div>
+              <div class="est-subtab" data-o="quantites" onclick="estAfficher('quantites')">Saisie par section</div>
               <div class="est-subtab" data-o="aide" onclick="estAfficher('aide')">À ne pas oublier<span id="est-aide-badge"></span></div>
               <div class="est-subtab" data-o="resultat" onclick="estAfficher('resultat')">Résultat</div>
             </div>
@@ -5749,10 +5749,12 @@ function estSections() {
   }
   return [...sec.values()].sort((a, b) => a.code.localeCompare(b.code));
 }
-// ---------- Quantités par section (phase 2) ----------
-// Sections à gauche, lignes à droite ; aide « ? » par quantité ; mode guidé (une section par écran).
-// Le montant affiché est une estimation au prix du catalogue (type de la pièce ou du projet, gamme, prix manuels) :
-// le total exact (sélections, pourcentages, contingence) se fait avec « Calculer ».
+// ---------- Quantités par section (phase 2) — présentation identique à la maquette ----------
+// Saisie par section : sections à gauche, lignes à droite (Ligne · Quantité · Unité · Prix · Montant), aide « ? » par ligne.
+// Mode guidé : une section par écran (maquette B). Montants au prix du catalogue ; le total exact se fait avec « Calculer ».
+const EQ = { ch: '#3A3B3A', gr: '#9A8C7E', fond: '#F5F4EE', bord: '#E3DFD8', t2: '#706862', st: '#EDE9E1', pale: '#FBFBF5', rouge: '#8B3A3A', vert: '#4B7A5C', saisie: '#00008B' };
+let estQDetail = new Set(), estQToutes = false;
+function estQBasculerDetail(cle) { estQDetail.has(cle) ? estQDetail.delete(cle) : estQDetail.add(cle); estRenderQuantites(); }
 let estQSec = null, estQGuide = false, estQAide = new Set(), estQCat = null, estQExtra = {}, estQMan = {}, estQEdit = null, estQManId = null;
 async function estQCharger() {
   if (!estQCat) {
@@ -5762,10 +5764,11 @@ async function estQCharger() {
     estQCat = data || [];
     let r = await db.from('catalogue_parametres').select('cle, source, regle, aide_eviter').eq('actif', true);
     if (r.error) r = await db.from('catalogue_parametres').select('cle, source, regle').eq('actif', true);   // avant la migration 22
-    estQExtra = {}; (r.data || []).filter(p => ['Plan', 'Pop-up'].includes(p.source)).forEach(p => { estQExtra[p.cle] = p; });
+    estQExtra = {}; (r.data || []).filter(p => ['Plan', 'Pop-up'].includes(p.source)).forEach(p => { if (!estQExtra[p.cle]) estQExtra[p.cle] = p; });
   }
   const { data: pm } = await db.from('estimation_prix_manuels').select('cle_gabarit, prix').eq('estimation_id', estCourante.id);
-  estQManId = estCourante.id; estQMan = {}; (pm || []).forEach(m => { estQMan[m.cle_gabarit] = Number(m.prix); });
+  estQManId = estCourante.id; estQMan = {};
+  (pm || []).forEach(m => { estQMan[m.cle_gabarit] = Number(m.prix); });
 }
 // Tâches comptées pour une clé de quantité (une seule tâche modèle par sous-section pour les cases « pièce »)
 function estQTaches(cle) {
@@ -5782,14 +5785,12 @@ function estQPrixTache(t, ty, ga) {
   const px = (t.catalogue_prix || []).filter(p => p.actif !== false);
   const r = px.find(p => p.type_projet === ty && p.gamme === ga) || px.find(p => p.type_projet === ty && !p.gamme)
     || px.find(p => !p.type_projet && p.gamme === ga) || px.find(p => !p.type_projet && !p.gamme);
-  const v = r ? Number(r.prix_fp ?? r.prix_mat ?? r.prix_mo ?? 0) : null;
-  return { prix: v, manuel: false };
+  return { prix: r ? Number(r.prix_fp ?? r.prix_mat ?? r.prix_mo ?? 0) : null, manuel: false };
 }
 function estQTypeRang(r) {
   const z = estPieces.find(p => p.id === r?.piece_id)?.zone;
   return r?.type_projet || (z && z !== 'Hors mandat' ? z : null) || estCourante.type_projet;
 }
-// Prix unitaire combiné (main-d'œuvre + matériaux…) et montant estimé d'une clé
 function estQValeur(cle) {
   const ts = estQTaches(cle), rs = estQtes.filter(x => x.cle === cle);
   const unit = (ty, ga) => ts.reduce((a, t) => { const p = estQPrixTache(t, ty, ga); if (p.prix == null) a.manque = true; else a.v += p.prix; if (p.manuel) a.manuel = true; return a; }, { v: 0, manque: false, manuel: false });
@@ -5807,107 +5808,117 @@ async function estRenderQuantites() {
   const c = document.getElementById('est-contenu'); if (!c || !estCourante) return;
   if (!estQCat || estQManId !== estCourante.id) { if (!estQCat) c.innerHTML = '<div class="card" style="font-size:13px;color:var(--texte-2)">Chargement…</div>'; await estQCharger(); }
   const fz = estFigee(), dis = fz ? 'disabled' : '';
-  const secs = estQSections();
-  if (!secs.length) { c.innerHTML = '<div class="empty-state" style="padding:30px"><p>Aucune quantité au catalogue.</p></div>'; return; }
-  if (!estQSec || !secs.some(s => s.code === estQSec)) estQSec = (secs.find(s => s.remplis) || secs[0]).code;
-  const q = estQFiltre.q.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
-  const norm = s => (s || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
+  const toutes = estQSections();
+  if (!toutes.length) { c.innerHTML = '<div class="empty-state" style="padding:30px"><p>Aucune quantité au catalogue.</p></div>'; return; }
+  // Sections du projet : celles qui ont une quantité ou qui ont été vues (la portée les choisira en phase 3).
+  const duProjet = toutes.filter(s => s.remplis || s.vue);
+  const secs = estQGuide || estQToutes || !duProjet.length ? toutes : duProjet;
+  if (!estQSec || !secs.some(s => s.code === estQSec)) estQSec = secs[0].code;
   const idx = secs.findIndex(s => s.code === estQSec), sec = secs[idx];
-  const optPieces = r => `<option value="">— Pièce —</option>` + estPieces.map(p => `<option value="${p.id}" ${p.id === r.piece_id ? 'selected' : ''}>${escH(p.nom)}</option>`).join('');
-  const m2 = v => v ? estMoney(v) : '—';
+  const argent = v => v ? estMoney(v) : '—';
+  const prixTxt = v => v == null ? '—' : estMoney2(v).replace(/ | /g, ' ');
+  const lbl = (t, rouge) => `<div style="font-size:11px;letter-spacing:1.2px;text-transform:uppercase;font-weight:500;margin-bottom:2px${rouge ? ';color:' + EQ.rouge : ''}">${t}</div>`;
+  const champStyle = `width:96px;padding:7px 8px;border:1px solid ${EQ.gr};border-radius:6px;text-align:right;color:${EQ.saisie};font-size:14px;background:#fff;font-family:inherit`;
   const ligne = it => {
-    const V = estQValeur(it.cle), rs = V.rs, ouv = estQAide.has(it.cle), ex = estQExtra[it.cle] || {};
-    const simple = rs.length === 0 || (rs.length === 1 && !rs[0].piece_id && !rs[0].type_projet && !rs[0].gamme);
-    const champ = simple
-      ? `<input ${dis} type="number" step="any" min="0" value="${rs[0]?.quantite ?? ''}" placeholder="—" aria-label="Quantité — ${escH(it.nom)}" onchange="estQteSimple('${it.cle}',this.value)" style="width:100px;text-align:right;color:#00008B;border:1px solid var(--caramel);padding:6px 8px" />`
-      : `<strong>${estNum(rs.reduce((t, r) => t + Number(r.quantite || 0), 0))}</strong> <span style="font-size:11px;color:var(--texte-2)">(${rs.length} lignes)</span>`;
-    const detail = simple ? '' : rs.map(r => `<tr class="est-sousligne"><td colspan="2" style="padding-left:28px">↳
-        <select ${dis} onchange="estMajQte('${r.id}','piece_id',this.value||null).then(estRenderQuantites)" style="width:auto">${optPieces(r)}</select>
-        <select ${dis} onchange="estMajQte('${r.id}','type_projet',this.value||null).then(estRenderQuantites)" style="width:auto">${estOpts(EST_TYPES, r.type_projet, '— Type —')}</select>
-        <select ${dis} onchange="estMajQte('${r.id}','gamme',this.value||null).then(estRenderQuantites)" style="width:auto">${estOpts(EST_GAMMES, r.gamme, '— Gamme —')}</select></td>
-      <td><input ${dis} type="number" step="any" value="${r.quantite ?? ''}" onchange="estMajQte('${r.id}','quantite',this.value===''?null:Number(this.value)).then(estRenderQuantites)" style="width:100px;text-align:right;color:#00008B" /></td>
-      <td colspan="2"></td><td>${fz ? '' : `<button class="btn btn-outline btn-sm" style="color:var(--danger);border-color:var(--danger)" onclick="estSupprimerQte('${r.id}')" aria-label="Retirer">🗑</button>`}</td></tr>`).join('');
-    const aide = !ouv ? '' : `<tr><td colspan="6" style="background:#FBFBF5;padding:12px 16px 14px">
-        <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:12px;font-size:13px">
-          <div><div style="font-size:10px;letter-spacing:1.2px;text-transform:uppercase;font-weight:500;margin-bottom:4px">Ce qui est compté</div>
-            ${V.ts.length ? V.ts.map(t => { const p = estQPrixTache(t, estCourante.type_projet, estCourante.gamme_defaut);
-              return `<div style="margin-bottom:3px">${escH(t.libelle)} <span style="color:var(--texte-2);white-space:nowrap">· ${p.prix == null ? 'sans prix' : estMoney2(p.prix) + ' / ' + escH(t.unite || '')}${p.manuel ? ' (manuel)' : ''}</span></div>`; }).join('') : '<span style="color:var(--texte-2)">Aucune ligne de prix liée.</span>'}</div>
-          <div><div style="font-size:10px;letter-spacing:1.2px;text-transform:uppercase;font-weight:500;margin-bottom:4px">Comment mesurer</div>
-            ${estQEdit === it.cle ? `<textarea id="qa-regle" rows="3" style="width:100%;font:inherit;font-size:13px;padding:6px">${escH(ex.regle || '')}</textarea>`
-              : escH([ex.regle, it.aide].filter(Boolean).join(' · ') || '—')}</div>
-          <div style="${ex.aide_eviter || estQEdit === it.cle ? 'border-top:3px solid var(--danger);padding-top:6px' : ''}"><div style="font-size:10px;letter-spacing:1.2px;text-transform:uppercase;font-weight:500;margin-bottom:4px;color:var(--danger)">À éviter</div>
-            ${estQEdit === it.cle ? `<textarea id="qa-eviter" rows="3" style="width:100%;font:inherit;font-size:13px;padding:6px">${escH(ex.aide_eviter || '')}</textarea>` : escH(ex.aide_eviter || '—')}</div>
-        </div>
-        <div style="margin-top:8px;text-align:right">${estQEdit === it.cle
-          ? `<button class="btn btn-outline btn-sm" onclick="estQEdit=null;estRenderQuantites()">Annuler</button> <button class="btn btn-dark btn-sm" onclick="estQSauverAide('${it.cle}')">Enregistrer l’aide</button>`
-          : (estParams.some(p => p.cle === it.cle) ? `<button class="btn btn-outline btn-sm" onclick="estQEdit='${it.cle}';estRenderQuantites()">Modifier l’aide</button>` : '')}</div></td></tr>`;
-    return `<tr${rs.length ? ' style="background:#fbfaf6"' : ''}>
-        <td><div style="display:flex;gap:8px;align-items:flex-start">
-          <button type="button" onclick="estQBasculerAide('${it.cle}')" aria-label="Aide : ${escH(it.nom)}" aria-expanded="${ouv}" style="flex:none;width:26px;height:26px;border-radius:13px;border:1px solid ${ouv ? 'var(--charcoal)' : 'var(--bord)'};background:${ouv ? 'var(--charcoal)' : '#fff'};color:${ouv ? '#fff' : 'var(--texte-2)'};cursor:pointer;font-size:12px;font-weight:500">?</button>
-          <div>${escH(it.nom)}${estQExtra[it.cle]?.aide_eviter ? ' <span title="Voir « À éviter » dans l’aide" style="color:var(--danger);font-size:11px">⚠</span>' : ''}
-            <div style="font-size:10px;color:var(--texte-2);font-family:monospace">${escH(it.cle)}</div></div></div></td>
-        <td style="font-size:12px;color:var(--texte-2)">${escH(it.unite || '')}</td>
-        <td>${champ}</td>
-        <td style="text-align:right;font-size:12px;white-space:nowrap">${V.unit == null ? '<span style="color:var(--texte-2)">—</span>' : estMoney2(V.unit)}${V.manuel ? '<div style="font-size:10px;color:var(--caramel)">prix manuel</div>' : ''}</td>
-        <td style="text-align:right;font-weight:${V.montant ? 500 : 300};white-space:nowrap">${m2(V.montant)}</td>
-        <td style="white-space:nowrap">${fz ? '' : `<button class="btn btn-outline btn-sm" onclick="estOuvrirModalQte('${it.cle}')" title="Séparer par pièce, par type de projet ou par gamme">+ pièce / type</button>`}</td></tr>${detail}${aide}`;
+    const V = estQValeur(it.cle), rs = V.rs, ouv = estQAide.has(it.cle), ex = estQExtra[it.cle] || {}, plusieurs = rs.length > 1, detOuv = estQDetail.has(it.cle);
+    const pieceNom = rs.length === 1 && rs[0].piece_id ? estPieces.find(p => p.id === rs[0].piece_id)?.nom : null;
+    const champ = !plusieurs
+      ? `<label style="position:absolute;left:-9999px" for="q-${it.cle}">Quantité — ${escH(it.nom)}</label>
+         <input id="q-${it.cle}" ${dis} type="number" min="0" step="any" value="${rs[0]?.quantite ?? ''}" placeholder="—" title="Vider la case pour retirer la quantité" onchange="estQteSimple('${it.cle}',this.value)" style="${champStyle}">`
+      : `<button type="button" onclick="estQBasculerDetail('${it.cle}')" title="Quantités par pièce" style="border:0;background:none;cursor:pointer;font:inherit;color:${EQ.ch};font-weight:500">${estNum(rs.reduce((t, r) => t + Number(r.quantite || 0), 0))} ${detOuv ? '▴' : '▾'}</button>`;
+    const detail = !plusieurs || !detOuv ? '' : rs.map(r => `<tr style="background:${EQ.pale};border-bottom:1px solid ${EQ.st}">
+        <td style="padding:6px 16px 6px 52px;font-size:13px;color:${EQ.t2}">${escH(estPieces.find(p => p.id === r.piece_id)?.nom || 'Sans pièce')}${r.type_projet ? ' · ' + escH(r.type_projet) : ''}${r.gamme ? ' · ' + escH(r.gamme) : ''}</td>
+        <td style="padding:6px 8px;text-align:right"><input ${dis} type="number" step="any" min="0" value="${r.quantite ?? ''}" aria-label="Quantité" onchange="this.value===''?estSupprimerQte('${r.id}'):estMajQte('${r.id}','quantite',Number(this.value)).then(estRenderQuantites)" style="${champStyle}"></td>
+        <td colspan="3"></td></tr>`).join('');
+    const aide = !ouv ? '' : `<tr style="background:${EQ.pale};border-bottom:1px solid ${EQ.st}">
+        <td colspan="5" style="padding:12px 16px 16px">
+          <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:12px;font-size:13px">
+            <div>${lbl('Ce qui est compris')}${V.ts.length ? V.ts.map(t => { const p = estQPrixTache(t, estCourante.type_projet, estCourante.gamme_defaut);
+                return `<div>${escH(t.libelle)} <span style="color:${EQ.t2};white-space:nowrap">· ${p.prix == null ? 'sans prix' : prixTxt(p.prix) + ' / ' + escH(t.unite || '')}</span></div>`; }).join('') : `<span style="color:${EQ.t2}">Aucune ligne de prix liée.</span>`}</div>
+            <div>${lbl('Comment mesurer')}${estQEdit === it.cle ? `<textarea id="qa-regle" rows="3" style="width:100%;font:inherit;font-size:13px;padding:6px">${escH(ex.regle || '')}</textarea>` : escH([ex.regle, it.aide].filter(Boolean).join(' · ') || '—')}</div>
+            <div>${lbl('À éviter', true)}${estQEdit === it.cle ? `<textarea id="qa-eviter" rows="3" style="width:100%;font:inherit;font-size:13px;padding:6px">${escH(ex.aide_eviter || '')}</textarea>` : escH(ex.aide_eviter || '—')}</div>
+          </div>
+          ${fz ? '' : `<div style="margin-top:10px;display:flex;justify-content:flex-end;gap:14px;font-size:12px">${estQEdit === it.cle
+            ? `<button type="button" onclick="estQEdit=null;estRenderQuantites()" style="border:0;background:none;color:${EQ.t2};cursor:pointer;text-decoration:underline">Annuler</button><button type="button" onclick="estQSauverAide('${it.cle}')" style="border:0;background:none;color:${EQ.ch};cursor:pointer;text-decoration:underline;font-weight:500">Enregistrer l’aide</button>`
+            : `<button type="button" onclick="estOuvrirModalQte('${it.cle}')" style="border:0;background:none;color:${EQ.t2};cursor:pointer;text-decoration:underline">Ajouter une quantité par pièce</button>${estParams.some(p => p.cle === it.cle) ? `<button type="button" onclick="estQEdit='${it.cle}';estRenderQuantites()" style="border:0;background:none;color:${EQ.t2};cursor:pointer;text-decoration:underline">Modifier l’aide</button>` : ''}`}</div>`}
+        </td></tr>`;
+    return `<tr style="border-bottom:1px solid ${EQ.st}">
+        <td style="padding:10px 16px">
+          <div style="display:flex;align-items:center;gap:8px">
+            <span title="${escH(it.cle)}">${escH(it.nom)}${pieceNom ? `<span style="color:${EQ.t2};font-size:12px"> · ${escH(pieceNom)}</span>` : ''}</span>
+            <button type="button" onclick="estQBasculerAide('${it.cle}')" aria-label="Aide sur cette ligne" aria-expanded="${ouv}" style="width:28px;height:28px;border-radius:14px;border:1px solid ${ouv ? EQ.ch : '#C8C2BB'};background:${ouv ? EQ.ch : '#fff'};color:${ouv ? '#fff' : EQ.t2};cursor:pointer;font-size:13px;font-weight:500;flex:none;padding:0">?</button>
+          </div></td>
+        <td style="padding:8px;text-align:right">${champ}</td>
+        <td style="padding:8px;font-size:13px;color:${EQ.t2}">${escH(it.unite || '')}</td>
+        <td style="padding:8px;text-align:right;font-size:13px">${prixTxt(V.unit)}</td>
+        <td style="padding:10px 16px;text-align:right;font-weight:500">${argent(V.montant)}</td></tr>${detail}${aide}`;
   };
-  const tableau = items => `<div style="overflow-x:auto"><table class="data-table" style="margin:0;min-width:680px">
-      <thead><tr><th>Quantité</th><th style="width:60px">Unité</th><th style="width:150px">Qté</th><th style="width:100px;text-align:right">Prix</th><th style="width:110px;text-align:right">Montant ≈</th><th style="width:120px"></th></tr></thead>
+  const tableau = items => `<div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;min-width:620px">
+      <thead><tr style="background:${EQ.ch};color:#fff;font-size:11px;letter-spacing:1px;text-transform:uppercase">
+        <th style="text-align:left;padding:10px 16px;font-weight:500">Ligne</th>
+        <th style="text-align:right;padding:10px 8px;font-weight:500;width:110px">Quantité</th>
+        <th style="text-align:left;padding:10px 8px;font-weight:500;width:50px">Unité</th>
+        <th style="text-align:right;padding:10px 8px;font-weight:500;width:90px">Prix</th>
+        <th style="text-align:right;padding:10px 16px;font-weight:500;width:110px">Montant</th></tr></thead>
       <tbody>${items.map(ligne).join('')}</tbody></table></div>`;
-  let droite;
-  if (q) {
-    const res = secs.map(s => ({ s, items: s.items.filter(it => norm(it.nom).includes(q) || norm(s.nom).includes(q) || it.cle.includes(q)) })).filter(x => x.items.length);
-    droite = res.length ? res.map(x => `<div class="card" style="padding:0;overflow:hidden;margin-bottom:12px">
-        <div style="padding:10px 16px;background:var(--fond);font-weight:500"><span style="font-family:monospace;font-size:12px;color:var(--texte-2)">${x.s.code}</span> ${escH(x.s.nom)}</div>${tableau(x.items)}</div>`).join('')
-      : '<div class="card" style="font-size:13px;color:var(--texte-2)">Aucune quantité ne correspond à la recherche.</div>';
-  } else {
-    droite = `<div class="card" style="padding:0;overflow:hidden">
-        <div style="padding:14px 18px;display:flex;flex-wrap:wrap;gap:8px;justify-content:space-between;align-items:baseline;border-bottom:1px solid var(--bord)">
-          <div><span style="font-family:monospace;font-size:12px;color:var(--texte-2)">${sec.code}</span> <strong style="font-size:17px;font-weight:500;margin-left:6px">${escH(sec.nom)}</strong></div>
-          <span style="font-size:12px;color:var(--texte-2)">${sec.remplis} / ${sec.items.length} remplie(s)</span></div>
-        ${tableau(sec.items)}
-        <div style="padding:12px 18px;display:flex;justify-content:space-between;background:#EDE9E1;border-top:1px solid #A09890;font-weight:500"><span>Total ${escH(sec.nom)} ≈</span><span>${m2(sec.total)}</span></div></div>`;
-  }
-  const total = secs.reduce((t, s) => t + s.total, 0), vues = secs.filter(s => s.vue || s.remplis).length;
-  const barre = `<div style="display:flex;gap:12px;align-items:center;margin-bottom:14px;flex-wrap:wrap">
-      <input id="est-q-recherche" type="text" placeholder="Chercher une quantité (gypse, céramique…) ou un DDN" value="${escH(estQFiltre.q)}"
-        oninput="estQFiltre.q=this.value;estRenderQuantites().then(()=>{const e=document.getElementById('est-q-recherche');e.focus();e.setSelectionRange(e.value.length,e.value.length)})"
-        style="flex:1;min-width:240px;padding:10px 14px;border:1px solid var(--bord)" />
-      <button class="btn ${estQGuide ? 'btn-dark' : 'btn-outline'} btn-sm" onclick="estQGuide=!estQGuide;estQFiltre.q='';estRenderQuantites()" title="Une section à la fois, avec Précédent et Suivant">${estQGuide ? '✓ Mode guidé' : 'Mode guidé'}</button>
-      ${fz ? '' : `<button class="btn btn-dark btn-sm est-btn-calculer" onclick="estCalculer()">⟳ Calculer</button>`}
-    </div>`;
-  const note = `<div style="font-size:11px;color:var(--texte-2);margin-top:8px">Montants ≈ au prix du catalogue (type, gamme, prix manuels), avant contingence et frais de gestion. Les sélections approuvées, les produits de pose et les pourcentages entrent avec « Calculer ».</div>`;
-  if (estQGuide && !q) {
-    c.innerHTML = `${barre}
-      <div style="margin-bottom:12px"><div style="display:flex;justify-content:space-between;flex-wrap:wrap;gap:6px;font-size:13px"><strong style="font-weight:500">Section ${idx + 1} sur ${secs.length}</strong><span style="color:var(--texte-2)">${vues} vue(s) · travaux ≈ ${m2(total)}</span></div>
-        <div style="height:6px;background:var(--fond);border-radius:3px;overflow:hidden;margin-top:6px"><div style="height:100%;width:${Math.round((idx + 1) / secs.length * 100)}%;background:var(--charcoal)"></div></div></div>
-      ${droite}
-      <div style="display:flex;justify-content:space-between;flex-wrap:wrap;gap:10px;margin-top:14px">
-        <button class="btn btn-outline" ${idx ? '' : 'disabled'} onclick="estQAller(${idx - 1})">← ${idx ? escH(secs[idx - 1].nom) : 'Précédent'}</button>
-        <div style="display:flex;gap:8px;flex-wrap:wrap">
-          ${fz ? '' : `<button class="btn btn-outline" onclick="estQVue('${sec.code}',${idx + 1})">Rien dans cette section</button>`}
-          ${idx < secs.length - 1 ? `<button class="btn btn-dark" onclick="estQVue('${sec.code}',${idx + 1})">Suivant — ${escH(secs[idx + 1].nom)} →</button>`
-            : `<button class="btn btn-dark" onclick="estQVue('${sec.code}',-1)">Terminer — À ne pas oublier →</button>`}</div></div>${note}`;
+  const total = toutes.reduce((t, s) => t + s.total, 0);
+  const sousTitre = `Prix : ${escH((estCourante.type_projet || '').toLowerCase())} · gamme ${escH((estCourante.gamme_defaut || '').toLowerCase())}`;
+  const carte = s => `<div style="flex:999 1 560px;min-width:0;background:#fff;border:1px solid ${EQ.bord};border-radius:10px;overflow:hidden">
+      <div style="padding:16px 20px;display:flex;flex-wrap:wrap;gap:8px;justify-content:space-between;align-items:baseline;border-bottom:1px solid ${EQ.bord}">
+        <h2 style="margin:0;font-size:18px;font-weight:500;font-family:inherit;color:${EQ.ch}">${escH(s.nom)}</h2>
+        <span style="font-size:13px;color:${EQ.t2}">${sousTitre}</span></div>
+      ${tableau(s.items)}
+      <div style="padding:14px 20px;display:flex;justify-content:space-between;background:${EQ.st};border-top:1px solid #A09890;font-weight:500"><span>Total ${escH(s.nom)}</span><span>${argent(s.total)}</span></div></div>`;
+  const outils = `<div style="display:flex;justify-content:flex-end;margin-bottom:14px">
+      <button type="button" onclick="estQGuide=!estQGuide;estRenderQuantites()" style="min-height:44px;padding:0 18px;border-radius:22px;font-size:14px;cursor:pointer;border:1px solid ${estQGuide ? EQ.ch : '#C8C2BB'};background:${estQGuide ? EQ.ch : '#fff'};color:${estQGuide ? '#fff' : EQ.ch};font-weight:${estQGuide ? 500 : 400}">${estQGuide ? '✓ Mode guidé' : 'Mode guidé'}</button></div>`;
+  if (estQGuide) {
+    const vus = toutes.filter(s => s.vue || s.remplis).length;
+    const bouton = (lib, f, plein) => `<button type="button" onclick="${f}" style="min-height:44px;padding:0 ${plein ? 24 : 20}px;border-radius:22px;font-size:13px;cursor:pointer;${plein ? `border:0;background:${EQ.ch};color:#fff;letter-spacing:1px;text-transform:uppercase;font-weight:500` : `border:1px solid #C8C2BB;background:#fff;color:${EQ.ch}`}">${lib}</button>`;
+    c.innerHTML = `${outils}<div style="max-width:900px;margin:0 auto;display:flex;flex-direction:column;gap:18px">
+        <div style="display:flex;flex-direction:column;gap:8px">
+          <div style="display:flex;justify-content:space-between;flex-wrap:wrap;gap:6px;font-size:13px"><span style="font-weight:500">Section ${idx + 1} sur ${secs.length}</span><span style="color:${EQ.t2}">Sous-total jusqu’ici : ${argent(total)}</span></div>
+          <div style="height:6px;background:${EQ.st};border-radius:3px;overflow:hidden"><div style="height:100%;width:${Math.round((idx + 1) / secs.length * 100)}%;background:${EQ.ch}"></div></div>
+          <div style="display:flex;flex-wrap:wrap;gap:4px 12px;font-size:12px;color:${EQ.t2}">${secs.slice(Math.max(0, idx - 3), idx + 3).map((x, i, a) => {
+            const j = Math.max(0, idx - 3) + i; return j === idx ? `<span style="font-weight:500;color:${EQ.ch}">${escH(x.nom)}</span>`
+              : x.remplis ? `<span style="color:${EQ.vert}">✓ ${escH(x.nom)}</span>` : x.vue ? `<span>— ${escH(x.nom)} (passée)</span>` : `<span>${escH(x.nom)}</span>`; }).join('')}</div>
+        </div>
+        <section style="background:#fff;border:1px solid ${EQ.bord};border-radius:12px;overflow:hidden">
+          <div style="padding:20px 24px;border-bottom:1px solid ${EQ.bord};display:flex;flex-direction:column;gap:4px">
+            <span style="font-family:monospace;font-size:12px;color:${EQ.t2}">${sec.code}</span>
+            <h2 style="margin:0;font-size:22px;font-weight:500;font-family:inherit;color:${EQ.ch}">${escH(sec.nom)}</h2>
+            <p style="margin:0;color:${EQ.t2}">${sousTitre}</p></div>
+          ${tableau(sec.items)}
+          <div style="padding:14px 20px;display:flex;justify-content:space-between;background:${EQ.st};border-top:1px solid #A09890;font-weight:500"><span>Total ${escH(sec.nom)}</span><span>${argent(sec.total)}</span></div>
+        </section>
+        <div style="display:flex;justify-content:space-between;flex-wrap:wrap;gap:10px">
+          ${idx ? bouton('Précédent — ' + escH(secs[idx - 1].nom), `estQAller(${idx - 1})`) : '<span></span>'}
+          <div style="display:flex;gap:8px;flex-wrap:wrap">
+            ${fz ? '' : bouton('Rien dans cette section', `estQVue('${sec.code}',${idx + 1 < secs.length ? idx + 1 : -1})`)}
+            ${idx < secs.length - 1 ? bouton('Suivant — ' + escH(secs[idx + 1].nom), `estQVue('${sec.code}',${idx + 1})`, true) : bouton('Terminer — À ne pas oublier', `estQVue('${sec.code}',-1)`, true)}
+          </div></div>
+        <p style="margin:0;font-size:12px;color:${EQ.t2}">« Rien dans cette section » la marque comme vue. À la fin, l’assistant mène à « À ne pas oublier ».</p>
+      </div>`;
     return;
   }
-  c.innerHTML = `${barre}
-    <div style="display:flex;flex-wrap:wrap;gap:16px;align-items:flex-start">
-      <div class="card" style="flex:1 1 240px;max-width:300px;padding:0;overflow:hidden">
-        <div style="padding:12px 16px;background:var(--charcoal);color:#fff;font-size:11px;letter-spacing:1.2px;text-transform:uppercase;font-weight:500">Sections</div>
-        <div style="max-height:70vh;overflow:auto">${secs.map((s, i) => `<button type="button" onclick="estQAller(${i})" style="width:100%;min-height:52px;display:flex;justify-content:space-between;align-items:center;gap:10px;padding:8px 14px;border:0;border-bottom:1px solid var(--fond);cursor:pointer;text-align:left;color:var(--charcoal);background:${s.code === estQSec && !q ? 'var(--fond)' : '#fff'};box-shadow:${s.code === estQSec && !q ? 'inset 3px 0 0 var(--caramel)' : 'none'}">
-            <span style="display:flex;flex-direction:column;min-width:0"><span style="font-size:10px;font-family:monospace;color:var(--texte-2)">${s.code}${s.remplis ? ` · ${s.remplis} remplie(s)` : s.vue ? ' · vue' : ''}</span>
-              <span style="font-size:13px;font-weight:${s.remplis ? 500 : 300}">${escH(s.nom)}</span></span>
-            <span style="font-size:12px;white-space:nowrap">${s.total ? estMoney(s.total) : ''}</span></button>`).join('')}</div>
-        <div style="padding:12px 16px;background:#EDE9E1;border-top:1px solid #A09890">
-          <div style="display:flex;justify-content:space-between;font-weight:500"><span>Travaux ≈</span><span>${m2(total)}</span></div>
-          ${estCourante.totaux?.travaux != null ? `<div style="display:flex;justify-content:space-between;font-size:11px;color:var(--texte-2);margin-top:2px"><span>Dernier calcul</span><span>${estMoney(estCourante.totaux.travaux)}</span></div>` : ''}
-          <div style="font-size:10px;color:var(--texte-2);margin-top:4px;line-height:1.4">Avant contingence et frais de gestion</div></div>
-      </div>
-      <div style="flex:999 1 560px;min-width:0">${droite}${note}</div>
-    </div>`;
+  c.innerHTML = `${outils}
+    <section style="display:flex;flex-wrap:wrap;gap:20px;align-items:flex-start">
+      <aside style="flex:1 1 260px;max-width:320px;background:#fff;border:1px solid ${EQ.bord};border-radius:10px;overflow:hidden">
+        <div style="padding:14px 16px;font-size:11px;letter-spacing:1.2px;text-transform:uppercase;font-weight:500;background:${EQ.ch};color:#fff">Sections du projet</div>
+        ${secs.map((s, i) => `<button type="button" onclick="estQAller(${i})" style="width:100%;min-height:56px;display:flex;justify-content:space-between;align-items:center;gap:12px;padding:10px 16px;border:0;border-bottom:1px solid ${EQ.st};cursor:pointer;font-size:14px;color:${EQ.ch};font-family:inherit;background:${s.code === estQSec ? EQ.fond : '#fff'};box-shadow:${s.code === estQSec ? 'inset 3px 0 0 ' + EQ.gr : 'none'}">
+            <span style="display:flex;flex-direction:column;gap:2px;text-align:left"><span style="font-size:11px;color:${EQ.t2};font-family:monospace">${s.code}</span><span style="font-weight:500">${escH(s.nom)}</span></span>
+            <span style="font-size:13px;white-space:nowrap">${argent(s.total)}</span></button>`).join('')}
+        ${!estQToutes && duProjet.length && duProjet.length < toutes.length ? `<button type="button" onclick="estQToutes=true;estRenderQuantites()" style="width:100%;min-height:44px;border:0;border-bottom:1px solid ${EQ.st};background:#fff;color:${EQ.t2};cursor:pointer;font-size:13px;text-decoration:underline">Ajouter une autre section (${toutes.length - duProjet.length})</button>`
+          : estQToutes && duProjet.length < toutes.length ? `<button type="button" onclick="estQToutes=false;estRenderQuantites()" style="width:100%;min-height:44px;border:0;border-bottom:1px solid ${EQ.st};background:#fff;color:${EQ.t2};cursor:pointer;font-size:13px;text-decoration:underline">Seulement les sections du projet</button>` : ''}
+        <div style="padding:14px 16px;display:flex;justify-content:space-between;border-top:1px solid #A09890;background:${EQ.st};font-weight:500"><span>Sous-total des travaux</span><span>${argent(total)}</span></div>
+      </aside>
+      ${carte(sec)}
+    </section>`;
 }
-function estQAller(i) { const secs = estSections(); if (secs[i]) { estQSec = secs[i].code; estQFiltre.q = ''; estRenderQuantites(); document.getElementById('est-contenu')?.scrollIntoView({ behavior: 'smooth', block: 'start' }); } }
+function estQAller(i) {
+  const toutes = estQSections(), duProjet = toutes.filter(s => s.remplis || s.vue);
+  const secs = estQGuide || estQToutes || !duProjet.length ? toutes : duProjet;
+  if (secs[i]) { estQSec = secs[i].code; estRenderQuantites(); document.getElementById('est-contenu')?.scrollIntoView({ behavior: 'smooth', block: 'start' }); }
+}
 function estQBasculerAide(cle) { estQAide.has(cle) ? estQAide.delete(cle) : estQAide.add(cle); if (estQEdit === cle) estQEdit = null; estRenderQuantites(); }
 async function estQVue(code, suivant) {
   if (!estFigee()) {
@@ -6238,58 +6249,57 @@ async function estRenderAide() {
   const c = document.getElementById('est-contenu'); if (!c || !estCourante) return;
   await estAideCharger(); estAideBadge();
   const fz = estFigee(), dis = fz ? 'disabled' : '';
+  const ch = '#3A3B3A', gr = '#9A8C7E', bord = '#E3DFD8', t2 = '#706862', st = '#EDE9E1', rouge = '#8B3A3A', vert = '#4B7A5C';
   const rep = estCourante.aide_memoire || {}, pts = estAideVisibles(), n = estAideRestants();
   if (!pts.length) { c.innerHTML = `<div class="card" style="font-size:13px;color:var(--texte-2)">Aucun point « À ne pas oublier » pour ce type de projet. Les points se gèrent dans l'onglet « À ne pas oublier » du module.</div>`; return; }
-  const pill = (code, st, lib) => { const on = rep[code]?.statut === st;
-    return `<button type="button" ${dis} onclick="estAideRepondre('${code}','${st}')" style="min-height:40px;padding:0 14px;border-radius:20px;font-size:13px;cursor:pointer;border:1px solid ${on ? 'var(--charcoal)' : 'var(--bord)'};background:${on ? 'var(--charcoal)' : '#fff'};color:${on ? '#fff' : 'var(--charcoal)'};font-weight:${on ? 500 : 400}">${lib}</button>`; };
+  const pill = (code, stt, lib) => { const on = rep[code]?.statut === stt;
+    return `<button type="button" ${dis} onclick="estAideRepondre('${code}','${stt}')" style="min-height:44px;padding:0 14px;border-radius:22px;font-size:13px;cursor:pointer;font-family:inherit;border:1px solid ${on ? ch : '#C8C2BB'};background:${on ? ch : '#fff'};color:${on ? '#fff' : ch};font-weight:${on ? 500 : 400}">${lib}</button>`; };
   const champ = p => {
     const r = rep[p.code]; if (r?.statut !== 'inclus' || p.reponse === 'aucune') return '';
     const lib = p.reponse === 'montant' ? 'Montant' : p.reponse === 'pourcentage' ? 'Pourcentage' : 'Quantité';
     return `<div style="padding:0 20px 14px 40px;display:flex;flex-wrap:wrap;gap:10px;align-items:center">
-      <label for="aide-${p.code}" style="font-size:13px;color:var(--texte-2)">${lib}</label>
-      <input id="aide-${p.code}" ${dis} type="number" min="0" step="0.01" value="${r.valeur ?? ''}" placeholder="—" onchange="estAideValeur('${p.code}',this.value)"
-        style="width:140px;padding:8px 10px;border:1px solid ${r.valeur == null || r.valeur === '' ? 'var(--danger)' : 'var(--caramel)'};font-size:14px;text-align:right" />
-      <span style="font-size:13px;color:var(--texte-2)">${escH(p.unite || '')}</span>
-      ${r.valeur == null || r.valeur === '' ? '<span style="font-size:12px;color:var(--danger)">à inscrire</span>' : ''}</div>`;
+      <label style="font-size:13px;color:${t2}" for="aide-${p.code}">${lib}</label>
+      <input id="aide-${p.code}" ${dis} type="number" min="0" step="0.01" value="${r.valeur ?? ''}" onchange="estAideValeur('${p.code}',this.value)"
+        style="width:140px;padding:8px 10px;border:1px solid ${r.valeur == null || r.valeur === '' ? rouge : gr};border-radius:6px;font-size:14px;color:#00008B;text-align:right;background:#fff;font-family:inherit">
+      <span style="font-size:13px;color:${t2}">${escH(p.unite || '')}</span></div>`;
   };
-  const bloc = (t, txt, rouge) => txt ? `<div style="background:var(--fond);border-radius:8px;padding:12px 14px;${rouge ? 'border-top:3px solid var(--danger)' : ''}">
-      <div style="font-size:10px;letter-spacing:1.2px;text-transform:uppercase;font-weight:500;margin-bottom:4px;${rouge ? 'color:var(--danger)' : ''}">${t}</div>
-      <div style="font-size:13px;line-height:1.55">${escH(txt)}</div></div>` : '';
+  const bloc = (titre, txt, alerte) => `<div style="background:#F5F4EE;border-radius:8px;padding:12px 14px${alerte ? ';border-top:3px solid ' + rouge : ''}">
+      <div style="font-size:11px;letter-spacing:1.2px;text-transform:uppercase;font-weight:500;margin-bottom:4px${alerte ? ';color:' + rouge : ''}">${titre}</div>
+      <div style="font-size:13px">${escH(txt || '—')}</div></div>`;
   const regles = pts.length - n;
-  c.innerHTML = `
-    <div class="card" style="margin-bottom:14px;display:flex;flex-wrap:wrap;gap:14px;align-items:center;justify-content:space-between">
-      <div style="max-width:640px"><div style="font-size:15px;font-weight:500">Les points qu'on oublie souvent</div>
-        <div style="font-size:13px;color:var(--texte-2);margin-top:2px">Répondez à chaque point avant de figer. Ouvrez « Comment remplir » si vous hésitez : on y explique quoi mettre, quoi éviter et quoi faire sans montant.</div></div>
-      <div style="display:flex;flex-direction:column;align-items:flex-end;gap:6px;min-width:200px">
-        <span style="font-size:13px;font-weight:500;color:${n ? 'var(--danger)' : 'var(--success)'}">${regles} sur ${pts.length} réglés</span>
-        <div style="width:200px;height:6px;background:var(--fond);border-radius:3px;overflow:hidden"><div style="height:100%;width:${Math.round(regles / pts.length * 100)}%;background:var(--success)"></div></div></div>
+  c.innerHTML = `<section style="display:flex;flex-direction:column;gap:14px;color:${ch};font-weight:300;line-height:1.5">
+    <div style="background:#fff;border:1px solid ${bord};border-radius:10px;padding:18px 20px;display:flex;flex-wrap:wrap;gap:16px;align-items:center;justify-content:space-between">
+      <div style="display:flex;flex-direction:column;gap:4px;max-width:640px">
+        <h2 style="margin:0;font-size:18px;font-weight:500;font-family:inherit;color:${ch}">Les points qu'on oublie souvent</h2>
+        <p style="margin:0;color:${t2}">Répondez à chaque point. Ouvrez « Comment remplir » si vous hésitez : on y explique quoi mettre, quoi éviter et quoi faire sans montant.</p></div>
+      <div style="display:flex;flex-direction:column;align-items:flex-end;gap:6px;min-width:220px">
+        <span style="font-size:13px;font-weight:500">${regles} sur ${pts.length} réglés</span>
+        <div style="width:220px;height:6px;background:${st};border-radius:3px;overflow:hidden"><div style="height:100%;background:${vert};width:${Math.round(regles / pts.length * 100)}%"></div></div></div>
     </div>
-    ${pts.map(p => { const r = rep[p.code], st = r?.statut, ouv = estAideOuverts.has(p.code);
-      const coul = st === 'avenir' ? 'var(--caramel)' : st ? 'var(--success)' : 'var(--danger)';
-      return `<div class="card" style="padding:0;overflow:hidden;margin-bottom:10px">
-        <div style="padding:14px 20px;display:flex;flex-wrap:wrap;gap:10px 20px;align-items:center;justify-content:space-between">
-          <div style="flex:1 1 320px;min-width:0">
-            <div style="display:flex;align-items:center;gap:10px"><span style="width:10px;height:10px;border-radius:5px;flex:none;background:${coul}"></span>
-              <strong style="font-size:15px;font-weight:500">${escH(p.titre)}</strong></div>
-            ${p.resume ? `<div style="font-size:13px;color:var(--texte-2);padding-left:20px">${escH(p.resume)}</div>` : ''}
-            ${st === 'avenir' && p.defaut != null ? `<div style="font-size:12px;color:var(--caramel);padding-left:20px">Compté à ${estMoney(p.defaut)} en attendant le vrai montant</div>` : ''}
-            ${r?.par ? `<div style="font-size:11px;color:var(--texte-2);padding-left:20px">${escH(r.par)}${r.le ? ' · ' + new Date(r.le).toLocaleDateString('fr-CA') : ''}</div>` : ''}
+    ${pts.map(p => { const r = rep[p.code], stt = r?.statut, ouv = estAideOuverts.has(p.code);
+      const coul = stt === 'avenir' ? gr : stt ? vert : rouge;
+      return `<article style="background:#fff;border:1px solid ${bord};border-radius:10px;overflow:hidden">
+        <div style="padding:16px 20px;display:flex;flex-wrap:wrap;gap:12px 20px;align-items:center;justify-content:space-between">
+          <div style="display:flex;flex-direction:column;gap:2px;flex:1 1 320px;min-width:0">
+            <div style="display:flex;align-items:center;gap:10px"><span aria-hidden="true" style="width:10px;height:10px;border-radius:5px;flex:none;background:${coul}"></span>
+              <h3 style="margin:0;font-size:15px;font-weight:500;font-family:inherit;color:${ch}">${escH(p.titre)}</h3></div>
+            ${p.resume ? `<span style="color:${t2};font-size:13px;padding-left:20px">${escH(p.resume)}</span>` : ''}
+            ${stt === 'avenir' && p.defaut != null ? `<span style="color:${gr};font-size:12px;padding-left:20px">Compté à ${estMoney(p.defaut)} en attendant le vrai montant</span>` : ''}
           </div>
-          <div role="group" aria-label="Réponse" style="display:flex;flex-wrap:wrap;gap:6px">
-            ${pill(p.code, 'inclus', p.reponse === 'aucune' ? 'C’est compté' : 'Inclus')}${pill(p.code, 'pas', 'Pas dans ce projet')}${pill(p.code, 'avenir', 'Montant à venir')}
-          </div>
+          <div role="group" aria-label="Réponse" style="display:flex;flex-wrap:wrap;gap:6px">${pill(p.code, 'inclus', 'Inclus')}${pill(p.code, 'pas', 'Pas dans ce projet')}${pill(p.code, 'avenir', 'Montant à venir')}</div>
         </div>
         ${champ(p)}
-        <button type="button" onclick="estAideBasculer('${p.code}')" aria-expanded="${ouv}" style="width:100%;text-align:left;background:#FBFBF5;border:0;border-top:1px solid var(--bord);padding:10px 20px;font-size:13px;cursor:pointer;display:flex;gap:8px;align-items:center;min-height:44px;color:var(--charcoal)">
-          <span style="width:18px;height:18px;border-radius:9px;border:1px solid var(--caramel);display:inline-flex;align-items:center;justify-content:center;font-size:11px;color:var(--caramel)">?</span>
-          <span style="font-weight:500">Comment remplir</span><span style="color:var(--texte-2)">${ouv ? '▴' : '▾'}</span></button>
-        ${ouv ? `<div style="padding:4px 20px 18px;display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:12px">
-          ${bloc('C’est quoi', p.quoi)}${bloc('Quand l’inclure', p.quand)}${bloc('À éviter', p.eviter, true)}${bloc('Sans montant', p.sans_montant)}</div>` : ''}
-      </div>`; }).join('')}
-    <div class="card" style="display:flex;flex-wrap:wrap;gap:12px;align-items:center;justify-content:space-between">
-      <span style="font-size:14px;font-weight:500;color:${n ? 'var(--danger)' : 'var(--success)'}">${n ? `Il reste ${n} point${n > 1 ? 's' : ''} à régler avant de figer l’estimation.` : 'Tous les points sont réglés.'}</span>
-      ${fz ? '' : `<button class="btn btn-dark btn-sm" onclick="estCalculer()">⟳ Calculer</button>`}
-    </div>`;
+        <div style="border-top:1px solid ${st}">
+          <button type="button" onclick="estAideBasculer('${p.code}')" aria-expanded="${ouv}" style="width:100%;text-align:left;background:#FBFBF5;border:0;padding:10px 20px;font-size:13px;color:${ch};cursor:pointer;display:flex;align-items:center;gap:8px;min-height:44px;font-family:inherit">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="${gr}" stroke-width="2" aria-hidden="true"><circle cx="12" cy="12" r="10"></circle><path d="M9.5 9a2.5 2.5 0 1 1 3.5 2.3c-.7.3-1 .9-1 1.7"></path><path d="M12 17h.01"></path></svg>
+            <span style="font-weight:500">Comment remplir</span><span style="color:${t2}">${ouv ? '▴' : '▾'}</span></button>
+          ${ouv ? `<div style="padding:4px 20px 18px;display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:12px">
+            ${bloc('C’est quoi', p.quoi)}${bloc('Quand l’inclure', p.quand)}${bloc('À éviter', p.eviter, true)}${bloc('Sans montant', p.sans_montant)}</div>` : ''}
+        </div></article>`; }).join('')}
+    <div style="background:#fff;border:1px solid ${bord};border-radius:10px;padding:16px 20px;display:flex;flex-wrap:wrap;gap:12px;align-items:center;justify-content:space-between">
+      <span style="font-size:14px;font-weight:500;color:${n ? rouge : vert}">${n ? `Il reste ${n} point(s) à régler avant de figer l’estimation.` : 'Tous les points sont réglés : l’estimation peut être figée.'}</span>
+      ${fz ? '' : `<button type="button" ${n ? 'disabled' : ''} onclick="estFiger()" style="min-height:44px;padding:0 20px;border-radius:22px;font-size:13px;letter-spacing:1px;text-transform:uppercase;border:0;font-weight:500;color:#fff;font-family:inherit;background:${n ? '#C8C2BB' : ch};cursor:${n ? 'not-allowed' : 'pointer'}">Figer l’estimation</button>`}
+    </div></section>`;
 }
 function estAideBasculer(code) { estAideOuverts.has(code) ? estAideOuverts.delete(code) : estAideOuverts.add(code); estRenderAide(); }
 async function estAideEnregistrer(rep) {
@@ -6937,7 +6947,7 @@ async function estRenderPlan() {
         ${L[k]?.erreur && !fz && !estLectureEnCours ? ` <button class="btn btn-outline btn-sm" onclick="estLireLot('${k}',true)">Réessayer</button>` : ''}</td></tr>`).join('')}</tbody></table>
       ${Object.values(L).some(x => x.remarques) ? `<div style="font-size:12px;color:var(--texte-2);margin-top:10px">${Object.entries(L).filter(([, x]) => x.remarques).map(([k, x]) => `<div>• ${escH(x.remarques)}</div>`).join('')}</div>` : ''}
       ${e.lecture?.pas_trouve?.length ? `<div style="margin-top:14px;padding:12px 14px;background:var(--fond);border-radius:8px">
-        <div style="font-size:11px;letter-spacing:1.5px;text-transform:uppercase;color:var(--texte-2);margin-bottom:6px">Pas trouvé au plan — à vérifier dans « Vérifier les quantités »</div>
+        <div style="font-size:11px;letter-spacing:1.5px;text-transform:uppercase;color:var(--texte-2);margin-bottom:6px">Pas trouvé au plan — à vérifier dans « Saisie par section »</div>
         ${e.lecture.pas_trouve.map(x => `<div style="font-size:13px;padding:3px 0"><span style="font-family:monospace;font-size:11px;color:var(--texte-2)">${escH(x.cle)}</span> ${escH(x.parametre || '')} <span style="color:var(--texte-2)">— ${escH(x.raison || '')}</span></div>`).join('')}</div>` : ''}
     </div>
     <div class="card">
@@ -6945,7 +6955,7 @@ async function estRenderPlan() {
         <div><div style="font-size:11px;letter-spacing:1.5px;text-transform:uppercase;color:var(--texte-2)">4 · Questions</div>
           <div style="font-size:14px;margin-top:4px">${nq ? `<strong>${nq}</strong> question(s) à répondre` : 'Aucune question en attente.'}</div>
           ${parSec.length ? `<div style="font-size:12px;margin-top:2px">${parSec.map(x => `<span style="${x.r === 0 ? 'color:var(--caramel)' : 'color:var(--texte-2)'}">${x.n} · ${escH(x.titre)}</span>`).join('<span style="color:var(--texte-2)"> &nbsp;|&nbsp; </span>')}</div>` : ''}
-          <div style="font-size:12px;color:var(--texte-2)">Seulement ce que Claude n’a pas pu lire avec certitude. Le reste se voit dans « Vérifier les quantités ».</div></div>
+          <div style="font-size:12px;color:var(--texte-2)">Seulement ce que Claude n’a pas pu lire avec certitude. Le reste se voit dans « Saisie par section ».</div></div>
         ${fz ? '' : `<button class="btn btn-caramel btn-sm" onclick="estQuestions()">❓ Répondre aux questions</button>`}
       </div>
     </div>

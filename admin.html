@@ -5739,6 +5739,7 @@ function estSections() {
   for (const p of estParams) {
     const code = p.cle.slice(0, 8);
     if (!sec.has(code)) sec.set(code, { code, nom: nomDdn(code, p.ddn), items: [] });
+    if (sec.get(code).items.some(it => it.cle === p.cle)) continue;   // une case par pièce au gabarit = un seul paramètre ici
     sec.get(code).items.push({ cle: p.cle, nom: p.parametre, unite: p.unite, aide: [p.ou_chercher, p.question && p.question !== p.parametre ? p.question : null].filter(Boolean).join(' · ') });
   }
   for (const t of estTachesDirectes) {
@@ -5876,10 +5877,10 @@ async function estRenderQuantites() {
       <button class="btn ${estQGuide ? 'btn-dark' : 'btn-outline'} btn-sm" onclick="estQGuide=!estQGuide;estQFiltre.q='';estRenderQuantites()" title="Une section à la fois, avec Précédent et Suivant">${estQGuide ? '✓ Mode guidé' : 'Mode guidé'}</button>
       ${fz ? '' : `<button class="btn btn-dark btn-sm est-btn-calculer" onclick="estCalculer()">⟳ Calculer</button>`}
     </div>`;
-  const note = `<div style="font-size:11px;color:var(--texte-2);margin-top:8px">Montants ≈ au prix du catalogue (type, gamme, prix manuels). Les sélections approuvées, les pourcentages et la contingence entrent avec « Calculer ».</div>`;
+  const note = `<div style="font-size:11px;color:var(--texte-2);margin-top:8px">Montants ≈ au prix du catalogue (type, gamme, prix manuels), avant contingence et frais de gestion. Les sélections approuvées, les produits de pose et les pourcentages entrent avec « Calculer ».</div>`;
   if (estQGuide && !q) {
     c.innerHTML = `${barre}
-      <div style="margin-bottom:12px"><div style="display:flex;justify-content:space-between;flex-wrap:wrap;gap:6px;font-size:13px"><strong style="font-weight:500">Section ${idx + 1} sur ${secs.length}</strong><span style="color:var(--texte-2)">${vues} vue(s) · total ≈ ${m2(total)}</span></div>
+      <div style="margin-bottom:12px"><div style="display:flex;justify-content:space-between;flex-wrap:wrap;gap:6px;font-size:13px"><strong style="font-weight:500">Section ${idx + 1} sur ${secs.length}</strong><span style="color:var(--texte-2)">${vues} vue(s) · travaux ≈ ${m2(total)}</span></div>
         <div style="height:6px;background:var(--fond);border-radius:3px;overflow:hidden;margin-top:6px"><div style="height:100%;width:${Math.round((idx + 1) / secs.length * 100)}%;background:var(--charcoal)"></div></div></div>
       ${droite}
       <div style="display:flex;justify-content:space-between;flex-wrap:wrap;gap:10px;margin-top:14px">
@@ -5898,7 +5899,10 @@ async function estRenderQuantites() {
             <span style="display:flex;flex-direction:column;min-width:0"><span style="font-size:10px;font-family:monospace;color:var(--texte-2)">${s.code}${s.remplis ? ` · ${s.remplis} remplie(s)` : s.vue ? ' · vue' : ''}</span>
               <span style="font-size:13px;font-weight:${s.remplis ? 500 : 300}">${escH(s.nom)}</span></span>
             <span style="font-size:12px;white-space:nowrap">${s.total ? estMoney(s.total) : ''}</span></button>`).join('')}</div>
-        <div style="padding:12px 16px;display:flex;justify-content:space-between;background:#EDE9E1;border-top:1px solid #A09890;font-weight:500"><span>Total ≈</span><span>${m2(total)}</span></div>
+        <div style="padding:12px 16px;background:#EDE9E1;border-top:1px solid #A09890">
+          <div style="display:flex;justify-content:space-between;font-weight:500"><span>Travaux ≈</span><span>${m2(total)}</span></div>
+          ${estCourante.totaux?.travaux != null ? `<div style="display:flex;justify-content:space-between;font-size:11px;color:var(--texte-2);margin-top:2px"><span>Dernier calcul</span><span>${estMoney(estCourante.totaux.travaux)}</span></div>` : ''}
+          <div style="font-size:10px;color:var(--texte-2);margin-top:4px;line-height:1.4">Avant contingence et frais de gestion</div></div>
       </div>
       <div style="flex:999 1 560px;min-width:0">${droite}${note}</div>
     </div>`;

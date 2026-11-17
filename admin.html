@@ -791,7 +791,8 @@ body * { font-variant-numeric: lining-nums; }
           <div class="projet-tab active" onclick="showProjetTab('infos', this)">Informations</div>
           <div class="projet-tab" onclick="showProjetTab('postes', this)">Sélection des finis et produits</div>
           <div class="projet-tab" onclick="showProjetTab('estimation', this)">Estimation</div>
-          <div class="projet-tab" onclick="showProjetTab('volets', this);if(typeof chargerVolets==='function')chargerVolets()">Volets & Documents</div>
+          <div class="projet-tab" onclick="showProjetTab('volets', this)">Documents</div>
+          <div class="projet-tab" onclick="showProjetTab('gestion', this)">Gestion de projet</div>
         </div>
 
         <!-- TAB: Postes -->
@@ -810,9 +811,12 @@ body * { font-variant-numeric: lining-nums; }
 
         <!-- TAB: Volets & Documents -->
         <div id="tab-volets" class="projet-tab-content" style="display:none">
-          <div class="volets-grid" id="volets-grid">
-            <div class="empty-state" style="grid-column:1/-1"><p>Chargement des volets…</p></div>
-          </div>
+          <div id="docs-projet"><div class="empty-state"><p>Chargement…</p></div></div>
+        </div>
+
+        <!-- TAB: Gestion de projet -->
+        <div id="tab-gestion" class="projet-tab-content" style="display:none">
+          <div id="gestion-projet"><div class="empty-state"><p>Chargement…</p></div></div>
         </div>
 
 
@@ -3121,71 +3125,95 @@ async function sauvegarderTache() {
   chargerReferentiel();
 }
 
-// ---------- Documents du dossier (onglet Projet → Volets & Documents) ----------
-// Mandat, synthèse, comptes rendus, estimation pré-projet… : Claude les lit avant toute estimation.
-// Table documents_projet (type_volet = 'dossier', note = catégorie) ; fichiers dans estimation/<projet>/dossier/.
-const DOSSIER_CATS = ['Mandat', 'Synthèse du dossier', 'Compte rendu', 'Estimation pré-projet', 'Rendus 3D', 'Plans', 'Soumission', 'Autre'];
-const DOSSIER_TYPES = { 'application/pdf': 'PDF', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document': 'Word', 'text/plain': 'Texte', 'image/jpeg': 'Image', 'image/png': 'Image' };
-let dossierDocs = [];
-async function chargerVolets() {
-  const g = document.getElementById('volets-grid'); if (!g || !currentProjetId) return;
-  g.style.display = 'block';
-  const { data, error } = await db.from('documents_projet').select('*').eq('projet_id', currentProjetId).in('type_volet', ['dossier', 'estimation']).order('created_at', { ascending: false });
+// ---------- Documents du projet (onglets « Documents » et « Gestion de projet ») ----------
+// Table documents_projet : type_volet 'dossier' (Documents) ou 'gestion' (Gestion de projet), catégorie dans note,
+// date_document = date du document (rencontre, envoi…) : Claude lit du plus ancien au plus récent ; le plus récent l'emporte.
+// Fichiers sous estimation/<projet>/<volet>/ (politique de stockage existante).
+const DOC_VOLETS = {
+  dossier: { el: 'docs-projet', titre: 'Documents du dossier',
+    texte: 'Mandat, programmation, synthèse, comptes rendus… Claude les lit avant de préparer une estimation et préremplit ce qu’il peut. Indiquez la date de chaque document : quand le projet change de direction, c’est le plus récent qui compte.',
+    cats: ['Mandat', 'Programmation', 'Synthèse du dossier', 'Compte rendu', 'Estimation pré-projet', 'Rendus 3D', 'Plans', 'Autre'] },
+  gestion: { el: 'gestion-projet', titre: 'Gestion de projet',
+    texte: 'Appels d’offres envoyés, soumissions reçues et bons de commande. Le suivi budgétaire viendra s’ajouter ici.',
+    cats: ['Appel d’offres', 'Soumission reçue', 'Bon de commande', 'Autre'] },
+};
+const DOC_TYPES = { 'application/pdf': 'PDF', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document': 'Word', 'text/plain': 'Texte', 'image/jpeg': 'Image', 'image/png': 'Image',
+  'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet': 'Excel' };
+let docsProjet = [];
+async function chargerVolets() { return chargerDocsProjet('dossier'); }
+async function chargerDocsProjet(volet) {
+  const V = DOC_VOLETS[volet], g = document.getElementById(V.el); if (!g || !currentProjetId) return;
+  const types = volet === 'dossier' ? ['dossier', 'estimation'] : [volet];
+  const { data, error } = await db.from('documents_projet').select('*').eq('projet_id', currentProjetId).in('type_volet', types);
   if (error) { g.innerHTML = `<div class="card" style="color:var(--danger)">Erreur : ${escH(error.message)}</div>`; return; }
-  dossierDocs = data || [];
-  const dossier = dossierDocs.filter(d => d.type_volet === 'dossier'), plans = dossierDocs.filter(d => d.type_volet === 'estimation');
+  const cle = d => d.date_document || (d.created_at || '').slice(0, 10);
+  const docs = (data || []).sort((a, b) => cle(b).localeCompare(cle(a)));
+  docsProjet = [...docsProjet.filter(d => !types.includes(d.type_volet)), ...docs];
+  const avecDate = docs.some(d => 'date_document' in d);
   const taille = b => b ? (b > 1048576 ? (b / 1048576).toFixed(1) + ' Mo' : Math.max(1, Math.round(b / 1024)) + ' Ko') : '';
-  const ligne = (d, sup) => `<tr><td style="font-size:12px">${escH(d.type_volet === 'estimation' ? 'Plan d’estimation' : d.note || 'Autre')}</td>
-      <td><a href="#" onclick="dossierOuvrir('${d.id}');return false">${escH(d.nom)}</a></td>
-      <td style="font-size:12px;color:var(--texte-2);white-space:nowrap">${new Date(d.created_at).toLocaleDateString('fr-CA')}</td>
+  const ligne = d => { const plan = d.type_volet === 'estimation';
+    return `<tr>
+      <td>${plan ? '<span style="font-size:12px">Plan d’estimation</span>' : `<select onchange="docMaj('${d.id}','note',this.value,'${volet}')" style="padding:6px;border:1px solid var(--bord);font-size:12px;max-width:170px">${V.cats.map(c => `<option ${c === d.note ? 'selected' : ''}>${c}</option>`).join('')}${V.cats.includes(d.note) || !d.note ? '' : `<option selected>${escH(d.note)}</option>`}</select>`}</td>
+      <td><a href="#" onclick="docOuvrir('${d.id}');return false">${escH(d.nom)}</a></td>
+      <td>${plan || !avecDate ? `<span style="font-size:12px;color:var(--texte-2)">${cle(d)}</span>` : `<input type="date" value="${d.date_document || ''}" onchange="docMaj('${d.id}','date_document',this.value||null,'${volet}')" style="padding:5px;border:1px solid ${d.date_document ? 'var(--bord)' : 'var(--danger)'};font-size:12px" title="Date du document (rencontre, envoi…)">`}</td>
       <td style="font-size:12px;color:var(--texte-2);white-space:nowrap">${taille(d.taille_bytes)}</td>
-      <td style="text-align:right">${sup ? `<button class="btn btn-outline btn-sm" style="color:var(--danger);border-color:var(--danger)" onclick="dossierSupprimer('${d.id}')" aria-label="Supprimer">🗑</button>` : ''}</td></tr>`;
+      <td style="text-align:right">${plan ? '' : `<button class="btn btn-outline btn-sm" style="color:var(--danger);border-color:var(--danger)" onclick="docSupprimer('${d.id}','${volet}')" aria-label="Supprimer">🗑</button>`}</td></tr>`; };
   g.innerHTML = `<div class="card" style="margin-bottom:16px">
       <div style="display:flex;flex-wrap:wrap;gap:12px;align-items:flex-end;justify-content:space-between">
-        <div style="max-width:620px"><div style="font-size:15px;font-weight:500">Documents du dossier</div>
-          <div style="font-size:13px;color:var(--texte-2);margin-top:2px">Mandat, synthèse, comptes rendus, estimation pré-projet… Claude les lit avant de préparer une estimation et préremplit ce qu’il peut. PDF, Word (.docx) ou texte.</div></div>
+        <div style="max-width:640px"><div style="font-size:15px;font-weight:500">${V.titre}</div>
+          <div style="font-size:13px;color:var(--texte-2);margin-top:2px">${V.texte}</div></div>
         <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
-          <select id="dossier-cat" style="padding:9px 10px;border:1px solid var(--bord)">${DOSSIER_CATS.map(c => `<option>${c}</option>`).join('')}</select>
-          <label class="btn btn-dark btn-sm" style="cursor:pointer">+ Ajouter des documents
-            <input type="file" multiple accept=".pdf,.docx,.txt,.jpg,.jpeg,.png" style="display:none" onchange="dossierTeleverser(this.files);this.value=''"></label></div>
+          <select id="doc-cat-${volet}" aria-label="Catégorie" style="padding:9px 10px;border:1px solid var(--bord)">${V.cats.map(c => `<option>${c}</option>`).join('')}</select>
+          ${avecDate || !docs.length ? `<input id="doc-date-${volet}" type="date" aria-label="Date du document" title="Date du document (rencontre, envoi…)" style="padding:8px 10px;border:1px solid var(--bord)">` : ''}
+          <label class="btn btn-dark btn-sm" style="cursor:pointer">+ Ajouter
+            <input type="file" multiple accept=".pdf,.docx,.txt,.xlsx,.jpg,.jpeg,.png" style="display:none" onchange="docTeleverser(this.files,'${volet}');this.value=''"></label></div>
       </div></div>
     <div class="card" style="padding:0;overflow:hidden">
-      ${dossierDocs.length ? `<table class="data-table" style="margin:0"><thead><tr><th style="width:170px">Catégorie</th><th>Document</th><th style="width:100px">Ajouté le</th><th style="width:80px">Taille</th><th style="width:60px"></th></tr></thead>
-        <tbody>${dossier.map(d => ligne(d, true)).join('')}${plans.map(d => ligne(d, false)).join('')}</tbody></table>`
-      : '<div class="empty-state" style="padding:30px"><p>Aucun document au dossier pour l’instant.</p></div>'}
-    </div>`;
+      ${docs.length ? `<div style="overflow-x:auto"><table class="data-table" style="margin:0;min-width:620px"><thead><tr><th style="width:190px">Catégorie</th><th>Document</th><th style="width:150px">Date</th><th style="width:80px">Taille</th><th style="width:60px"></th></tr></thead>
+        <tbody>${docs.map(ligne).join('')}</tbody></table></div>`
+      : '<div class="empty-state" style="padding:30px"><p>Aucun document pour l’instant.</p></div>'}
+    </div>
+    ${volet === 'gestion' ? `<div class="card" style="margin-top:16px;font-size:13px;color:var(--texte-2)"><strong style="color:var(--charcoal);font-weight:500">Suivi budgétaire</strong> — à venir : l’estimation figée devient le budget, et les bons de commande et factures s’y rattachent par code de ligne.</div>` : ''}`;
 }
-async function dossierTeleverser(files) {
-  const cat = document.getElementById('dossier-cat')?.value || 'Autre';
+async function docTeleverser(files, volet) {
+  const cat = document.getElementById('doc-cat-' + volet)?.value || 'Autre', date = document.getElementById('doc-date-' + volet)?.value || null;
   let n = 0;
   for (const f of [...files]) {
-    const type = f.type || (f.name.toLowerCase().endsWith('.docx') ? 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' : '');
-    if (!DOSSIER_TYPES[type]) { toast(`« ${f.name} » : format non lu (PDF, Word .docx, texte ou image).`, 'error'); continue; }
+    const ext = f.name.toLowerCase().split('.').pop();
+    const type = f.type || { docx: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', xlsx: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', txt: 'text/plain' }[ext] || '';
+    if (!DOC_TYPES[type]) { toast(`« ${f.name} » : format non accepté (PDF, Word, Excel, texte ou image).`, 'error'); continue; }
     if (f.size > 31 * 1048576) { toast(`« ${f.name} » : plus de 31 Mo.`, 'error'); continue; }
-    const chemin = `estimation/${currentProjetId}/dossier/${Date.now()}-${f.name.replace(/[^\w.\- ]+/g, '_')}`;
+    const chemin = `estimation/${currentProjetId}/${volet}/${Date.now()}-${f.name.replace(/[^\w.\- ]+/g, '_')}`;
     const { error: e1 } = await db.storage.from('portail-cmpg').upload(chemin, f, { contentType: type, upsert: false });
     if (e1) { toast('Téléversement impossible : ' + e1.message, 'error'); continue; }
-    const { error: e2 } = await db.from('documents_projet').insert({ projet_id: currentProjetId, type_volet: 'dossier', nom: f.name, storage_path: chemin, taille_bytes: f.size, mime_type: type, note: cat });
+    const ligne = { projet_id: currentProjetId, type_volet: volet, nom: f.name, storage_path: chemin, taille_bytes: f.size, mime_type: type, note: cat };
+    let { error: e2 } = await db.from('documents_projet').insert(date ? { ...ligne, date_document: date } : ligne);
+    if (e2 && date && /date_document/.test(e2.message)) ({ error: e2 } = await db.from('documents_projet').insert(ligne));   // avant la migration 23
     if (e2) { await db.storage.from('portail-cmpg').remove([chemin]); toast('Erreur : ' + e2.message, 'error'); continue; }
     n++;
   }
   if (n) toast(`${n} document(s) ajouté(s).`, 'success');
-  chargerVolets();
+  chargerDocsProjet(volet);
 }
-async function dossierOuvrir(id) {
-  const d = dossierDocs.find(x => x.id === id); if (!d) return;
+async function docMaj(id, champ, valeur, volet) {
+  const { error } = await db.from('documents_projet').update({ [champ]: valeur }).eq('id', id);
+  if (error) { toast('Erreur : ' + error.message, 'error'); return; }
+  chargerDocsProjet(volet);
+}
+async function docOuvrir(id) {
+  const d = docsProjet.find(x => x.id === id); if (!d) return;
   const { data, error } = await db.storage.from('portail-cmpg').createSignedUrl(d.storage_path, 600);
   if (error) { toast('Erreur : ' + error.message, 'error'); return; }
   window.open(data.signedUrl, '_blank', 'noopener');
 }
-async function dossierSupprimer(id) {
-  const d = dossierDocs.find(x => x.id === id); if (!d) return;
-  const r = await estDialogue('Supprimer le document', `<p>Supprimer « ${escH(d.nom)} » du dossier ? Le fichier sera effacé.</p>`, [{ v: '', lib: 'Annuler' }, { v: 'ok', lib: 'Supprimer', classe: 'btn-dark' }]);
+async function docSupprimer(id, volet) {
+  const d = docsProjet.find(x => x.id === id); if (!d) return;
+  const r = await estDialogue('Supprimer le document', `<p>Supprimer « ${escH(d.nom)} » ? Le fichier sera effacé.</p>`, [{ v: '', lib: 'Annuler' }, { v: 'ok', lib: 'Supprimer', classe: 'btn-dark' }]);
   if (!r) return;
   await db.storage.from('portail-cmpg').remove([d.storage_path]);
   const { error } = await db.from('documents_projet').delete().eq('id', id);
   if (error) { toast('Erreur : ' + error.message, 'error'); return; }
-  toast('Document supprimé.', 'success'); chargerVolets();
+  toast('Document supprimé.', 'success'); chargerDocsProjet(volet);
 }
 
 function showProjetTab(tab, el) {
@@ -3196,6 +3224,8 @@ function showProjetTab(tab, el) {
   if (tab === 'postes') chargerProgression();
   if (tab === 'infos') chargerInfosProjet();
   if (tab === 'estimation') estChargerOngletProjet();
+  if (tab === 'volets') chargerDocsProjet('dossier');
+  if (tab === 'gestion') chargerDocsProjet('gestion');
 }
 
 // ============================================================

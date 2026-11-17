@@ -3121,6 +3121,73 @@ async function sauvegarderTache() {
   chargerReferentiel();
 }
 
+// ---------- Documents du dossier (onglet Projet → Volets & Documents) ----------
+// Mandat, synthèse, comptes rendus, estimation pré-projet… : Claude les lit avant toute estimation.
+// Table documents_projet (type_volet = 'dossier', note = catégorie) ; fichiers dans estimation/<projet>/dossier/.
+const DOSSIER_CATS = ['Mandat', 'Synthèse du dossier', 'Compte rendu', 'Estimation pré-projet', 'Rendus 3D', 'Plans', 'Soumission', 'Autre'];
+const DOSSIER_TYPES = { 'application/pdf': 'PDF', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document': 'Word', 'text/plain': 'Texte', 'image/jpeg': 'Image', 'image/png': 'Image' };
+let dossierDocs = [];
+async function chargerVolets() {
+  const g = document.getElementById('volets-grid'); if (!g || !currentProjetId) return;
+  g.style.display = 'block';
+  const { data, error } = await db.from('documents_projet').select('*').eq('projet_id', currentProjetId).in('type_volet', ['dossier', 'estimation']).order('created_at', { ascending: false });
+  if (error) { g.innerHTML = `<div class="card" style="color:var(--danger)">Erreur : ${escH(error.message)}</div>`; return; }
+  dossierDocs = data || [];
+  const dossier = dossierDocs.filter(d => d.type_volet === 'dossier'), plans = dossierDocs.filter(d => d.type_volet === 'estimation');
+  const taille = b => b ? (b > 1048576 ? (b / 1048576).toFixed(1) + ' Mo' : Math.max(1, Math.round(b / 1024)) + ' Ko') : '';
+  const ligne = (d, sup) => `<tr><td style="font-size:12px">${escH(d.type_volet === 'estimation' ? 'Plan d’estimation' : d.note || 'Autre')}</td>
+      <td><a href="#" onclick="dossierOuvrir('${d.id}');return false">${escH(d.nom)}</a></td>
+      <td style="font-size:12px;color:var(--texte-2);white-space:nowrap">${new Date(d.created_at).toLocaleDateString('fr-CA')}</td>
+      <td style="font-size:12px;color:var(--texte-2);white-space:nowrap">${taille(d.taille_bytes)}</td>
+      <td style="text-align:right">${sup ? `<button class="btn btn-outline btn-sm" style="color:var(--danger);border-color:var(--danger)" onclick="dossierSupprimer('${d.id}')" aria-label="Supprimer">🗑</button>` : ''}</td></tr>`;
+  g.innerHTML = `<div class="card" style="margin-bottom:16px">
+      <div style="display:flex;flex-wrap:wrap;gap:12px;align-items:flex-end;justify-content:space-between">
+        <div style="max-width:620px"><div style="font-size:15px;font-weight:500">Documents du dossier</div>
+          <div style="font-size:13px;color:var(--texte-2);margin-top:2px">Mandat, synthèse, comptes rendus, estimation pré-projet… Claude les lit avant de préparer une estimation et préremplit ce qu’il peut. PDF, Word (.docx) ou texte.</div></div>
+        <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+          <select id="dossier-cat" style="padding:9px 10px;border:1px solid var(--bord)">${DOSSIER_CATS.map(c => `<option>${c}</option>`).join('')}</select>
+          <label class="btn btn-dark btn-sm" style="cursor:pointer">+ Ajouter des documents
+            <input type="file" multiple accept=".pdf,.docx,.txt,.jpg,.jpeg,.png" style="display:none" onchange="dossierTeleverser(this.files);this.value=''"></label></div>
+      </div></div>
+    <div class="card" style="padding:0;overflow:hidden">
+      ${dossierDocs.length ? `<table class="data-table" style="margin:0"><thead><tr><th style="width:170px">Catégorie</th><th>Document</th><th style="width:100px">Ajouté le</th><th style="width:80px">Taille</th><th style="width:60px"></th></tr></thead>
+        <tbody>${dossier.map(d => ligne(d, true)).join('')}${plans.map(d => ligne(d, false)).join('')}</tbody></table>`
+      : '<div class="empty-state" style="padding:30px"><p>Aucun document au dossier pour l’instant.</p></div>'}
+    </div>`;
+}
+async function dossierTeleverser(files) {
+  const cat = document.getElementById('dossier-cat')?.value || 'Autre';
+  let n = 0;
+  for (const f of [...files]) {
+    const type = f.type || (f.name.toLowerCase().endsWith('.docx') ? 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' : '');
+    if (!DOSSIER_TYPES[type]) { toast(`« ${f.name} » : format non lu (PDF, Word .docx, texte ou image).`, 'error'); continue; }
+    if (f.size > 31 * 1048576) { toast(`« ${f.name} » : plus de 31 Mo.`, 'error'); continue; }
+    const chemin = `estimation/${currentProjetId}/dossier/${Date.now()}-${f.name.replace(/[^\w.\- ]+/g, '_')}`;
+    const { error: e1 } = await db.storage.from('portail-cmpg').upload(chemin, f, { contentType: type, upsert: false });
+    if (e1) { toast('Téléversement impossible : ' + e1.message, 'error'); continue; }
+    const { error: e2 } = await db.from('documents_projet').insert({ projet_id: currentProjetId, type_volet: 'dossier', nom: f.name, storage_path: chemin, taille_bytes: f.size, mime_type: type, note: cat });
+    if (e2) { await db.storage.from('portail-cmpg').remove([chemin]); toast('Erreur : ' + e2.message, 'error'); continue; }
+    n++;
+  }
+  if (n) toast(`${n} document(s) ajouté(s).`, 'success');
+  chargerVolets();
+}
+async function dossierOuvrir(id) {
+  const d = dossierDocs.find(x => x.id === id); if (!d) return;
+  const { data, error } = await db.storage.from('portail-cmpg').createSignedUrl(d.storage_path, 600);
+  if (error) { toast('Erreur : ' + error.message, 'error'); return; }
+  window.open(data.signedUrl, '_blank', 'noopener');
+}
+async function dossierSupprimer(id) {
+  const d = dossierDocs.find(x => x.id === id); if (!d) return;
+  const r = await estDialogue('Supprimer le document', `<p>Supprimer « ${escH(d.nom)} » du dossier ? Le fichier sera effacé.</p>`, [{ v: '', lib: 'Annuler' }, { v: 'ok', lib: 'Supprimer', classe: 'btn-dark' }]);
+  if (!r) return;
+  await db.storage.from('portail-cmpg').remove([d.storage_path]);
+  const { error } = await db.from('documents_projet').delete().eq('id', id);
+  if (error) { toast('Erreur : ' + error.message, 'error'); return; }
+  toast('Document supprimé.', 'success'); chargerVolets();
+}
+
 function showProjetTab(tab, el) {
   document.querySelectorAll('.projet-tab').forEach(t => t.classList.remove('active'));
   el.classList.add('active');

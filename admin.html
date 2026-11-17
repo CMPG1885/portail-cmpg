@@ -5665,6 +5665,7 @@ function estAfficher(onglet) {
   estOnglet = onglet;
   if (estCourante) estRenderEntete();
   document.querySelectorAll('#est-editeur .est-subtab').forEach(t => t.classList.toggle('active', t.dataset.o === onglet));
+  if (onglet === 'quantites') estQManId = null;   // relire les prix manuels
   ({ plan: estRenderPlan, pieces: estRenderPieces, quantites: estRenderQuantites, aide: estRenderAide, resultat: estRenderResultat })[onglet]();
   estAideCharger().then(estAideBadge);
 }
@@ -5747,66 +5748,178 @@ function estSections() {
   }
   return [...sec.values()].sort((a, b) => a.code.localeCompare(b.code));
 }
-function estRenderQuantites() {
+// ---------- Quantités par section (phase 2) ----------
+// Sections à gauche, lignes à droite ; aide « ? » par quantité ; mode guidé (une section par écran).
+// Le montant affiché est une estimation au prix du catalogue (type de la pièce ou du projet, gamme, prix manuels) :
+// le total exact (sélections, pourcentages, contingence) se fait avec « Calculer ».
+let estQSec = null, estQGuide = false, estQAide = new Set(), estQCat = null, estQExtra = {}, estQMan = {}, estQEdit = null, estQManId = null;
+async function estQCharger() {
+  if (!estQCat) {
+    const { data } = await db.from('catalogue_taches')
+      .select('cle_gabarit, cle_pq, libelle, unite, type, ordre, sous_section, calcul, catalogue_prix(type_projet, gamme, prix_mo, prix_mat, prix_fp, actif)')
+      .eq('actif', true).not('cle_gabarit', 'is', null).order('ordre');
+    estQCat = data || [];
+    let r = await db.from('catalogue_parametres').select('cle, source, regle, aide_eviter').eq('actif', true);
+    if (r.error) r = await db.from('catalogue_parametres').select('cle, source, regle').eq('actif', true);   // avant la migration 22
+    estQExtra = {}; (r.data || []).filter(p => ['Plan', 'Pop-up'].includes(p.source)).forEach(p => { estQExtra[p.cle] = p; });
+  }
+  const { data: pm } = await db.from('estimation_prix_manuels').select('cle_gabarit, prix').eq('estimation_id', estCourante.id);
+  estQManId = estCourante.id; estQMan = {}; (pm || []).forEach(m => { estQMan[m.cle_gabarit] = Number(m.prix); });
+}
+// Tâches comptées pour une clé de quantité (une seule tâche modèle par sous-section pour les cases « pièce »)
+function estQTaches(cle) {
+  const vus = new Set();
+  return (estQCat || []).filter(t => {
+    if (t.calcul?.m === 'pct' || t.calcul?.q === 'somme') return false;
+    if (t.cle_pq ? t.cle_pq !== cle : t.cle_gabarit !== cle) return false;
+    if (t.calcul?.piece) { const k = (t.sous_section || '') + '|' + t.cle_pq; if (vus.has(k)) return false; vus.add(k); }
+    return true;
+  });
+}
+function estQPrixTache(t, ty, ga) {
+  if (estQMan[t.cle_gabarit] != null) return { prix: estQMan[t.cle_gabarit], manuel: true };
+  const px = (t.catalogue_prix || []).filter(p => p.actif !== false);
+  const r = px.find(p => p.type_projet === ty && p.gamme === ga) || px.find(p => p.type_projet === ty && !p.gamme)
+    || px.find(p => !p.type_projet && p.gamme === ga) || px.find(p => !p.type_projet && !p.gamme);
+  const v = r ? Number(r.prix_fp ?? r.prix_mat ?? r.prix_mo ?? 0) : null;
+  return { prix: v, manuel: false };
+}
+function estQTypeRang(r) {
+  const z = estPieces.find(p => p.id === r?.piece_id)?.zone;
+  return r?.type_projet || (z && z !== 'Hors mandat' ? z : null) || estCourante.type_projet;
+}
+// Prix unitaire combiné (main-d'œuvre + matériaux…) et montant estimé d'une clé
+function estQValeur(cle) {
+  const ts = estQTaches(cle), rs = estQtes.filter(x => x.cle === cle);
+  const unit = (ty, ga) => ts.reduce((a, t) => { const p = estQPrixTache(t, ty, ga); if (p.prix == null) a.manque = true; else a.v += p.prix; if (p.manuel) a.manuel = true; return a; }, { v: 0, manque: false, manuel: false });
+  const u0 = unit(estCourante.type_projet, estCourante.gamme_defaut);
+  const montant = rs.reduce((s, r) => s + Number(r.quantite || 0) * unit(estQTypeRang(r), r.gamme || estCourante.gamme_defaut).v, 0);
+  return { ts, rs, unit: ts.length && (u0.v || !u0.manque) ? u0.v : null, manuel: u0.manuel, montant };
+}
+function estQSections() {
+  return estSections().map(s => {
+    const vals = s.items.map(it => estQValeur(it.cle));
+    return { ...s, remplis: vals.filter(v => v.rs.length).length, total: vals.reduce((t, v) => t + v.montant, 0), vue: (estCourante.sections_vues || []).includes(s.code) };
+  });
+}
+async function estRenderQuantites() {
+  const c = document.getElementById('est-contenu'); if (!c || !estCourante) return;
+  if (!estQCat || estQManId !== estCourante.id) { if (!estQCat) c.innerHTML = '<div class="card" style="font-size:13px;color:var(--texte-2)">Chargement…</div>'; await estQCharger(); }
   const fz = estFigee(), dis = fz ? 'disabled' : '';
+  const secs = estQSections();
+  if (!secs.length) { c.innerHTML = '<div class="empty-state" style="padding:30px"><p>Aucune quantité au catalogue.</p></div>'; return; }
+  if (!estQSec || !secs.some(s => s.code === estQSec)) estQSec = (secs.find(s => s.remplis) || secs[0]).code;
   const q = estQFiltre.q.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
   const norm = s => (s || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
-  const rangs = cle => estQtes.filter(x => x.cle === cle);
+  const idx = secs.findIndex(s => s.code === estQSec), sec = secs[idx];
   const optPieces = r => `<option value="">— Pièce —</option>` + estPieces.map(p => `<option value="${p.id}" ${p.id === r.piece_id ? 'selected' : ''}>${escH(p.nom)}</option>`).join('');
-  let totRemplis = 0, totItems = 0;
-  const blocs = estSections().map(s => {
-    const items = s.items.filter(it => {
-      const n = rangs(it.cle).length;
-      if (estQFiltre.etat === 'remplis' && !n) return false;
-      if (estQFiltre.etat === 'vides' && n) return false;
-      return !q || norm(it.nom).includes(q) || norm(s.nom).includes(q) || it.cle.includes(q) || s.code.includes(q);
-    });
-    const remplis = s.items.filter(it => rangs(it.cle).length).length;
-    totRemplis += remplis; totItems += s.items.length;
-    if (!items.length) return '';
-    const ouvert = q || estQFiltre.etat || estQOuvertes.has(s.code);
-    const lignes = items.map(it => {
-      const rs = rangs(it.cle);
-      const simple = rs.length === 0 || (rs.length === 1 && !rs[0].piece_id && !rs[0].type_projet && !rs[0].gamme);
-      const champ = simple
-        ? `<input ${dis} type="number" step="any" value="${rs[0]?.quantite ?? ''}" placeholder="—" onchange="estQteSimple('${it.cle}',this.value)" style="width:110px;text-align:right" />`
-        : `<strong>${estNum(rs.reduce((t, r) => t + Number(r.quantite || 0), 0))}</strong> <span style="font-size:11px;color:var(--texte-2)">(${rs.length} lignes)</span>`;
-      const detail = simple ? '' : rs.map(r => `<tr class="est-sousligne"><td style="padding-left:28px">↳
-          <select ${dis} onchange="estMajQte('${r.id}','piece_id',this.value||null)" style="width:auto">${optPieces(r)}</select>
-          <select ${dis} onchange="estMajQte('${r.id}','type_projet',this.value||null)" style="width:auto">${estOpts(EST_TYPES, r.type_projet, '— Type —')}</select>
-          <select ${dis} onchange="estMajQte('${r.id}','gamme',this.value||null)" style="width:auto">${estOpts(EST_GAMMES, r.gamme, '— Gamme —')}</select></td>
-        <td></td><td><input ${dis} type="number" step="any" value="${r.quantite ?? ''}" onchange="estMajQte('${r.id}','quantite',this.value===''?null:Number(this.value))" style="width:110px;text-align:right" /></td>
-        <td>${fz ? '' : `<button class="btn btn-outline btn-sm" style="color:var(--danger);border-color:var(--danger)" onclick="estSupprimerQte('${r.id}')">🗑</button>`}</td></tr>`).join('');
-      return `<tr${rs.length ? ' style="background:#fbfaf6"' : ''}>
-          <td>${rs.length ? '<span style="color:var(--success)">●</span> ' : '<span style="color:var(--bord)">○</span> '}${escH(it.nom)}
-            <span style="font-size:10px;color:var(--texte-2);font-family:monospace;margin-left:6px">${escH(it.cle)}</span>
-            ${it.aide ? `<div style="font-size:11px;color:var(--texte-2);margin:2px 0 0 18px">${escH(it.aide)}</div>` : ''}</td>
-          <td style="font-size:12px;color:var(--texte-2)">${escH(it.unite || '')}</td>
-          <td>${champ}</td>
-          <td style="white-space:nowrap">${fz ? '' : `<button class="btn btn-outline btn-sm" onclick="estOuvrirModalQte('${it.cle}')" title="Ajouter une ligne par pièce, par type ou par gamme">+ pièce / type</button>`}</td></tr>${detail}`;
-    }).join('');
-    return `<div class="card" style="padding:0;overflow:hidden;margin-bottom:10px">
-      <div onclick="estBasculerSection('${s.code}')" style="padding:12px 16px;background:var(--fond);cursor:pointer;display:flex;justify-content:space-between;align-items:center">
-        <div><span style="font-size:12px;color:var(--texte-2)">${ouvert ? '▾' : '▸'}</span>
-          <span style="font-family:monospace;font-size:12px;color:var(--texte-2);margin-left:6px">${s.code}</span>
-          <strong style="margin-left:10px">${escH(s.nom)}</strong></div>
-        <span style="font-size:12px;color:${remplis ? 'var(--success)' : 'var(--texte-2)'}">${remplis} / ${s.items.length} rempli(s)</span></div>
-      ${ouvert ? `<table class="data-table" style="margin:0"><thead><tr><th>Paramètre</th><th style="width:70px">Unité</th><th style="width:190px">Quantité</th><th style="width:130px"></th></tr></thead><tbody>${lignes}</tbody></table>` : ''}
+  const m2 = v => v ? estMoney(v) : '—';
+  const ligne = it => {
+    const V = estQValeur(it.cle), rs = V.rs, ouv = estQAide.has(it.cle), ex = estQExtra[it.cle] || {};
+    const simple = rs.length === 0 || (rs.length === 1 && !rs[0].piece_id && !rs[0].type_projet && !rs[0].gamme);
+    const champ = simple
+      ? `<input ${dis} type="number" step="any" min="0" value="${rs[0]?.quantite ?? ''}" placeholder="—" aria-label="Quantité — ${escH(it.nom)}" onchange="estQteSimple('${it.cle}',this.value)" style="width:100px;text-align:right;color:#00008B;border:1px solid var(--caramel);padding:6px 8px" />`
+      : `<strong>${estNum(rs.reduce((t, r) => t + Number(r.quantite || 0), 0))}</strong> <span style="font-size:11px;color:var(--texte-2)">(${rs.length} lignes)</span>`;
+    const detail = simple ? '' : rs.map(r => `<tr class="est-sousligne"><td colspan="2" style="padding-left:28px">↳
+        <select ${dis} onchange="estMajQte('${r.id}','piece_id',this.value||null).then(estRenderQuantites)" style="width:auto">${optPieces(r)}</select>
+        <select ${dis} onchange="estMajQte('${r.id}','type_projet',this.value||null).then(estRenderQuantites)" style="width:auto">${estOpts(EST_TYPES, r.type_projet, '— Type —')}</select>
+        <select ${dis} onchange="estMajQte('${r.id}','gamme',this.value||null).then(estRenderQuantites)" style="width:auto">${estOpts(EST_GAMMES, r.gamme, '— Gamme —')}</select></td>
+      <td><input ${dis} type="number" step="any" value="${r.quantite ?? ''}" onchange="estMajQte('${r.id}','quantite',this.value===''?null:Number(this.value)).then(estRenderQuantites)" style="width:100px;text-align:right;color:#00008B" /></td>
+      <td colspan="2"></td><td>${fz ? '' : `<button class="btn btn-outline btn-sm" style="color:var(--danger);border-color:var(--danger)" onclick="estSupprimerQte('${r.id}')" aria-label="Retirer">🗑</button>`}</td></tr>`).join('');
+    const aide = !ouv ? '' : `<tr><td colspan="6" style="background:#FBFBF5;padding:12px 16px 14px">
+        <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:12px;font-size:13px">
+          <div><div style="font-size:10px;letter-spacing:1.2px;text-transform:uppercase;font-weight:500;margin-bottom:4px">Ce qui est compté</div>
+            ${V.ts.length ? V.ts.map(t => { const p = estQPrixTache(t, estCourante.type_projet, estCourante.gamme_defaut);
+              return `<div style="margin-bottom:3px">${escH(t.libelle)} <span style="color:var(--texte-2);white-space:nowrap">· ${p.prix == null ? 'sans prix' : estMoney2(p.prix) + ' / ' + escH(t.unite || '')}${p.manuel ? ' (manuel)' : ''}</span></div>`; }).join('') : '<span style="color:var(--texte-2)">Aucune ligne de prix liée.</span>'}</div>
+          <div><div style="font-size:10px;letter-spacing:1.2px;text-transform:uppercase;font-weight:500;margin-bottom:4px">Comment mesurer</div>
+            ${estQEdit === it.cle ? `<textarea id="qa-regle" rows="3" style="width:100%;font:inherit;font-size:13px;padding:6px">${escH(ex.regle || '')}</textarea>`
+              : escH([ex.regle, it.aide].filter(Boolean).join(' · ') || '—')}</div>
+          <div style="${ex.aide_eviter || estQEdit === it.cle ? 'border-top:3px solid var(--danger);padding-top:6px' : ''}"><div style="font-size:10px;letter-spacing:1.2px;text-transform:uppercase;font-weight:500;margin-bottom:4px;color:var(--danger)">À éviter</div>
+            ${estQEdit === it.cle ? `<textarea id="qa-eviter" rows="3" style="width:100%;font:inherit;font-size:13px;padding:6px">${escH(ex.aide_eviter || '')}</textarea>` : escH(ex.aide_eviter || '—')}</div>
+        </div>
+        <div style="margin-top:8px;text-align:right">${estQEdit === it.cle
+          ? `<button class="btn btn-outline btn-sm" onclick="estQEdit=null;estRenderQuantites()">Annuler</button> <button class="btn btn-dark btn-sm" onclick="estQSauverAide('${it.cle}')">Enregistrer l’aide</button>`
+          : (estParams.some(p => p.cle === it.cle) ? `<button class="btn btn-outline btn-sm" onclick="estQEdit='${it.cle}';estRenderQuantites()">Modifier l’aide</button>` : '')}</div></td></tr>`;
+    return `<tr${rs.length ? ' style="background:#fbfaf6"' : ''}>
+        <td><div style="display:flex;gap:8px;align-items:flex-start">
+          <button type="button" onclick="estQBasculerAide('${it.cle}')" aria-label="Aide : ${escH(it.nom)}" aria-expanded="${ouv}" style="flex:none;width:26px;height:26px;border-radius:13px;border:1px solid ${ouv ? 'var(--charcoal)' : 'var(--bord)'};background:${ouv ? 'var(--charcoal)' : '#fff'};color:${ouv ? '#fff' : 'var(--texte-2)'};cursor:pointer;font-size:12px;font-weight:500">?</button>
+          <div>${escH(it.nom)}${estQExtra[it.cle]?.aide_eviter ? ' <span title="Voir « À éviter » dans l’aide" style="color:var(--danger);font-size:11px">⚠</span>' : ''}
+            <div style="font-size:10px;color:var(--texte-2);font-family:monospace">${escH(it.cle)}</div></div></div></td>
+        <td style="font-size:12px;color:var(--texte-2)">${escH(it.unite || '')}</td>
+        <td>${champ}</td>
+        <td style="text-align:right;font-size:12px;white-space:nowrap">${V.unit == null ? '<span style="color:var(--texte-2)">—</span>' : estMoney2(V.unit)}${V.manuel ? '<div style="font-size:10px;color:var(--caramel)">prix manuel</div>' : ''}</td>
+        <td style="text-align:right;font-weight:${V.montant ? 500 : 300};white-space:nowrap">${m2(V.montant)}</td>
+        <td style="white-space:nowrap">${fz ? '' : `<button class="btn btn-outline btn-sm" onclick="estOuvrirModalQte('${it.cle}')" title="Séparer par pièce, par type de projet ou par gamme">+ pièce / type</button>`}</td></tr>${detail}${aide}`;
+  };
+  const tableau = items => `<div style="overflow-x:auto"><table class="data-table" style="margin:0;min-width:680px">
+      <thead><tr><th>Quantité</th><th style="width:60px">Unité</th><th style="width:150px">Qté</th><th style="width:100px;text-align:right">Prix</th><th style="width:110px;text-align:right">Montant ≈</th><th style="width:120px"></th></tr></thead>
+      <tbody>${items.map(ligne).join('')}</tbody></table></div>`;
+  let droite;
+  if (q) {
+    const res = secs.map(s => ({ s, items: s.items.filter(it => norm(it.nom).includes(q) || norm(s.nom).includes(q) || it.cle.includes(q)) })).filter(x => x.items.length);
+    droite = res.length ? res.map(x => `<div class="card" style="padding:0;overflow:hidden;margin-bottom:12px">
+        <div style="padding:10px 16px;background:var(--fond);font-weight:500"><span style="font-family:monospace;font-size:12px;color:var(--texte-2)">${x.s.code}</span> ${escH(x.s.nom)}</div>${tableau(x.items)}</div>`).join('')
+      : '<div class="card" style="font-size:13px;color:var(--texte-2)">Aucune quantité ne correspond à la recherche.</div>';
+  } else {
+    droite = `<div class="card" style="padding:0;overflow:hidden">
+        <div style="padding:14px 18px;display:flex;flex-wrap:wrap;gap:8px;justify-content:space-between;align-items:baseline;border-bottom:1px solid var(--bord)">
+          <div><span style="font-family:monospace;font-size:12px;color:var(--texte-2)">${sec.code}</span> <strong style="font-size:17px;font-weight:500;margin-left:6px">${escH(sec.nom)}</strong></div>
+          <span style="font-size:12px;color:var(--texte-2)">${sec.remplis} / ${sec.items.length} remplie(s)</span></div>
+        ${tableau(sec.items)}
+        <div style="padding:12px 18px;display:flex;justify-content:space-between;background:#EDE9E1;border-top:1px solid #A09890;font-weight:500"><span>Total ${escH(sec.nom)} ≈</span><span>${m2(sec.total)}</span></div></div>`;
+  }
+  const total = secs.reduce((t, s) => t + s.total, 0), vues = secs.filter(s => s.vue || s.remplis).length;
+  const barre = `<div style="display:flex;gap:12px;align-items:center;margin-bottom:14px;flex-wrap:wrap">
+      <input id="est-q-recherche" type="text" placeholder="Chercher une quantité (gypse, céramique…) ou un DDN" value="${escH(estQFiltre.q)}"
+        oninput="estQFiltre.q=this.value;estRenderQuantites().then(()=>{const e=document.getElementById('est-q-recherche');e.focus();e.setSelectionRange(e.value.length,e.value.length)})"
+        style="flex:1;min-width:240px;padding:10px 14px;border:1px solid var(--bord)" />
+      <button class="btn ${estQGuide ? 'btn-dark' : 'btn-outline'} btn-sm" onclick="estQGuide=!estQGuide;estQFiltre.q='';estRenderQuantites()" title="Une section à la fois, avec Précédent et Suivant">${estQGuide ? '✓ Mode guidé' : 'Mode guidé'}</button>
+      ${fz ? '' : `<button class="btn btn-dark btn-sm est-btn-calculer" onclick="estCalculer()">⟳ Calculer</button>`}
     </div>`;
-  }).join('');
-  document.getElementById('est-contenu').innerHTML = `
-    <div style="display:flex;gap:12px;align-items:center;margin-bottom:14px;flex-wrap:wrap">
-      <input id="est-q-recherche" type="text" placeholder="Rechercher par nom (gypse, fenêtre, céramique…) ou par DDN" value="${escH(estQFiltre.q)}"
-             oninput="estQFiltre.q=this.value;estRenderQuantites();const e=document.getElementById('est-q-recherche');e.focus();e.setSelectionRange(e.value.length,e.value.length)"
-             style="flex:1;min-width:280px;padding:11px 14px;border:1px solid var(--bord)" />
-      <select onchange="estQFiltre.etat=this.value;estRenderQuantites()" style="padding:10px 12px;border:1px solid var(--bord)">
-        <option value="" ${!estQFiltre.etat ? 'selected' : ''}>Tous les paramètres</option>
-        <option value="vides" ${estQFiltre.etat === 'vides' ? 'selected' : ''}>À remplir</option>
-        <option value="remplis" ${estQFiltre.etat === 'remplis' ? 'selected' : ''}>Remplis</option></select>
-      <div style="font-size:12px;color:var(--texte-2)"><strong>${totRemplis}</strong> / ${totItems} paramètres remplis</div>
-    </div>
-    <div style="font-size:12px;color:var(--texte-2);margin-bottom:12px">Ouvrez chaque section et inscrivez les quantités du projet. « + pièce / type » sépare une quantité par pièce, par type de projet (projet mixte) ou par gamme.</div>
-    ${blocs || '<div class="empty-state" style="padding:30px"><p>Aucun paramètre ne correspond à la recherche.</p></div>'}`;
+  const note = `<div style="font-size:11px;color:var(--texte-2);margin-top:8px">Montants ≈ au prix du catalogue (type, gamme, prix manuels). Les sélections approuvées, les pourcentages et la contingence entrent avec « Calculer ».</div>`;
+  if (estQGuide && !q) {
+    c.innerHTML = `${barre}
+      <div style="margin-bottom:12px"><div style="display:flex;justify-content:space-between;flex-wrap:wrap;gap:6px;font-size:13px"><strong style="font-weight:500">Section ${idx + 1} sur ${secs.length}</strong><span style="color:var(--texte-2)">${vues} vue(s) · total ≈ ${m2(total)}</span></div>
+        <div style="height:6px;background:var(--fond);border-radius:3px;overflow:hidden;margin-top:6px"><div style="height:100%;width:${Math.round((idx + 1) / secs.length * 100)}%;background:var(--charcoal)"></div></div></div>
+      ${droite}
+      <div style="display:flex;justify-content:space-between;flex-wrap:wrap;gap:10px;margin-top:14px">
+        <button class="btn btn-outline" ${idx ? '' : 'disabled'} onclick="estQAller(${idx - 1})">← ${idx ? escH(secs[idx - 1].nom) : 'Précédent'}</button>
+        <div style="display:flex;gap:8px;flex-wrap:wrap">
+          ${fz ? '' : `<button class="btn btn-outline" onclick="estQVue('${sec.code}',${idx + 1})">Rien dans cette section</button>`}
+          ${idx < secs.length - 1 ? `<button class="btn btn-dark" onclick="estQVue('${sec.code}',${idx + 1})">Suivant — ${escH(secs[idx + 1].nom)} →</button>`
+            : `<button class="btn btn-dark" onclick="estQVue('${sec.code}',-1)">Terminer — À ne pas oublier →</button>`}</div></div>${note}`;
+    return;
+  }
+  c.innerHTML = `${barre}
+    <div style="display:flex;flex-wrap:wrap;gap:16px;align-items:flex-start">
+      <div class="card" style="flex:1 1 240px;max-width:300px;padding:0;overflow:hidden">
+        <div style="padding:12px 16px;background:var(--charcoal);color:#fff;font-size:11px;letter-spacing:1.2px;text-transform:uppercase;font-weight:500">Sections</div>
+        <div style="max-height:70vh;overflow:auto">${secs.map((s, i) => `<button type="button" onclick="estQAller(${i})" style="width:100%;min-height:52px;display:flex;justify-content:space-between;align-items:center;gap:10px;padding:8px 14px;border:0;border-bottom:1px solid var(--fond);cursor:pointer;text-align:left;color:var(--charcoal);background:${s.code === estQSec && !q ? 'var(--fond)' : '#fff'};box-shadow:${s.code === estQSec && !q ? 'inset 3px 0 0 var(--caramel)' : 'none'}">
+            <span style="display:flex;flex-direction:column;min-width:0"><span style="font-size:10px;font-family:monospace;color:var(--texte-2)">${s.code}${s.remplis ? ` · ${s.remplis} remplie(s)` : s.vue ? ' · vue' : ''}</span>
+              <span style="font-size:13px;font-weight:${s.remplis ? 500 : 300}">${escH(s.nom)}</span></span>
+            <span style="font-size:12px;white-space:nowrap">${s.total ? estMoney(s.total) : ''}</span></button>`).join('')}</div>
+        <div style="padding:12px 16px;display:flex;justify-content:space-between;background:#EDE9E1;border-top:1px solid #A09890;font-weight:500"><span>Total ≈</span><span>${m2(total)}</span></div>
+      </div>
+      <div style="flex:999 1 560px;min-width:0">${droite}${note}</div>
+    </div>`;
+}
+function estQAller(i) { const secs = estSections(); if (secs[i]) { estQSec = secs[i].code; estQFiltre.q = ''; estRenderQuantites(); document.getElementById('est-contenu')?.scrollIntoView({ behavior: 'smooth', block: 'start' }); } }
+function estQBasculerAide(cle) { estQAide.has(cle) ? estQAide.delete(cle) : estQAide.add(cle); if (estQEdit === cle) estQEdit = null; estRenderQuantites(); }
+async function estQVue(code, suivant) {
+  if (!estFigee()) {
+    const vues = [...new Set([...(estCourante.sections_vues || []), code])];
+    const { error } = await db.from('estimations').update({ sections_vues: vues }).eq('id', estCourante.id);
+    if (!error) estCourante.sections_vues = vues;
+  }
+  if (suivant < 0) { estAfficher('aide'); return; }
+  estQAller(suivant);
+}
+async function estQSauverAide(cle) {
+  const regle = document.getElementById('qa-regle')?.value.trim() || null, aide_eviter = document.getElementById('qa-eviter')?.value.trim() || null;
+  const { error } = await db.from('catalogue_parametres').update({ regle, aide_eviter, maj_le: new Date().toISOString() }).eq('cle', cle).in('source', ['Plan', 'Pop-up']);
+  if (error) { toast('Erreur : ' + error.message + (/aide_eviter/.test(error.message) ? ' — exécutez la migration 22.' : ''), 'error'); return; }
+  estQExtra[cle] = { ...(estQExtra[cle] || {}), regle, aide_eviter }; estQEdit = null;
+  toast('Aide enregistrée pour toutes les estimations.', 'success'); estRenderQuantites();
 }
 function estBasculerSection(code) { estQOuvertes.has(code) ? estQOuvertes.delete(code) : estQOuvertes.add(code); estRenderQuantites(); }
 async function estQteSimple(cle, valeur) {

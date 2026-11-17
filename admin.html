@@ -5778,7 +5778,9 @@ function estRenderEntete() {
     <div style="height:3px;background:${EK.gr}"></div>
     <nav aria-label="Étapes" style="background:#fff;border:1px solid ${EK.bord};border-top:0;border-radius:0 0 10px 10px;padding:6px 28px;display:flex;flex-wrap:wrap;gap:4px 20px;align-items:center;justify-content:space-between">
       <ol style="list-style:none;margin:0;padding:0;display:flex;flex-wrap:wrap;gap:0 20px">${etapes}</ol>
-      <button type="button" onclick="estAfficher('pieces')" style="background:none;border:0;padding:6px 0;cursor:pointer;font-family:inherit;font-size:12px;color:${estOnglet === 'pieces' ? EK.ch : EK.t2};text-decoration:underline">Pièces${estPieces.length ? ` (${estPieces.length})` : ''}</button>
+      <span style="display:flex;gap:16px">
+        <button type="button" onclick="estGuidePrix()" style="background:none;border:0;padding:6px 0;cursor:pointer;font-family:inherit;font-size:12px;color:${EK.t2};text-decoration:underline">Comment le prix est calculé</button>
+  <button type="button" onclick="estAfficher('pieces')" style="background:none;border:0;padding:6px 0;cursor:pointer;font-family:inherit;font-size:12px;color:${estOnglet === 'pieces' ? EK.ch : EK.t2};text-decoration:underline">Pièces${estPieces.length ? ` (${estPieces.length})` : ''}</button></span>
     </nav>
     ${autre ? `<div style="margin-top:12px;padding:10px 14px;border-radius:10px;background:${EK.fond};border-left:3px solid ${EK.rouge};font-size:13px">
       ✏️ <strong style="font-weight:500">${escH(e.en_edition_par)}</strong> est en train de modifier cette estimation (depuis ${new Date(e.en_edition_le).toLocaleTimeString('fr-CA', { hour: '2-digit', minute: '2-digit' })}).
@@ -5795,6 +5797,49 @@ function estAfficher(onglet) {
   ({ demarrer: estRenderDemarrer, documents: estRenderDocuments, portee: estRenderPortee, lecture: estRenderPlan, pieces: estRenderPieces,
      quantites: estRenderQuantites, aide: estRenderAide, resultat: estRenderResultat })[onglet]();
   estAideCharger().then(() => { estAideBadge(); if (estOnglet === onglet) estRenderEntete(); });
+}
+
+// ---------- Guide « Comment le prix est calculé » (lien dans la barre d'étapes) ----------
+function estGuidePrix() {
+  const bloc = (titre, html) => `<section style="display:flex;flex-direction:column;gap:6px"><h3 style="margin:0;font-size:12px;letter-spacing:1.2px;text-transform:uppercase;font-weight:500;font-family:inherit;color:${EK.ch}">${titre}</h3>${html}</section>`;
+  const tab = (tete, rangs) => `<div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:13px">
+      <thead><tr>${tete.map(h => `<th style="text-align:left;padding:7px 10px;background:${EK.ch};color:#fff;font-weight:500">${h}</th>`).join('')}</tr></thead>
+      <tbody>${rangs.map((r, i) => `<tr style="background:${i % 2 ? EK.fond : '#fff'}">${r.map(c => `<td style="padding:7px 10px;border-bottom:1px solid ${EK.bord};vertical-align:top">${c}</td>`).join('')}</tr>`).join('')}</tbody></table></div>`;
+  const o = document.createElement('div');
+  o.className = 'modal-overlay open'; o.id = 'est-guide';
+  o.addEventListener('click', ev => { if (ev.target === o || ev.target.closest('[data-fermer]')) o.remove(); });
+  o.innerHTML = `<div class="modal" style="width:min(820px,96vw);max-width:none;max-height:92vh;display:flex;flex-direction:column">
+    <div class="modal-header"><div><div style="font-size:11px;letter-spacing:1.5px;text-transform:uppercase;color:var(--texte-2)">Guide</div>
+      <h3 style="margin-top:4px">Comment le prix est calculé</h3></div><button class="modal-close" data-fermer aria-label="Fermer">×</button></div>
+    <div class="modal-body" style="overflow:auto;display:flex;flex-direction:column;gap:20px;color:${EK.ch};font-weight:300;line-height:1.55;font-size:14px">
+      ${bloc('1 · Une ligne = quantité × prix unitaire', `<p style="margin:0">Ex. : gérant de chantier, 35 semaines × 600 $ = 21 000 $. La quantité vient de la Saisie par section, de la lecture du plan ou d'une réponse (Portée, « À ne pas oublier »).</p>
+        <p style="margin:0;color:${EK.t2}">Une même quantité peut servir à plusieurs lignes : la durée des travaux alimente le gérant, la chargée de projet, la toilette et le conteneur. Le « ? » de chaque quantité dit à quelles lignes elle sert (« Ce qui est compris »).</p>`)}
+      ${bloc('2 · Le prix unitaire : le premier trouvé dans cet ordre', tab(['Ordre', 'Source', 'Exemple'], [
+        ['1', '<strong style="font-weight:500">Sélection approuvée avec un prix</strong>', 'Comptoir C02 Calacatta à 130 $/pi²'],
+        ['2', '<strong style="font-weight:500">Prix manuel</strong> (inscrit à l\'étape Résultat ou par « À ne pas oublier »)', 'Chauffage temporaire 250 $/semaine'],
+        ['3', '<strong style="font-weight:500">Catalogue</strong>, selon le type de la ligne et la gamme', 'Électricité au pi² : 11,80 $ en réno partielle, 16,25 $ en réno complète'],
+        ['—', 'Rien de trouvé : <strong style="font-weight:500">« sans prix »</strong>, à compléter', '']]) + `
+        <p style="margin:0;font-size:13px;color:${EK.t2}">Sélection approuvée SANS prix : la gamme est comptée en attendant, et la sélection reste affichée « prix à venir ». Fourni par le client (Portée) : la ligne reste visible à 0 $.</p>
+        <p style="margin:0;font-size:13px;color:${EK.t2}">Le type d'une ligne : celui de la quantité s'il est précisé, sinon celui de la pièce (zone), sinon le type principal de l'estimation.</p>`)}
+      ${bloc('3 · Ce que comprend une ligne', tab(['Type de ligne', 'Ce qu\'elle comprend', 'Exemples'], [
+        ['<strong style="font-weight:500">Fourni-posé</strong>', 'Matériaux et pose, comme le sous-traitant le soumissionne', 'Électricité, ventilation, comptoirs, céramique'],
+        ['<strong style="font-weight:500">Main-d\'œuvre</strong>', 'La pose seulement ; la fourniture est sur une autre ligne', 'Pose des planchers, points d\'eau, menuiserie'],
+        ['<strong style="font-weight:500">Fourniture</strong>', 'Le matériau ou l\'appareil seulement', 'Appareils sanitaires, bois du plancher, moulures'],
+        ['<strong style="font-weight:500">Au pi² « tout compris »</strong>', 'Tout un métier en un prix : le libellé dit ce qui est inclus', 'Électricité au pi² (entrée, panneau, prises, sorties) ; CVC au pi² (réseau neuf)']]) + `
+        <p style="margin:0;font-size:13px;color:${EK.t2}">Règle : le catalogue découpe chaque poste comme le sous-traitant le soumissionne, pour comparer ligne à ligne.</p>`)}
+      ${bloc('4 · Le total', tab(['', 'Calcul'], [
+        ['Sous-total des travaux', 'Somme de toutes les lignes'],
+        ['+ Contingence', 'Le % choisi dans « À ne pas oublier » (0 % par défaut)'],
+        ['+ Frais de gestion et d\'administration', '15 % de (travaux + contingence)'],
+        ['= Total avant taxes', ''],
+        ['+ TPS 5 % et TVQ 9,975 %', '= Total avec taxes']]))}
+      ${bloc('Valeurs automatiques', `<ul style="margin:0;padding-left:18px">
+        <li>Assurance chantier sans montant : 0,6 % du sous-total des travaux.</li>
+        <li>Thermopompe ou fournaise « montant à venir » : prix du catalogue (17 930 $).</li>
+        <li>Chauffage temporaire : seulement les semaines inscrites (vide = rien).</li></ul>`)}
+    </div>
+    <div class="modal-footer"><button class="btn btn-dark" data-fermer>Fermer</button></div></div>`;
+  document.body.appendChild(o);
 }
 
 // ---------- 1 · Démarrer ----------

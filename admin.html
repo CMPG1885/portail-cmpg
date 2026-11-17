@@ -989,6 +989,7 @@ body * { font-variant-numeric: lining-nums; }
         <div class="est-tabs">
           <div class="est-tab active" onclick="estShowOnglet('estimations', this)">Estimations</div>
           <div class="est-tab" onclick="estShowOnglet('catalogue', this)">Catalogue des tâches</div>
+          <div class="est-tab" onclick="estShowOnglet('aide', this)">À ne pas oublier</div>
         </div>
 
         <!-- Estimations -->
@@ -1009,11 +1010,15 @@ body * { font-variant-numeric: lining-nums; }
               <div class="est-subtab" data-o="plan" onclick="estAfficher('plan')">Plan et questions</div>
               <div class="est-subtab" data-o="pieces" onclick="estAfficher('pieces')">Pièces</div>
               <div class="est-subtab" data-o="quantites" onclick="estAfficher('quantites')">Vérifier les quantités</div>
+              <div class="est-subtab" data-o="aide" onclick="estAfficher('aide')">À ne pas oublier<span id="est-aide-badge"></span></div>
               <div class="est-subtab" data-o="resultat" onclick="estAfficher('resultat')">Résultat</div>
             </div>
             <div id="est-contenu"></div>
           </div>
         </div>
+
+        <!-- À ne pas oublier : gestion des points -->
+        <div id="est-onglet-aide" style="display:none"></div>
 
         <!-- Catalogue des tâches -->
         <div id="est-onglet-catalogue" style="display:none">
@@ -5454,7 +5459,9 @@ function estShowOnglet(nom, el) {
   el.classList.add('active');
   document.getElementById('est-onglet-estimations').style.display = nom === 'estimations' ? 'block' : 'none';
   document.getElementById('est-onglet-catalogue').style.display = nom === 'catalogue' ? 'block' : 'none';
+  document.getElementById('est-onglet-aide').style.display = nom === 'aide' ? 'block' : 'none';
   if (nom === 'catalogue') chargerCatalogueTaches();
+  if (nom === 'aide') estRenderAideCatalogue();
 }
 
 // ---------- Liste des estimations d'un projet ----------
@@ -5658,7 +5665,8 @@ function estAfficher(onglet) {
   estOnglet = onglet;
   if (estCourante) estRenderEntete();
   document.querySelectorAll('#est-editeur .est-subtab').forEach(t => t.classList.toggle('active', t.dataset.o === onglet));
-  ({ plan: estRenderPlan, pieces: estRenderPieces, quantites: estRenderQuantites, resultat: estRenderResultat })[onglet]();
+  ({ plan: estRenderPlan, pieces: estRenderPieces, quantites: estRenderQuantites, aide: estRenderAide, resultat: estRenderResultat })[onglet]();
+  estAideCharger().then(estAideBadge);
 }
 
 // ---------- Pièces (grille de portée) ----------
@@ -6082,9 +6090,225 @@ function estDialogue(titre, html, boutons) {
   });
 }
 
+// ---------- À ne pas oublier (aide-mémoire de l'estimation) ----------
+// Les points viennent de la table estimation_aide_memoire (modifiables dans l'onglet « À ne pas oublier » du module).
+// Les réponses de chaque estimation sont dans estimations.aide_memoire : { code: { statut, valeur, par, le } }.
+// statut : 'inclus' | 'pas' | 'avenir'. Une réponse liée à une ligne inscrit la quantité (source « aide-mémoire »)
+// et, pour un montant, le prix manuel de la ligne ; la contingence va dans estimations.contingence_pct.
+let estAidePts = null, estAideOuverts = new Set(), estAideCat = null;
+async function estAideCharger(forcer) {
+  if (estAidePts && !forcer) return estAidePts;
+  const { data, error } = await db.from('estimation_aide_memoire').select('*').order('ordre');
+  estAidePts = error ? [] : (data || []);
+  return estAidePts;
+}
+function estAideVisibles() {
+  const ty = estCourante?.type_projet;
+  return (estAidePts || []).filter(p => p.actif && (!p.types?.length || !ty || p.types.includes(ty)));
+}
+function estAideRestants() {
+  const rep = estCourante?.aide_memoire || {};
+  return estAideVisibles().filter(p => !rep[p.code]?.statut).length;
+}
+function estAideBadge() {
+  const b = document.getElementById('est-aide-badge'); if (!b) return;
+  if (!estAidePts) { b.textContent = ''; return; }
+  const n = estAideRestants();
+  b.textContent = n ? n : '✓';
+  b.style.cssText = `display:inline-block;min-width:18px;margin-left:6px;padding:0 6px;border-radius:9px;font-size:10px;letter-spacing:0;line-height:18px;text-align:center;color:#fff;background:${n ? 'var(--danger)' : 'var(--success)'}`;
+}
+async function estRenderAide() {
+  const c = document.getElementById('est-contenu'); if (!c || !estCourante) return;
+  await estAideCharger(); estAideBadge();
+  const fz = estFigee(), dis = fz ? 'disabled' : '';
+  const rep = estCourante.aide_memoire || {}, pts = estAideVisibles(), n = estAideRestants();
+  if (!pts.length) { c.innerHTML = `<div class="card" style="font-size:13px;color:var(--texte-2)">Aucun point « À ne pas oublier » pour ce type de projet. Les points se gèrent dans l'onglet « À ne pas oublier » du module.</div>`; return; }
+  const pill = (code, st, lib) => { const on = rep[code]?.statut === st;
+    return `<button type="button" ${dis} onclick="estAideRepondre('${code}','${st}')" style="min-height:40px;padding:0 14px;border-radius:20px;font-size:13px;cursor:pointer;border:1px solid ${on ? 'var(--charcoal)' : 'var(--bord)'};background:${on ? 'var(--charcoal)' : '#fff'};color:${on ? '#fff' : 'var(--charcoal)'};font-weight:${on ? 500 : 400}">${lib}</button>`; };
+  const champ = p => {
+    const r = rep[p.code]; if (r?.statut !== 'inclus' || p.reponse === 'aucune') return '';
+    const lib = p.reponse === 'montant' ? 'Montant' : p.reponse === 'pourcentage' ? 'Pourcentage' : 'Quantité';
+    return `<div style="padding:0 20px 14px 40px;display:flex;flex-wrap:wrap;gap:10px;align-items:center">
+      <label for="aide-${p.code}" style="font-size:13px;color:var(--texte-2)">${lib}</label>
+      <input id="aide-${p.code}" ${dis} type="number" min="0" step="0.01" value="${r.valeur ?? ''}" placeholder="—" onchange="estAideValeur('${p.code}',this.value)"
+        style="width:140px;padding:8px 10px;border:1px solid ${r.valeur == null || r.valeur === '' ? 'var(--danger)' : 'var(--caramel)'};font-size:14px;text-align:right" />
+      <span style="font-size:13px;color:var(--texte-2)">${escH(p.unite || '')}</span>
+      ${r.valeur == null || r.valeur === '' ? '<span style="font-size:12px;color:var(--danger)">à inscrire</span>' : ''}</div>`;
+  };
+  const bloc = (t, txt, rouge) => txt ? `<div style="background:var(--fond);border-radius:8px;padding:12px 14px;${rouge ? 'border-top:3px solid var(--danger)' : ''}">
+      <div style="font-size:10px;letter-spacing:1.2px;text-transform:uppercase;font-weight:500;margin-bottom:4px;${rouge ? 'color:var(--danger)' : ''}">${t}</div>
+      <div style="font-size:13px;line-height:1.55">${escH(txt)}</div></div>` : '';
+  const regles = pts.length - n;
+  c.innerHTML = `
+    <div class="card" style="margin-bottom:14px;display:flex;flex-wrap:wrap;gap:14px;align-items:center;justify-content:space-between">
+      <div style="max-width:640px"><div style="font-size:15px;font-weight:500">Les points qu'on oublie souvent</div>
+        <div style="font-size:13px;color:var(--texte-2);margin-top:2px">Répondez à chaque point avant de figer. Ouvrez « Comment remplir » si vous hésitez : on y explique quoi mettre, quoi éviter et quoi faire sans montant.</div></div>
+      <div style="display:flex;flex-direction:column;align-items:flex-end;gap:6px;min-width:200px">
+        <span style="font-size:13px;font-weight:500;color:${n ? 'var(--danger)' : 'var(--success)'}">${regles} sur ${pts.length} réglés</span>
+        <div style="width:200px;height:6px;background:var(--fond);border-radius:3px;overflow:hidden"><div style="height:100%;width:${Math.round(regles / pts.length * 100)}%;background:var(--success)"></div></div></div>
+    </div>
+    ${pts.map(p => { const r = rep[p.code], st = r?.statut, ouv = estAideOuverts.has(p.code);
+      const coul = st === 'avenir' ? 'var(--caramel)' : st ? 'var(--success)' : 'var(--danger)';
+      return `<div class="card" style="padding:0;overflow:hidden;margin-bottom:10px">
+        <div style="padding:14px 20px;display:flex;flex-wrap:wrap;gap:10px 20px;align-items:center;justify-content:space-between">
+          <div style="flex:1 1 320px;min-width:0">
+            <div style="display:flex;align-items:center;gap:10px"><span style="width:10px;height:10px;border-radius:5px;flex:none;background:${coul}"></span>
+              <strong style="font-size:15px;font-weight:500">${escH(p.titre)}</strong></div>
+            ${p.resume ? `<div style="font-size:13px;color:var(--texte-2);padding-left:20px">${escH(p.resume)}</div>` : ''}
+            ${st === 'avenir' && p.defaut != null ? `<div style="font-size:12px;color:var(--caramel);padding-left:20px">Compté à ${estMoney(p.defaut)} en attendant le vrai montant</div>` : ''}
+            ${r?.par ? `<div style="font-size:11px;color:var(--texte-2);padding-left:20px">${escH(r.par)}${r.le ? ' · ' + new Date(r.le).toLocaleDateString('fr-CA') : ''}</div>` : ''}
+          </div>
+          <div role="group" aria-label="Réponse" style="display:flex;flex-wrap:wrap;gap:6px">
+            ${pill(p.code, 'inclus', p.reponse === 'aucune' ? 'C’est compté' : 'Inclus')}${pill(p.code, 'pas', 'Pas dans ce projet')}${pill(p.code, 'avenir', 'Montant à venir')}
+          </div>
+        </div>
+        ${champ(p)}
+        <button type="button" onclick="estAideBasculer('${p.code}')" aria-expanded="${ouv}" style="width:100%;text-align:left;background:#FBFBF5;border:0;border-top:1px solid var(--bord);padding:10px 20px;font-size:13px;cursor:pointer;display:flex;gap:8px;align-items:center;min-height:44px;color:var(--charcoal)">
+          <span style="width:18px;height:18px;border-radius:9px;border:1px solid var(--caramel);display:inline-flex;align-items:center;justify-content:center;font-size:11px;color:var(--caramel)">?</span>
+          <span style="font-weight:500">Comment remplir</span><span style="color:var(--texte-2)">${ouv ? '▴' : '▾'}</span></button>
+        ${ouv ? `<div style="padding:4px 20px 18px;display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:12px">
+          ${bloc('C’est quoi', p.quoi)}${bloc('Quand l’inclure', p.quand)}${bloc('À éviter', p.eviter, true)}${bloc('Sans montant', p.sans_montant)}</div>` : ''}
+      </div>`; }).join('')}
+    <div class="card" style="display:flex;flex-wrap:wrap;gap:12px;align-items:center;justify-content:space-between">
+      <span style="font-size:14px;font-weight:500;color:${n ? 'var(--danger)' : 'var(--success)'}">${n ? `Il reste ${n} point${n > 1 ? 's' : ''} à régler avant de figer l’estimation.` : 'Tous les points sont réglés.'}</span>
+      ${fz ? '' : `<button class="btn btn-dark btn-sm" onclick="estCalculer()">⟳ Calculer</button>`}
+    </div>`;
+}
+function estAideBasculer(code) { estAideOuverts.has(code) ? estAideOuverts.delete(code) : estAideOuverts.add(code); estRenderAide(); }
+async function estAideEnregistrer(rep) {
+  const { error } = await db.from('estimations').update({ aide_memoire: rep }).eq('id', estCourante.id);
+  if (error) { toast('Erreur : ' + error.message, 'error'); return false; }
+  estCourante.aide_memoire = rep; return true;
+}
+async function estAideRepondre(code, statut) {
+  if (estFigee()) return;
+  const p = (estAidePts || []).find(x => x.code === code); if (!p) return;
+  const rep = { ...(estCourante.aide_memoire || {}) };
+  const { data: { user } } = await db.auth.getUser();
+  if (rep[code]?.statut === statut) delete rep[code];                 // 2e clic = annuler la réponse
+  else rep[code] = { ...(rep[code] || {}), statut, par: user?.email || null, le: new Date().toISOString() };
+  if (rep[code] && statut === 'inclus' && rep[code].valeur == null && p.reponse === 'pourcentage' && estCourante.contingence_pct != null)
+    rep[code].valeur = +(Number(estCourante.contingence_pct) * 100).toFixed(2);
+  if (!(await estAideEnregistrer(rep))) return;
+  await estAideAppliquer(p, rep[code]);
+  estRenderAide();
+}
+async function estAideValeur(code, v) {
+  if (estFigee()) return;
+  const p = (estAidePts || []).find(x => x.code === code); if (!p) return;
+  const rep = { ...(estCourante.aide_memoire || {}) };
+  rep[code] = { ...(rep[code] || { statut: 'inclus' }), valeur: v === '' ? null : Number(v) };
+  if (!(await estAideEnregistrer(rep))) return;
+  await estAideAppliquer(p, rep[code]);
+  estRenderAide();
+}
+// Inscrit l'effet d'une réponse dans l'estimation. Rien n'est recalculé ici : le bouton Calculer le fait.
+async function estAideAppliquer(p, r) {
+  const id = estCourante.id;
+  if (p.reponse === 'pourcentage') {
+    const pct = !r ? null : r.statut === 'pas' ? 0 : r.statut === 'inclus' && r.valeur != null ? Number(r.valeur) / 100 : undefined;
+    if (pct === undefined || pct === null) return;
+    await db.from('estimations').update({ contingence_pct: pct }).eq('id', id); estCourante.contingence_pct = pct;
+    estRenderEntete(); return;
+  }
+  if (!p.cle_gabarit) return;
+  const { data: t } = await db.from('catalogue_taches').select('cle_gabarit, cle_pq').eq('cle_gabarit', p.cle_gabarit).eq('actif', true).maybeSingle();
+  if (!t) { toast(`Ligne ${p.cle_gabarit} introuvable au catalogue.`, 'error'); return; }
+  const cleQ = t.cle_pq || t.cle_gabarit;
+  // La réponse fait autorité sur cette ligne : elle remplace ce que les questions de départ ou la lecture du plan y avaient inscrit
+  // (sinon un forfait serait compté deux fois).
+  await db.from('estimation_quantites').delete().eq('estimation_id', id).eq('cle', cleQ);
+  const prix = async (v, note) => v == null
+    ? db.from('estimation_prix_manuels').delete().eq('estimation_id', id).eq('cle_gabarit', t.cle_gabarit)
+    : db.from('estimation_prix_manuels').upsert({ estimation_id: id, cle_gabarit: t.cle_gabarit, prix: v, note }, { onConflict: 'estimation_id,cle_gabarit' });
+  if (!r || r.statut === 'pas') { await prix(null); }
+  else if (r.statut === 'avenir') {
+    await db.from('estimation_quantites').insert({ estimation_id: id, cle: cleQ, quantite: 1, source: 'aide-mémoire', fiabilite: 'Hypothèse', note: 'À ne pas oublier — montant à venir' });
+    await prix(p.defaut ?? null, 'À ne pas oublier — montant à venir');
+  } else {
+    const q = p.reponse === 'quantite' ? Number(r.valeur || 0) : 1;
+    if (q) await db.from('estimation_quantites').insert({ estimation_id: id, cle: cleQ, quantite: q, source: 'aide-mémoire', fiabilite: 'Fiable', note: 'À ne pas oublier' });
+    if (p.reponse === 'montant') await prix(r.valeur ?? null, 'À ne pas oublier');
+  }
+  const { data: qs } = await db.from('estimation_quantites').select('*').eq('estimation_id', id); estQtes = qs || [];
+  toast('Réponse inscrite. Calculez pour mettre le total à jour.', 'info');
+}
+
+// --- Gestion des points (onglet du module) ---
+async function estRenderAideCatalogue() {
+  const div = document.getElementById('est-onglet-aide'); if (!div) return;
+  const pts = await estAideCharger(true);
+  if (!estAideCat) { const { data } = await db.from('catalogue_taches').select('cle_gabarit, libelle').eq('actif', true).not('cle_gabarit', 'is', null).order('cle_gabarit'); estAideCat = data || []; }
+  const lib = c => estAideCat.find(t => t.cle_gabarit === c)?.libelle || '';
+  const rep = { montant: 'Montant', quantite: 'Quantité', pourcentage: 'Pourcentage', aucune: 'Vérification seulement' };
+  div.innerHTML = `<div class="card" style="margin-bottom:14px;font-size:13px;color:var(--texte-2);line-height:1.6">
+      Les points posés dans l'étape « À ne pas oublier » de chaque estimation. Les modifications valent pour toutes les estimations dès maintenant ; les réponses déjà données restent.
+      <div style="margin-top:10px"><button class="btn btn-dark btn-sm" onclick="estAideEditer('')">+ Nouveau point</button></div></div>
+    <div class="card" style="padding:0;overflow:hidden"><table class="data-table" style="margin:0">
+      <thead><tr><th style="width:50px">Ordre</th><th>Point</th><th>Réponse</th><th>Ligne de l'estimation</th><th>Types de projet</th><th></th></tr></thead>
+      <tbody>${pts.map(p => `<tr style="${p.actif ? '' : 'opacity:.5'}">
+        <td>${p.ordre}</td><td><strong style="font-weight:500">${escH(p.titre)}</strong><div style="font-size:12px;color:var(--texte-2)">${escH(p.resume || '')}</div></td>
+        <td style="font-size:12px">${rep[p.reponse]}${p.defaut != null ? `<div style="color:var(--texte-2)">à venir : ${estMoney(p.defaut)}</div>` : ''}</td>
+        <td style="font-size:12px">${p.cle_gabarit ? `<span style="font-family:monospace">${escH(p.cle_gabarit)}</span><div style="color:var(--texte-2)">${escH(lib(p.cle_gabarit).slice(0, 60))}</div>` : '—'}</td>
+        <td style="font-size:12px">${p.types?.length ? p.types.map(escH).join('<br>') : 'Tous'}</td>
+        <td><button class="btn btn-outline btn-sm" onclick="estAideEditer('${p.id}')">Modifier</button></td></tr>`).join('')}</tbody></table></div>`;
+}
+function estAideEditer(pid) {
+  const p = (estAidePts || []).find(x => x.id === pid) || { ordre: ((estAidePts || []).at(-1)?.ordre || 0) + 10, reponse: 'aucune', actif: true, types: [] };
+  const TY = ['Construction neuve', 'Agrandissement', 'Rénovation complète', 'Rénovation partielle'];
+  const ta = (n, l, h) => `<label style="display:block;margin-top:10px;font-size:12px;font-weight:500">${l}<textarea name="${n}" rows="${h || 2}" style="display:block;width:100%;margin-top:4px;padding:8px;border:1px solid var(--bord);font:inherit;font-size:13px">${escH(p[n] || '')}</textarea></label>`;
+  document.getElementById('est-aide-modal')?.remove();
+  const o = document.createElement('div'); o.id = 'est-aide-modal'; o.className = 'modal-overlay open';
+  o.innerHTML = `<div class="modal" style="width:min(720px,94vw);max-width:none"><div class="modal-header"><h3>${pid ? 'Modifier le point' : 'Nouveau point'}</h3><button class="modal-close" data-x>×</button></div>
+    <div class="modal-body" style="font-size:13px;max-height:70vh;overflow:auto">
+      <div style="display:grid;grid-template-columns:1fr 90px;gap:10px">
+        <label style="font-size:12px;font-weight:500">Titre<input name="titre" value="${escH(p.titre || '')}" style="display:block;width:100%;margin-top:4px;padding:8px;border:1px solid var(--bord)"></label>
+        <label style="font-size:12px;font-weight:500">Ordre<input name="ordre" type="number" value="${p.ordre}" style="display:block;width:100%;margin-top:4px;padding:8px;border:1px solid var(--bord)"></label></div>
+      ${ta('resume', 'Résumé (une ligne sous le titre)', 1)}${ta('quoi', 'C’est quoi')}${ta('quand', 'Quand l’inclure')}${ta('eviter', 'À éviter (doubles comptes)')}${ta('sans_montant', 'Sans montant')}
+      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:10px;margin-top:12px">
+        <label style="font-size:12px;font-weight:500">Réponse attendue<select name="reponse" style="display:block;width:100%;margin-top:4px">
+          ${[['aucune', 'Vérification seulement'], ['montant', 'Montant ($)'], ['quantite', 'Quantité'], ['pourcentage', 'Pourcentage (contingence)']].map(([v, l]) => `<option value="${v}" ${p.reponse === v ? 'selected' : ''}>${l}</option>`).join('')}</select></label>
+        <label style="font-size:12px;font-weight:500">Ligne de l'estimation<select name="cle_gabarit" style="display:block;width:100%;margin-top:4px"><option value="">— Aucune —</option>
+          ${(estAideCat || []).map(t => `<option value="${escH(t.cle_gabarit)}" ${p.cle_gabarit === t.cle_gabarit ? 'selected' : ''}>${escH(t.cle_gabarit)} — ${escH(t.libelle.slice(0, 55))}</option>`).join('')}</select></label>
+        <label style="font-size:12px;font-weight:500">Unité<input name="unite" value="${escH(p.unite || '')}" style="display:block;width:100%;margin-top:4px;padding:8px;border:1px solid var(--bord)"></label>
+        <label style="font-size:12px;font-weight:500">Montant compté si « à venir »<input name="defaut" type="number" step="0.01" value="${p.defaut ?? ''}" style="display:block;width:100%;margin-top:4px;padding:8px;border:1px solid var(--bord)"></label>
+      </div>
+      <div style="margin-top:12px;font-size:12px;font-weight:500">Types de projet visés <span style="font-weight:300;color:var(--texte-2)">(aucun coché = tous)</span></div>
+      <div style="display:flex;flex-wrap:wrap;gap:12px;margin-top:6px">${TY.map(t => `<label style="display:flex;gap:6px;align-items:center"><input type="checkbox" name="ty" value="${t}" ${p.types?.includes(t) ? 'checked' : ''}>${t}</label>`).join('')}</div>
+      <label style="display:flex;gap:6px;align-items:center;margin-top:12px"><input type="checkbox" name="actif" ${p.actif ? 'checked' : ''}> Actif (affiché dans les estimations)</label>
+    </div>
+    <div class="modal-footer"><button class="btn btn-outline" data-x>Annuler</button><button class="btn btn-dark" data-ok>Enregistrer</button></div></div>`;
+  o.addEventListener('click', async ev => {
+    if (ev.target === o || ev.target.closest('[data-x]')) { o.remove(); return; }
+    if (!ev.target.closest('[data-ok]')) return;
+    const f = n => o.querySelector(`[name="${n}"]`);
+    const titre = f('titre').value.trim(); if (!titre) { toast('Le titre est requis.', 'error'); return; }
+    const val = { titre, ordre: Number(f('ordre').value) || 100, resume: f('resume').value.trim() || null, quoi: f('quoi').value.trim() || null,
+      quand: f('quand').value.trim() || null, eviter: f('eviter').value.trim() || null, sans_montant: f('sans_montant').value.trim() || null,
+      reponse: f('reponse').value, cle_gabarit: f('cle_gabarit').value || null, unite: f('unite').value.trim() || null,
+      defaut: f('defaut').value === '' ? null : Number(f('defaut').value), actif: f('actif').checked,
+      types: [...o.querySelectorAll('[name="ty"]:checked')].map(c => c.value), maj_le: new Date().toISOString() };
+    if (!val.types.length) val.types = null;
+    const { error } = pid ? await db.from('estimation_aide_memoire').update(val).eq('id', pid)
+      : await db.from('estimation_aide_memoire').insert({ ...val, code: 'p' + Date.now().toString(36) });
+    if (error) { toast('Erreur : ' + error.message, 'error'); return; }
+    o.remove(); toast('Point enregistré.', 'success'); estRenderAideCatalogue();
+  });
+  document.body.appendChild(o);
+}
+
 // ---------- Gel ----------
 async function estFiger(depuis) {
   if (!estLignes.length) { toast('Calculez l’estimation avant de la figer.', 'error'); return false; }
+  await estAideCharger(true);
+  const nAide = estAideRestants();
+  if (nAide) {
+    const r0 = await estDialogue('À ne pas oublier', `<p>Il reste <strong>${nAide} point${nAide > 1 ? 's' : ''}</strong> sans réponse dans « À ne pas oublier ».</p>
+      <p style="margin-top:8px">Répondez à chacun (Inclus, Pas dans ce projet ou Montant à venir) avant de figer l’estimation.</p>`,
+      [{ v: '', lib: 'Fermer' }, { v: 'voir', lib: 'Voir les points', classe: 'btn-dark' }]);
+    if (r0) estAfficher('aide');
+    return false;
+  }
   const T = estCourante.totaux;
   const r = await estDialogue('🔒 Figer l’estimation', `
       <p><strong>${escH(estNom(estCourante))}</strong>${T ? ` — ${estMoney(T.total_ht)} avant taxes` : ''}</p>

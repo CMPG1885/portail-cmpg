@@ -5825,8 +5825,10 @@ function estGuidePrix() {
         ['<strong style="font-weight:500">Fourni-posé</strong>', 'Matériaux et pose, comme le sous-traitant le soumissionne', 'Électricité, ventilation, comptoirs, céramique'],
         ['<strong style="font-weight:500">Main-d\'œuvre</strong>', 'La pose seulement ; la fourniture est sur une autre ligne', 'Pose des planchers, points d\'eau, menuiserie'],
         ['<strong style="font-weight:500">Fourniture</strong>', 'Le matériau ou l\'appareil seulement', 'Appareils sanitaires, bois du plancher, moulures'],
-        ['<strong style="font-weight:500">Au pi² « tout compris »</strong>', 'Tout un métier en un prix : le libellé dit ce qui est inclus', 'Électricité au pi² (entrée, panneau, prises, sorties) ; CVC au pi² (réseau neuf)']]) + `
-        <p style="margin:0;font-size:13px;color:${EK.t2}">Règle : le catalogue découpe chaque poste comme le sous-traitant le soumissionne, pour comparer ligne à ligne.</p>`)}
+        ['<strong style="font-weight:500">Prix global</strong> (au pi² « tout compris »)', 'Tout un métier en un prix : le libellé dit ce qui est inclus', 'Électricité au pi² (entrée, panneau, prises, sorties) ; CVC au pi² (réseau neuf) ; en réno : charpente et menuiserie au pi² touché'],
+        ['<strong style="font-weight:500">Inclus</strong>', 'La ligne reste visible à 0 $ : son coût est déjà dans une ligne « prix global »', 'En réno : cloisons, plinthes, cadrages (compris dans la charpente ou la menuiserie au pi²)']]) + `
+        <p style="margin:0;font-size:13px;color:${EK.t2}">Règle : le catalogue découpe chaque poste comme le sous-traitant le soumissionne, pour comparer ligne à ligne. Le « ? » de chaque quantité affiche la nature de ses lignes (Prix global, Fourni-posé, Pose seulement, Fourniture seulement, Inclus).</p>
+        <p style="margin:0;font-size:13px;color:${EK.t2}">Réno ou neuf : certaines lignes ont un prix par type (charpente, électricité, CVC, menuiserie, pose des fenêtres…). Le menu « Prix de » sous la ligne permet de changer le type d'une quantité.</p>`)}
       ${bloc('4 · Le total', tab(['', 'Calcul'], [
         ['Sous-total des travaux', 'Somme de toutes les lignes'],
         ['+ Contingence', 'Le % choisi dans « À ne pas oublier » (0 % par défaut)'],
@@ -6381,6 +6383,14 @@ function estQTaches(cle) {
     return true;
   });
 }
+// Nature d'une ligne de prix : ce qu'elle comprend (affichée dans l'aide « ? »).
+function estNature(t, prix) {
+  if (prix === 0) return { lib: 'Inclus', fond: '#EDE9E1', coul: '#706862' };
+  if (/globale|tout compris|câblage complet|au pi² desservi|au pi² de plancher brut/i.test(t.libelle || '')) return { lib: 'Prix global', fond: '#3A3B3A', coul: '#fff' };
+  return t.type === 'main_oeuvre' ? { lib: 'Pose seulement', fond: '#F5F4EE', coul: '#3A3B3A' }
+    : t.type === 'materiaux' ? { lib: 'Fourniture seulement', fond: '#F5F4EE', coul: '#3A3B3A' }
+    : { lib: 'Fourni-posé', fond: '#E3DFD8', coul: '#3A3B3A' };
+}
 function estQPrixTache(t, ty, ga) {
   if (estQMan[t.cle_gabarit] != null) return { prix: estQMan[t.cle_gabarit], manuel: true };
   const px = (t.catalogue_prix || []).filter(p => p.actif !== false);
@@ -6436,8 +6446,8 @@ async function estRenderQuantites() {
     const aide = !ouv ? '' : `<tr style="background:${EQ.pale};border-bottom:1px solid ${EQ.st}">
         <td colspan="5" style="padding:12px 16px 16px">
           <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:12px;font-size:13px">
-            <div>${lbl('Ce qui est compris')}${V.ts.length ? V.ts.map(t => { const p = estQPrixTache(t, estCourante.type_projet, estCourante.gamme_defaut);
-                return `<div>${escH(t.libelle)} <span style="color:${EQ.t2};white-space:nowrap">· ${p.prix == null ? 'sans prix' : prixTxt(p.prix) + ' / ' + escH(t.unite || '')}</span></div>`; }).join('') : `<span style="color:${EQ.t2}">Aucune ligne de prix liée.</span>`}</div>
+            <div>${lbl('Ce qui est compris')}${V.ts.length ? V.ts.map(t => { const p = estQPrixTache(t, rs.length === 1 ? estQTypeRang(rs[0]) : estCourante.type_projet, estCourante.gamme_defaut), n = estNature(t, p.prix);
+                return `<div style="margin-bottom:4px"><span style="display:inline-block;font-size:10px;letter-spacing:.5px;text-transform:uppercase;font-weight:500;padding:1px 6px;border-radius:8px;margin-right:6px;background:${n.fond};color:${n.coul}">${n.lib}</span>${escH(t.libelle)} <span style="color:${EQ.t2};white-space:nowrap">· ${p.prix == null ? 'sans prix' : p.prix === 0 && !p.manuel ? 'compris dans le prix global' : prixTxt(p.prix) + ' / ' + escH(t.unite || '')}</span></div>`; }).join('') : `<span style="color:${EQ.t2}">Aucune ligne de prix liée.</span>`}</div>
             <div>${lbl('Comment mesurer')}${estQEdit === it.cle ? `<textarea id="qa-regle" rows="3" style="width:100%;font:inherit;font-size:13px;padding:6px">${escH(ex.regle || '')}</textarea>` : escH([ex.regle, it.aide].filter(Boolean).join(' · ') || '—')}</div>
             <div>${lbl('À éviter', true)}${estQEdit === it.cle ? `<textarea id="qa-eviter" rows="3" style="width:100%;font:inherit;font-size:13px;padding:6px">${escH(ex.aide_eviter || '')}</textarea>` : escH(ex.aide_eviter || '—')}</div>
           </div>
@@ -6674,12 +6684,12 @@ function estRenderResultat() {
   const nomDdn = d => estPostes.find(p => p.code === d)?.nom || '';
   const INCLUS = l => estInclus.set.has(l.cle) && ['à inscrire', 'forfait à inscrire'].includes(l.source_prix);
   const ATTENTE = l => l.source_prix === 'choix client';   // choix du client sans sélection approuvée ni prix de gamme
-  const SANS = l => l.source_prix && !['catalogue', 'sélection', 'manuel', 'choix client', 'fourni par le client'].includes(l.source_prix) && !INCLUS(l);
+  const SANS = l => l.source_prix && !['catalogue', 'sélection', 'manuel', 'choix client', 'fourni par le client', 'inclus dans le prix global'].includes(l.source_prix) && !INCLUS(l);
   const bandeauFige = fz ? `<div class="card" style="margin-bottom:14px;border-left:3px solid var(--success);font-size:13px">🔒 <strong>Cette estimation est figée</strong> : rien ne peut être modifié. Cliquez sur « Défiger » en haut pour la modifier, puis « Calculer ».</div>` : '';
   const etiquette = l => l.source_prix === 'sélection' ? '<span style="color:var(--success);font-size:11px"> · sélection approuvée</span>'
     : l.source_prix === 'manuel' ? '<span style="color:var(--caramel);font-size:11px"> · prix manuel</span>'
     : l.source_prix === 'fourni par le client' ? '<span style="color:var(--texte-2);font-size:11px"> · fourni par le client</span>'
-    : INCLUS(l) ? '<span style="color:var(--texte-2);font-size:11px"> · incluse dans une ligne globale</span>'
+    : INCLUS(l) || l.source_prix === 'inclus dans le prix global' ? '<span style="color:var(--texte-2);font-size:11px"> · inclus dans le prix global</span>'
     : ATTENTE(l) ? '<span style="color:var(--caramel);font-size:11px"> · en attente de sélection</span>'
     : SANS(l) ? `<span style="color:var(--danger);font-size:11px"> · ${escH(l.source_prix)}</span>` : '';
   const parDdn = {};

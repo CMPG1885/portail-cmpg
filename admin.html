@@ -6505,11 +6505,19 @@ async function estRenderQuantites() {
   }
   c.innerHTML = `${outils}
     <section style="display:flex;flex-wrap:wrap;gap:20px;align-items:flex-start">
-      <aside style="flex:1 1 260px;max-width:320px;background:#fff;border:1px solid ${EQ.bord};border-radius:10px;overflow:hidden">
+      <aside style="flex:1 1 260px;max-width:320px;background:#fff;border:1px solid ${EQ.bord};border-radius:10px;overflow:hidden;position:sticky;top:24px;display:flex;flex-direction:column;max-height:calc(100vh - 48px)">
         <div style="padding:14px 16px;font-size:11px;letter-spacing:1.2px;text-transform:uppercase;font-weight:500;background:${EQ.ch};color:#fff">Sections du projet</div>
-        ${secs.map((s, i) => `<button type="button" onclick="estQAller(${i})" style="width:100%;min-height:56px;display:flex;justify-content:space-between;align-items:center;gap:12px;padding:10px 16px;border:0;border-bottom:1px solid ${EQ.st};cursor:pointer;font-size:14px;color:${EQ.ch};font-family:inherit;background:${s.code === estQSec ? EQ.fond : '#fff'};box-shadow:${s.code === estQSec ? 'inset 3px 0 0 ' + EQ.gr : 'none'}">
+        <div style="padding:8px 10px;border-bottom:1px solid ${EQ.st}"><input id="est-q-aller" type="search" placeholder="Aller à… (ex. ventil, 23, céramique)" aria-label="Aller à une section" autocomplete="off"
+          oninput="estQAllerFiltre(this.value)" onkeydown="if(event.key==='Enter'){event.preventDefault();estQAllerFiltre(this.value,true)}"
+          style="width:100%;padding:8px 10px;border:1px solid ${EQ.gr};border-radius:6px;font-size:13px;font-family:inherit;color:${EQ.ch};background:#fff"></div>
+        <div id="est-q-liste" style="overflow-y:auto;flex:1 1 auto;min-height:0">
+        ${secs.map((s, i) => `<button type="button" data-q="${escH((s.code + ' ' + s.nom).toLowerCase())}" onclick="estQAller(${i})" style="width:100%;min-height:44px;display:flex;justify-content:space-between;align-items:center;gap:12px;padding:6px 16px;border:0;border-bottom:1px solid ${EQ.st};cursor:pointer;font-size:14px;color:${EQ.ch};font-family:inherit;background:${s.code === estQSec ? EQ.fond : '#fff'};box-shadow:${s.code === estQSec ? 'inset 3px 0 0 ' + EQ.gr : 'none'}">
             <span style="display:flex;flex-direction:column;gap:2px;text-align:left"><span style="font-size:11px;color:${EQ.t2};font-family:monospace">${s.code}</span><span style="font-weight:500">${escH(s.nom)}</span></span>
             <span style="font-size:13px;white-space:nowrap">${argent(s.total)}</span></button>`).join('')}
+        ${toutes.filter(t => !secs.includes(t)).map(t => `<button type="button" data-q="${escH((t.code + ' ' + t.nom).toLowerCase())}" data-hors="1" onclick="estQAllerCode('${t.code}')" style="display:none;width:100%;min-height:44px;justify-content:space-between;align-items:center;gap:12px;padding:6px 16px;border:0;border-bottom:1px solid ${EQ.st};cursor:pointer;font-size:14px;color:${EQ.t2};font-family:inherit;background:#fff">
+            <span style="display:flex;flex-direction:column;gap:2px;text-align:left"><span style="font-size:11px;font-family:monospace">${t.code}</span><span>${escH(t.nom)}</span></span><span style="font-size:12px">+ ajouter</span></button>`).join('')}
+        <div id="est-q-aucune" style="display:none;padding:12px 16px;font-size:13px;color:${EQ.t2}">Aucune section ne correspond.</div>
+        </div>
         ${!estQToutes && duProjet.length && duProjet.length < toutes.length ? `<button type="button" onclick="estQToutes=true;estRenderQuantites()" style="width:100%;min-height:44px;border:0;border-bottom:1px solid ${EQ.st};background:#fff;color:${EQ.t2};cursor:pointer;font-size:13px;text-decoration:underline">Ajouter une autre section (${toutes.length - duProjet.length})</button>`
           : estQToutes && duProjet.length < toutes.length ? `<button type="button" onclick="estQToutes=false;estRenderQuantites()" style="width:100%;min-height:44px;border:0;border-bottom:1px solid ${EQ.st};background:#fff;color:${EQ.t2};cursor:pointer;font-size:13px;text-decoration:underline">Seulement les sections du projet</button>` : ''}
         <div style="padding:14px 16px;display:flex;justify-content:space-between;border-top:1px solid #A09890;background:${EQ.st};font-weight:500"><span>Sous-total des travaux</span><span>${argent(total)}</span></div>
@@ -6517,6 +6525,15 @@ async function estRenderQuantites() {
       ${carte(sec)}
     </section>`;
 }
+// « Aller à… » : filtre la liste des sections (code ou nom) ; Entrée ouvre la première trouvée.
+function estQAllerFiltre(v, ouvrir) {
+  const q = String(v || '').toLowerCase().trim(), liste = document.getElementById('est-q-liste'); if (!liste) return;
+  const bs = [...liste.querySelectorAll('button[data-q]')]; let n = 0, premier = null;
+  for (const b of bs) { const ok = q ? b.dataset.q.includes(q) : !b.dataset.hors; b.style.display = ok ? 'flex' : 'none'; if (ok) { n++; premier = premier || b; } }
+  document.getElementById('est-q-aucune').style.display = n ? 'none' : 'block';
+  if (ouvrir && premier) premier.click();
+}
+function estQAllerCode(code) { estQToutes = true; estQSec = code; estRenderQuantites(); document.getElementById('est-contenu')?.scrollIntoView({ behavior: 'smooth', block: 'start' }); }
 function estQAller(i) {
   const toutes = estQSections(), duProjet = toutes.filter(s => s.remplis || s.vue);
   const secs = estQGuide || estQToutes || !duProjet.length ? toutes : duProjet;

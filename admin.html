@@ -6395,7 +6395,8 @@ function estQTypeRang(r) {
 function estQValeur(cle) {
   const ts = estQTaches(cle), rs = estQtes.filter(x => x.cle === cle);
   const unit = (ty, ga) => ts.reduce((a, t) => { const p = estQPrixTache(t, ty, ga); if (p.prix == null) a.manque = true; else a.v += p.prix; if (p.manuel) a.manuel = true; return a; }, { v: 0, manque: false, manuel: false });
-  const u0 = unit(estCourante.type_projet, estCourante.gamme_defaut);
+  // Une seule quantité : le prix affiché est celui de son type (ex. réno partielle choisie sur la ligne).
+  const u0 = rs.length === 1 ? unit(estQTypeRang(rs[0]), rs[0].gamme || estCourante.gamme_defaut) : unit(estCourante.type_projet, estCourante.gamme_defaut);
   const montant = rs.reduce((s, r) => s + Number(r.quantite || 0) * unit(estQTypeRang(r), r.gamme || estCourante.gamme_defaut).v, 0);
   return { ts, rs, unit: ts.length && (u0.v || !u0.manque) ? u0.v : null, manuel: u0.manuel, montant };
 }
@@ -6422,13 +6423,14 @@ async function estRenderQuantites() {
   const champStyle = `width:96px;padding:7px 8px;border:1px solid ${EQ.gr};border-radius:6px;text-align:right;color:${EQ.saisie};font-size:14px;background:#fff;font-family:inherit`;
   const ligne = it => {
     const V = estQValeur(it.cle), rs = V.rs, ouv = estQAide.has(it.cle), ex = estQExtra[it.cle] || {}, plusieurs = rs.length > 1, detOuv = estQDetail.has(it.cle);
+    const parType = estQTaches(it.cle).some(t => (t.catalogue_prix || []).some(p => p.type_projet && p.actif !== false));
     const pieceNom = rs.length === 1 && rs[0].piece_id ? estPieces.find(p => p.id === rs[0].piece_id)?.nom : null;
     const champ = !plusieurs
       ? `<label style="position:absolute;left:-9999px" for="q-${it.cle}">Quantité — ${escH(it.nom)}</label>
          <input id="q-${it.cle}" ${dis} type="number" min="0" step="any" value="${rs[0]?.quantite ?? ''}" placeholder="—" title="Vider la case pour retirer la quantité" onchange="estQteSimple('${it.cle}',this.value)" style="${champStyle}">`
       : `<button type="button" onclick="estQBasculerDetail('${it.cle}')" title="Quantités par pièce" style="border:0;background:none;cursor:pointer;font:inherit;color:${EQ.ch};font-weight:500">${estNum(rs.reduce((t, r) => t + Number(r.quantite || 0), 0))} ${detOuv ? '▴' : '▾'}</button>`;
     const detail = !plusieurs || !detOuv ? '' : rs.map(r => `<tr style="background:${EQ.pale};border-bottom:1px solid ${EQ.st}">
-        <td style="padding:6px 16px 6px 52px;font-size:13px;color:${EQ.t2}">${escH(estPieces.find(p => p.id === r.piece_id)?.nom || 'Sans pièce')}${r.type_projet ? ' · ' + escH(r.type_projet) : ''}${r.gamme ? ' · ' + escH(r.gamme) : ''}</td>
+        <td style="padding:6px 16px 6px 52px;font-size:13px;color:${EQ.t2}">${escH(estPieces.find(p => p.id === r.piece_id)?.nom || 'Sans pièce')}${parType ? ' · ' + estQTypeSel(r, dis) : r.type_projet ? ' · ' + escH(r.type_projet) : ''}${r.gamme ? ' · ' + escH(r.gamme) : ''}</td>
         <td style="padding:6px 8px;text-align:right"><input ${dis} type="number" step="any" min="0" value="${r.quantite ?? ''}" aria-label="Quantité" onchange="this.value===''?estSupprimerQte('${r.id}'):estMajQte('${r.id}','quantite',Number(this.value)).then(estRenderQuantites)" style="${champStyle}"></td>
         <td colspan="3"></td></tr>`).join('');
     const aide = !ouv ? '' : `<tr style="background:${EQ.pale};border-bottom:1px solid ${EQ.st}">
@@ -6448,7 +6450,7 @@ async function estRenderQuantites() {
           <div style="display:flex;align-items:center;gap:8px">
             <span title="${escH(it.cle)}">${escH(it.nom)}${pieceNom ? `<span style="color:${EQ.t2};font-size:12px"> · ${escH(pieceNom)}</span>` : ''}</span>
             <button type="button" onclick="estQBasculerAide('${it.cle}')" aria-label="Aide sur cette ligne" aria-expanded="${ouv}" style="width:28px;height:28px;border-radius:14px;border:1px solid ${ouv ? EQ.ch : '#C8C2BB'};background:${ouv ? EQ.ch : '#fff'};color:${ouv ? '#fff' : EQ.t2};cursor:pointer;font-size:13px;font-weight:500;flex:none;padding:0">?</button>
-          </div></td>
+          </div>${parType && rs.length === 1 ? `<div style="margin-top:4px">${estQTypeSel(rs[0], dis)}</div>` : ''}</td>
         <td style="padding:8px;text-align:right">${champ}</td>
         <td style="padding:8px;font-size:13px;color:${EQ.t2}">${escH(it.unite || '')}</td>
         <td style="padding:8px;text-align:right;font-size:13px">${prixTxt(V.unit)}</td>
@@ -6588,6 +6590,14 @@ async function estSauverQte(continuer) {
     msg.style.color = 'var(--success)'; msg.textContent = `Ajouté : ${info.parametre}`; document.getElementById('eq-param').focus(); }
   else closeModal('modal-est-qte');
   estRenderQuantites();
+}
+// Type de prix d'une quantité (réno partielle / complète…), choisi directement sur la ligne quand il change le prix.
+async function estQType(id, valeur) { await estMajQte(id, 'type_projet', valeur || null); estRenderQuantites(); }
+function estQTypeSel(r, dis) {
+  return `<label style="display:inline-flex;gap:6px;align-items:center;font-size:12px;color:${EQ.t2}">Prix de
+    <select ${dis} onchange="estQType('${r.id}',this.value)" style="padding:3px 6px;border:1px solid ${r.type_projet ? EQ.gr : '#E3DFD8'};border-radius:6px;font-size:12px;font-family:inherit;color:${EQ.ch};background:#fff">
+      <option value="">${escH((estPieces.find(p => p.id === r.piece_id)?.zone && estPieces.find(p => p.id === r.piece_id)?.zone !== 'Hors mandat' ? estPieces.find(p => p.id === r.piece_id).zone : estCourante.type_projet || '').toLowerCase())} (par défaut)</option>
+      ${EST_TYPES.map(t => `<option value="${escH(t)}" ${r.type_projet === t ? 'selected' : ''}>${escH(t.toLowerCase())}</option>`).join('')}</select></label>`;
 }
 async function estMajQte(id, champ, valeur) {
   const { error } = await db.from('estimation_quantites').update({ [champ]: valeur }).eq('id', id);
